@@ -1,0 +1,761 @@
+/* Global styles for SpinWar */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600;700&display=swap');
+
+/* SpinWar CSS Variables */
+:root {
+  --sw-red: #dc2626;
+  --sw-red-dark: #991b1b;
+  --sw-purple: #7c3aed;
+  --sw-purple-light: #a855f7;
+  --sw-gold: #f59e0b;
+  --sw-dark: #08080f;
+  --sw-card: #0d0d1a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  overflow-y: auto;
+}
+
+body {
+  margin: 0;
+  font-family: 'Exo 2', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(135deg, #08080f 0%, #1a0320 40%, #0f0015 70%, #08080f 100%);
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+#root {
+  min-height: 100%;
+}
+
+.App {
+  position: relative;
+}
+
+/* Custom scrollbar - hidden on mobile */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 0;
+    display: none;
+  }
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(220, 38, 38, 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(220, 38, 38, 0.7);
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-x: none;
+  }
+  
+  /* Larger touch targets */
+  button, input, .touch-target {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  
+  /* Prevent zoom on input focus */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+  
+  /* Force text wrapping and prevent overflow */
+  * {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+  }
+  
+  /* Ensure no horizontal overflow */
+  .container, .card, .main-content {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+}
+
+/* Portrait specific optimizations */
+@media (max-width: 768px) and (orientation: portrait) {
+  body {
+    width: 100vw;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  
+  /* Force hide desktop sidebar in portrait */
+  .desktop-sidebar {
+    display: none !important;
+  }
+  
+  /* Ensure mobile bottom nav shows */
+  .mobile-bottom-nav {
+    display: flex !important;
+  }
+  
+  /* Ensure all text fits within viewport */
+  h1, h2, h3, h4, h5, h6, p, span, div {
+    max-width: 100%;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  /* Force container constraints */
+  .min-h-screen {
+    width: 100vw;
+    max-width: 100vw;
+  }
+  
+  /* Smooth scrolling */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Force mobile layout for narrow screens */
+@media (max-width: 768px) {
+  .desktop-sidebar {
+    display: none !important;
+  }
+  
+  .mobile-bottom-nav {
+    display: flex !important;
+  }
+  
+  .desktop-welcome-card {
+    display: none !important;
+  }
+  
+  /* Prevent horizontal overflow */
+  body, html {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+  }
+  
+  /* Ensure all containers fit screen width */
+  * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  
+  /* Fix text overflow issues */
+  h1, h2, h3, h4, h5, h6, p, span, button {
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    hyphens: auto !important;
+  }
+  
+  /* Ensure buttons don't overflow */
+  button {
+    min-width: 0 !important;
+    flex-shrink: 1 !important;
+  }
+}
+
+/* Headings with Orbitron font */
+h1, h2, h3, .heading {
+  font-family: 'Orbitron', monospace;
+  font-weight: 700;
+}
+
+/* Custom glow effects */
+.glow-yellow {
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.glow-red {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+/* Animated gradient background */
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animated-bg {
+  background: linear-gradient(45deg, #08080f, #1a0320, #3b0764, #4c0519, #08080f);
+  background-size: 400% 400%;
+  animation: gradientShift 8s ease infinite;
+}
+
+/* SpinWar Card */
+.spinwar-card {
+  background: #0d0d1a;
+  background-image: linear-gradient(135deg, #0d0d1a 0%, #120818 100%);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px rgba(220, 38, 38, 0.25),
+    0 0 16px rgba(124, 58, 237, 0.15),
+    0 0 32px rgba(220, 38, 38, 0.08),
+    inset 0 1px 0 rgba(168, 85, 247, 0.08);
+}
+
+/* SpinWar Primary Button */
+.spinwar-btn-primary {
+  background: linear-gradient(135deg, #dc2626 0%, #7c3aed 100%);
+  color: #fff;
+  font-family: 'Exo 2', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  border: none;
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.45), 0 2px 8px rgba(0,0,0,0.4);
+  transition: all 0.2s ease;
+  letter-spacing: 0.03em;
+}
+.spinwar-btn-primary:hover {
+  background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%);
+  box-shadow: 0 0 22px rgba(220, 38, 38, 0.65), 0 4px 14px rgba(0,0,0,0.5);
+  transform: translateY(-1px);
+}
+
+/* SpinWar Secondary Button */
+.spinwar-btn-secondary {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  color: #fff;
+  font-family: 'Exo 2', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  border: none;
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.35), 0 2px 8px rgba(0,0,0,0.4);
+  transition: all 0.2s ease;
+}
+.spinwar-btn-secondary:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  box-shadow: 0 0 28px rgba(124, 58, 237, 0.6), 0 4px 16px rgba(0,0,0,0.5);
+  transform: translateY(-1px);
+}
+
+/* SpinWar Header */
+.spinwar-header {
+  background: rgba(8, 8, 15, 0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, #dc2626 0%, #a855f7 50%, #7c3aed 100%) 1;
+}
+
+/* SpinWar Nav Active */
+.spinwar-nav-active {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.15);
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.3);
+}
+
+/* SpinWar Title */
+.spinwar-title {
+  font-family: 'Orbitron', monospace;
+  font-weight: 900;
+  background: linear-gradient(135deg, #dc2626 0%, #a855f7 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0 8px rgba(220, 38, 38, 0.6));
+}
+
+/* SpinWar Room Card */
+.spinwar-room-card {
+  background: #0d0d1a;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-left: 3px solid #dc2626;
+  border-radius: 10px;
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.1);
+  transition: all 0.25s ease;
+}
+.spinwar-room-card:hover {
+  border-color: rgba(220, 38, 38, 0.5);
+  box-shadow: 0 0 20px rgba(220, 38, 38, 0.25), 0 0 40px rgba(124, 58, 237, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Glow utilities */
+.glow-red-strong {
+  box-shadow: 0 0 24px rgba(220, 38, 38, 0.7), 0 0 48px rgba(220, 38, 38, 0.3);
+}
+
+.glow-purple-strong {
+  box-shadow: 0 0 24px rgba(124, 58, 237, 0.7), 0 0 48px rgba(124, 58, 237, 0.3);
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+/* Button animations */
+.btn-pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* Explosive room full animation */
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 1.5s ease-in-out infinite;
+}
+
+/* Coin animation */
+@keyframes coinSpin {
+  0% { transform: rotateY(0deg); }
+  100% { transform: rotateY(360deg); }
+}
+
+.coin-spin {
+  animation: coinSpin 3s linear infinite;
+}
+
+/* Progress bar glow */
+.progress-glow .bg-yellow-400 {
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
+}
+
+/* Room card gradients */
+.bronze-gradient {
+  background: linear-gradient(135deg, #92400e 0%, #b45309 100%);
+}
+
+.silver-gradient {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+}
+
+.gold-gradient {
+  background: linear-gradient(135deg, #eab308 0%, #ca8a04 100%);
+}
+
+/* Status indicators */
+.status-online {
+  background: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.status-offline {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+/* Text gradients */
+.text-gradient-gold {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gradient-green {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem;
+  }
+  
+  h1 {
+    font-size: 2rem;
+  }
+  
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
+
+/* Floating reaction animation */
+@keyframes reactionFloat {
+  0%   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  20%  { opacity: 1; transform: translateX(-50%) translateY(-20px) scale(1.2); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-110px) scale(0.8); }
+}
+
+/* Loading spinner */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Roulette wheel winner flash */
+@keyframes wheelWinnerPulse {
+  0%, 100% { box-shadow: 0 0 50px rgba(245,158,11,0.5), 0 0 100px rgba(245,158,11,0.2); }
+  50%       { box-shadow: 0 0 80px rgba(245,158,11,0.9), 0 0 160px rgba(245,158,11,0.4); }
+}
+
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Focus states for accessibility */
+.focus-visible:focus {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+}
+
+/* Custom badge styles */
+.badge-winner {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  color: #0f172a;
+  font-weight: 700;
+  text-shadow: none;
+}
+
+/* Room status indicators */
+.room-waiting {
+  border-left: 4px solid #10b981;
+}
+
+.room-playing {
+  border-left: 4px solid #f59e0b;
+}
+
+.room-full {
+  border-left: 4px solid #ef4444;
+}
+
+/* Smooth transitions for all interactive elements */
+button, .card, .badge {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Dark theme overrides */
+.dark {
+  color-scheme: dark;
+}
+
+/* Custom number input styling */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Toast customization */
+.sonner-toast {
+  font-family: 'Exo 2', sans-serif;
+}
+
+/* Error states */
+.error-border {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 1px #ef4444;
+}
+
+/* Success states */
+.success-border {
+  border-color: #10b981;
+  box-shadow: 0 0 0 1px #10b981;
+}
+
+/* Disabled states */
+.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .text-slate-400 {
+    color: #e2e8f0;
+  }
+  
+  .border-slate-600 {
+    border-color: #475569;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Mobile app styles */
+.mobile-app {
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height */
+  overflow: hidden;
+}
+
+/* PWA install prompt styles */
+.install-prompt {
+  position: fixed;
+  bottom: 80px;
+  left: 16px;
+  right: 16px;
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  color: #0f172a;
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(251, 191, 36, 0.3);
+  z-index: 1000;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Mobile button improvements */
+@media (max-width: 768px) {
+  .mobile-btn {
+    font-size: 16px;
+    font-weight: 600;
+    padding: 12px 20px;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .mobile-btn:active {
+    transform: scale(0.98);
+  }
+  
+  .mobile-btn::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.3s, height 0.3s;
+  }
+  
+  .mobile-btn:active::before {
+    width: 200px;
+    height: 200px;
+  }
+}
+
+/* Safe area for devices with notch */
+@supports (padding: max(0px)) {
+  .safe-top {
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  
+  .safe-bottom {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  
+  .safe-left {
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
+  
+  .safe-right {
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+}
+
+/* Landscape mode adjustments */
+@media screen and (orientation: landscape) and (max-height: 600px) {
+  .mobile-header {
+    padding: 8px 16px;
+  }
+  
+  .mobile-bottom-nav {
+    height: 60px;
+  }
+}
+
+/* 🏆 Winner Announcement Screen Animations */
+
+/* Fade in animation for winner screen overlay */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Slide up animation for winner card */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(50px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Confetti animation for celebration effect */
+@keyframes confetti {
+  0% {
+    transform: translateY(-100vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+/* Pulse animation for winner elements */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(251, 191, 36, 0.8);
+  }
+}
+
+/* Gold color utilities for winner screen */
+.text-gold-400 {
+  color: rgb(251, 191, 36);
+}
+
+.text-gold-500 {
+  color: rgb(245, 158, 11);
+}
+
+.border-gold-500 {
+  border-color: rgb(245, 158, 11);
+}
+
+.border-gold-400 {
+  border-color: rgb(251, 191, 36);
+}
+
+.from-gold-400 {
+  --tw-gradient-from: rgb(251, 191, 36);
+  --tw-gradient-to: rgb(251 191 36 / 0);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+
+.to-gold-500 {
+  --tw-gradient-to: rgb(245, 158, 11);
+}
+
+.to-gold-600 {
+  --tw-gradient-to: rgb(217, 119, 6);
+}
+
+.shadow-gold-500 {
+  --tw-shadow-color: rgb(245, 158, 11);
+  --tw-shadow: var(--tw-shadow-colored);
+}
+
+/* Apply animations - Enhanced for all devices */
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.animate-confetti {
+  animation: confetti 3s linear infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Ensure winner screen displays on all screen sizes */
+@media (min-width: 769px) {
+  /* Desktop specific winner screen adjustments */
+  /* Winner screen stays scrollable on desktop too */
+  .winner-screen-overlay {
+    padding: 2rem 1rem;
+  }
+}
+
+/* Winner screen overlay - Scrollable and responsive */
+.winner-screen-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 9999 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  background-color: rgba(0, 0, 0, 0.9) !important;
+  backdrop-filter: blur(4px) !important;
+}
+
+/* Ensure body allows scrolling when winner screen is shown */
+body:has(.winner-screen-overlay) {
+  overflow: auto !important;
+}

@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+        <meta name="theme-color" content="#fbbf24" />
+        <!-- EXTREME CACHE BUSTING -->
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0" />
+        <meta http-equiv="Pragma" content="no-cache" />
+        <meta http-equiv="Expires" content="-1" />
+        <meta name="cache-control" content="no-cache" />
+        <meta name="version" content="WORK-FOR-CASINO-v9.1-NO-CACHE" />
+        <meta name="build-timestamp" content="1736960000" />
+        <parameter name="app-version" content="9.1-WORK-FOR-CASINO-20250116120000" />
+        <!-- Telegram WebApp specific no-cache -->
+        <meta name="telegram-cache" content="none" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta name="description" content="SpinWar - Spin the wheel, win the pool. 3 players battle for the prize!" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="SpinWar" />
+        <link rel="manifest" href="/manifest.json" />
+        <!-- Telegram Web App Script -->
+        <script src="https://telegram.org/js/telegram-web-app.js"></script>
+        <!--
+      manifest.json provides metadata used when your web app is installed on a
+      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
+    -->
+        <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
+
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
+    -->
+        <title>SpinWar</title>
+        <!--
+        These two scripts have been added for the testing, please do not edit or remove them
+        -->
+        <script src="https://unpkg.com/rrweb@latest/dist/rrweb.min.js"></script>
+        <script src="https://d2adkz2s9zrlge.cloudfront.net/rrweb-recorder-20250919-1.js"></script>
+    </head>
+    <body>
+        <noscript>You need to enable JavaScript to run this app.</noscript>
+        <div id="root"></div>
+        <!--
+      This HTML file is a template.
+      If you open it directly in the browser, you will see an empty page.
+
+      You can add webfonts, meta tags, or analytics to this file.
+      The build step will place the bundled scripts into the <body> tag.
+
+      To begin the development, run `npm start` or `yarn start`.
+      To create a production bundle, use `npm run build` or `yarn build`.
+    -->
+        <!-- Emergent badge removed as requested -->
+        <script>
+            !(function (t, e) {
+                var o, n, p, r;
+                e.__SV ||
+                    ((window.posthog = e),
+                    (e._i = []),
+                    (e.init = function (i, s, a) {
+                        function g(t, e) {
+                            var o = e.split(".");
+                            2 == o.length && ((t = t[o[0]]), (e = o[1])),
+                                (t[e] = function () {
+                                    t.push(
+                                        [e].concat(
+                                            Array.prototype.slice.call(
+                                                arguments,
+                                                0,
+                                            ),
+                                        ),
+                                    );
+                                });
+                        }
+                        ((p = t.createElement("script")).type =
+                            "text/javascript"),
+                            (p.crossOrigin = "anonymous"),
+                            (p.async = !0),
+                            (p.src =
+                                s.api_host.replace(
+                                    ".i.posthog.com",
+                                    "-assets.i.posthog.com",
+                                ) + "/static/array.js"),
+                            (r =
+                                t.getElementsByTagName(
+                                    "script",
+                                )[0]).parentNode.insertBefore(p, r);
+                        var u = e;
+                        for (
+                            void 0 !== a ? (u = e[a] = []) : (a = "posthog"),
+                                u.people = u.people || [],
+                                u.toString = function (t) {
+                                    var e = "posthog";
+                                    return (
+                                        "posthog" !== a && (e += "." + a),
+                                        t || (e += " (stub)"),
+                                        e
+                                    );
+                                },
+                                u.people.toString = function () {
+                                    return u.toString(1) + ".people (stub)";
+                                },
+                                o =
+                                    "init me ws ys ps bs capture je Di ks register register_once register_for_session unregister unregister_for_session Ps getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey canRenderSurveyAsync identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty Es $s createPersonProfile Is opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing Ss debug xs getPageViewId captureTraceFeedback captureTraceMetric".split(
+                                        " ",
+                                    ),
+                                n = 0;
+                            n < o.length;
+                            n++
+                        )
+                            g(u, o[n]);
+                        e._i.push([i, s, a]);
+                    }),
+                    (e.__SV = 1));
+            })(document, window.posthog || []);
+            posthog.init("phc_yJW1VjHGGwmCbbrtczfqqNxgBDbhlhOWcdzcIJEOTFE", {
+                api_host: "https://us.i.posthog.com",
+                person_profiles: "identified_only", // or 'always' to create profiles for anonymous users as well
+            });
+        </script>
+        <script>
+            // EXTREME CACHE CLEARING - v8.0 WINNER FIX
+            console.log('🔥 NUCLEAR CACHE CLEAR v8.0: Starting...');
+            
+            // Register service worker v9.0 - SYNC FIX BUILD
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .then(function(registration) {
+                        console.log('✅ SW v9.0 registered:', registration.scope);
+                        
+                        // Listen for updates
+                        registration.addEventListener('updatefound', () => {
+                            console.log('🔄 SW v9.0: Update found!');
+                            const newWorker = registration.installing;
+                            
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'activated') {
+                                    console.log('🎉 SW v9.0: New version activated!');
+                                }
+                            });
+                        });
+                        
+                        // Check for updates every 60 seconds
+                        setInterval(() => {
+                            registration.update();
+                        }, 60000);
+                    })
+                    .catch(function(error) {
+                        console.error('❌ SW registration failed:', error);
+                    });
+                
+                // Listen for SW messages
+                navigator.serviceWorker.addEventListener('message', (event) => {
+                    console.log('📨 Message from SW:', event.data);
+                    
+                    if (event.data && event.data.type === 'SW_UPDATED') {
+                        console.log(`🔄 SW v9.0 UPDATE: ${event.data.version} (${event.data.timestamp})`);
+                        console.log('♻️ New version available - Telegram will reload on next visit');
+                    }
+                });
+            }
+            
+            // Clear all caches
+            if ('caches' in window) {
+                caches.keys().then(function(names) {
+                    names.forEach(function(name) {
+                        console.log('🗑️ Deleting cache:', name);
+                        caches.delete(name);
+                    });
+                });
+            }
+            
+            // Force version update
+            const V9_VERSION = '9.0-SYNC-FIX-GET-READY-20250114182000';
+            const stored = localStorage.getItem('app_version');
+            
+            console.log('📦 Version check:', stored, '→', V9_VERSION);
+            
+            if (stored !== V9_VERSION) {
+                console.log('🧹 Clearing old storage for v9.0...');
+                
+                // Keep only essential data
+                const eur = localStorage.getItem('casino_last_eur_amount');
+                const price = localStorage.getItem('casino_last_sol_eur_price');
+                
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                // Restore essential data
+                if (eur) localStorage.setItem('casino_last_eur_amount', eur);
+                if (price) localStorage.setItem('casino_last_sol_eur_price', price);
+                localStorage.setItem('app_version', V9_VERSION);
+                console.log('✅ Version updated to v9.0');
+                
+                console.log('✅ Storage cleared, version:', V8_VERSION);
+            }
+            
+            console.log('✅ CACHE CLEAR COMPLETE - App Version:', V8_VERSION);
+        </script>
+    </body>
+</html>
