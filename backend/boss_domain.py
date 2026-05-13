@@ -15,16 +15,24 @@ DAMAGE_VARIANCE = 2  # ±2
 BOSS_NAMES = ["Shadow Drake", "Iron Golem", "Void Titan", "Storm Wyrm"]
 
 TOP_DAMAGE_COINS_BONUS = 0.5  # +50% for the top damage dealer
-RARE_DROP_THRESHOLD = 100
-RARE_DROP_CHANCE = 0.10
-COMMON_DROP_THRESHOLD = 50
-COMMON_DROP_CHANCE = 0.05
+EPIC_DROP_THRESHOLD = 70
+EPIC_DROP_CHANCE = 0.12
+LEGENDARY_DROP_THRESHOLD = 140
+LEGENDARY_DROP_CHANCE = 0.05
 
 
 
-def compute_attack_damage(rng: Optional[random.Random] = None) -> int:
+def compute_attack_damage(
+    rng: Optional[random.Random] = None,
+    *,
+    flat_bonus: int = 0,
+    attack_percent_bonus: float = 0.0,
+    boss_damage_percent: float = 0.0,
+) -> int:
     rng = rng or random.SystemRandom()
-    return BASE_DAMAGE + rng.randint(-DAMAGE_VARIANCE, DAMAGE_VARIANCE)
+    damage = BASE_DAMAGE + rng.randint(-DAMAGE_VARIANCE, DAMAGE_VARIANCE) + int(flat_bonus or 0)
+    multiplier = 1.0 + float(attack_percent_bonus or 0.0) + float(boss_damage_percent or 0.0)
+    return max(1, int(round(damage * multiplier)))
 
 
 def compute_phase(current_hp: int, max_hp: int) -> int:
@@ -44,6 +52,7 @@ class ParticipantReward:
     coins: int
     xp: int
     item_drop: Optional[str]
+    item_drop_tier: Optional[str] = None
 
 
 def compute_rewards(
@@ -68,11 +77,12 @@ def compute_rewards(
         coins = total_damage * 2
         xp = max(1, total_damage * XP_BOSS_HIT // 10) + (XP_DEFEAT_BONUS if defeated else 0)
         item_drop: Optional[str] = None
+        item_drop_tier: Optional[str] = None
 
-        if total_damage > RARE_DROP_THRESHOLD and rng.random() < RARE_DROP_CHANCE:
-            item_drop = "Rare"
-        elif total_damage > COMMON_DROP_THRESHOLD and rng.random() < COMMON_DROP_CHANCE:
-            item_drop = "Common"
+        if total_damage >= LEGENDARY_DROP_THRESHOLD and rng.random() < LEGENDARY_DROP_CHANCE:
+            item_drop_tier = "legendary"
+        elif total_damage >= EPIC_DROP_THRESHOLD and rng.random() < EPIC_DROP_CHANCE:
+            item_drop_tier = "epic"
 
         if user_id == top_user_id:
             coins = int(coins * (1 + TOP_DAMAGE_COINS_BONUS))
@@ -82,6 +92,7 @@ def compute_rewards(
             coins=coins,
             xp=xp,
             item_drop=item_drop,
+            item_drop_tier=item_drop_tier,
         ))
 
     return rewards

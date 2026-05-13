@@ -1,72 +1,212 @@
-import { useEffect, useRef, useState } from 'react';
-import { CLASS_INFO, getCharacterImage } from '../../utils/characters';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Shield, Sparkles, Sword } from 'lucide-react';
+import { getCharacterImage, getClassInfo, normalizeCharacterClass } from '../../utils/characters';
+import { getItemStatRows, getPassiveText } from '../../utils/itemPresentation';
 
-function CharSlot({ player, isYou, hasOpponent }) {
-  const info = CLASS_INFO[player?.class_name] || CLASS_INFO.warrior;
-  const imgSrc = getCharacterImage(player?.class_name);
-  const joined = isYou ? true : hasOpponent;
+const PANEL_BG = 'linear-gradient(180deg, #0c1120 0%, #111827 48%, #0b1220 100%)';
 
+function getDisplayName(player, isYou) {
+  if (!player) return 'Waiting';
+  if (player.is_anonymous && !isYou) return player.first_name || 'Anonymous';
+  return player.first_name || player.username || (isYou ? 'You' : 'Opponent');
+}
+
+function getLoadoutSummary(player) {
+  return [
+    { key: 'weapon', label: 'Weapon', gear: player?.weapon || null, value: player?.weapon?.name || 'None', Icon: Sword, color: '#60a5fa' },
+    { key: 'ability', label: 'Ability', gear: player?.ability || null, value: player?.ability?.name || 'None', Icon: Sparkles, color: '#c084fc' },
+    { key: 'armor', label: 'Armor', gear: player?.armor || null, value: player?.armor?.name || 'None', Icon: Shield, color: '#fbbf24' },
+  ];
+}
+
+function LoadoutRow({ item }) {
+  const { Icon } = item;
+  const stats = getItemStatRows(item.gear).slice(0, 2);
+  const passive = getPassiveText(item.gear);
+  const enchantLevel = Number(item.gear?.enchant_level || 0);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#c9a84c', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-        {isYou ? 'YOU' : 'OPPONENT'}
-      </div>
-
-      <div style={{ position: 'relative', width: 120, height: 160 }}>
-        <img
-          src={imgSrc}
-          alt={info.name}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain',
-            filter: joined
-              ? `drop-shadow(0 0 15px ${info.glow})`
-              : 'grayscale(1) brightness(0.25)',
-            transition: 'filter 0.5s ease',
-            transform: isYou ? 'none' : 'scaleX(-1)',
-          }}
-        />
-        {!joined && (
-          <div style={{
-            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 13, fontWeight: 700,
-          }}>
-            <span style={{ fontSize: 24 }}>???</span>
-          </div>
-        )}
-      </div>
-
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'white' }}>
-          {isYou
-            ? (player?.first_name || 'You')
-            : joined
-            ? (player?.first_name || 'Opponent')
-            : '???'}
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 8,
+        minWidth: 0,
+        padding: '7px 9px',
+        borderRadius: 10,
+        background: 'rgba(15,23,42,0.72)',
+        border: '1px solid rgba(148,163,184,0.12)',
+      }}
+    >
+      <Icon style={{ width: 13, height: 13, color: item.color, flexShrink: 0, marginTop: 2 }} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
+            {item.label}
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              color: '#e2e8f0',
+              fontWeight: 700,
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {item.value}
+          </span>
+          {item.gear ? (
+            <span style={{ color: '#c9a84c', fontSize: 10, fontWeight: 900, flexShrink: 0 }}>+{enchantLevel}</span>
+          ) : null}
         </div>
-        {joined && (
-          <div style={{ fontSize: 12, color: info.color, fontWeight: 700 }}>
-            {info.icon} {info.name}
+        {stats.length ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+            {stats.map((stat) => (
+              <span key={`${item.key}-${stat.key || stat.label}`} style={{ color: item.color, fontSize: 9, fontWeight: 800 }}>
+                {stat.label}
+              </span>
+            ))}
           </div>
-        )}
-        {!isYou && !joined && (
-          <div style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>Waiting...</div>
-        )}
-        {player?.level && (
-          <div style={{ fontSize: 11, color: '#64748b' }}>Lv.{player.level}</div>
-        )}
+        ) : null}
+        {passive ? (
+          <div style={{ color: '#cbd5e1', fontSize: 9, fontWeight: 650, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {passive}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
-export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmLeave, toast }) {
-  const stakeAmount = lobbyData.bet_amount || 0;
-  const prizePool = stakeAmount * 2;
-  const opponent = players.find((p) => String(p.user_id) !== String(user?.id));
-  const isReady = players.length >= 2;
+function CharacterCard({ player, label, isYou, ready }) {
+  const className = normalizeCharacterClass(player?.class_name);
+  const classInfo = getClassInfo(className, null);
+  const imgSrc = getCharacterImage(className, null);
+  const loadout = getLoadoutSummary(player);
 
+  return (
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        borderRadius: 18,
+        padding: 14,
+        background: ready ? 'rgba(15,23,42,0.86)' : 'rgba(15,23,42,0.55)',
+        border: `1px solid ${ready ? 'rgba(201,168,76,0.22)' : 'rgba(71,85,105,0.24)'}`,
+        boxShadow: ready ? '0 10px 24px rgba(2,6,23,0.32)' : 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: '0.14em' }}>
+          {label}
+        </span>
+        {player?.level ? (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              color: '#f8fafc',
+              padding: '4px 8px',
+              borderRadius: 999,
+              background: 'rgba(30,41,59,0.9)',
+              border: '1px solid rgba(148,163,184,0.18)',
+            }}
+          >
+            Lv.{player.level}
+          </span>
+        ) : null}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div
+          style={{
+            width: 94,
+            height: 120,
+            borderRadius: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'radial-gradient(circle at 50% 30%, rgba(59,130,246,0.12) 0%, rgba(15,23,42,0.08) 55%, rgba(15,23,42,0.02) 100%)',
+            border: '1px solid rgba(148,163,184,0.14)',
+            overflow: 'hidden',
+            flexShrink: 0,
+          }}
+        >
+          {imgSrc ? (
+            <img
+              src={imgSrc}
+              alt={classInfo?.name || 'Character'}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                transform: isYou ? 'none' : 'scaleX(-1)',
+                filter: classInfo ? `drop-shadow(0 0 12px ${classInfo.glow})` : 'none',
+                opacity: ready ? 1 : 0.6,
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: 56,
+                height: 88,
+                borderRadius: 12,
+                background: 'linear-gradient(180deg, rgba(51,65,85,0.95) 0%, rgba(15,23,42,0.95) 100%)',
+                border: '1px solid rgba(100,116,139,0.28)',
+              }}
+            />
+          )}
+        </div>
+
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 800,
+              color: '#f8fafc',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {getDisplayName(player, isYou)}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: classInfo?.color || '#94a3b8' }}>
+            {classInfo ? `${classInfo.icon} ${classInfo.name}` : ready ? 'Class pending' : 'Awaiting player'}
+          </div>
+          <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+            {loadout.map((item) => (
+              <LoadoutRow key={item.key} item={item} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmLeave }) {
+  const stakeAmount = Number(lobbyData?.bet_amount || 0);
+  const prizePool = stakeAmount * 2;
+  const userId = String(user?.id || '');
+
+  const { userPlayer, opponentPlayer } = useMemo(() => {
+    const allPlayers = Array.isArray(players) ? players : [];
+    const me = allPlayers.find((player) => String(player.user_id) === userId) || {
+      ...(user || {}),
+      user_id: user?.id,
+      first_name: user?.first_name,
+      username: user?.username || user?.telegram_username,
+      photo_url: user?.photo_url,
+      class_name: user?.class_name,
+      level: user?.level,
+    };
+    const opponent = allPlayers.find((player) => String(player.user_id) !== userId) || null;
+    return { userPlayer: me, opponentPlayer: opponent };
+  }, [players, user, userId]);
+
+  const isReady = Boolean(opponentPlayer);
   const [countdown, setCountdown] = useState(null);
   const timerRef = useRef(null);
 
@@ -75,7 +215,10 @@ export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmL
       setCountdown(5);
       timerRef.current = setInterval(() => {
         setCountdown((prev) => {
-          if (prev == null || prev <= 1) { clearInterval(timerRef.current); return 0; }
+          if (prev == null || prev <= 1) {
+            clearInterval(timerRef.current);
+            return 0;
+          }
           return prev - 1;
         });
       }, 1000);
@@ -86,93 +229,113 @@ export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmL
     return () => clearInterval(timerRef.current);
   }, [isReady]);
 
-  const userPlayer = { ...(user || {}), class_name: user?.class_name };
-  const opponentPlayer = opponent ? { ...opponent } : null;
-
   return (
-    <div style={{
-      background: 'linear-gradient(180deg, #0a0a1a 0%, #16213e 50%, #0a0a1a 100%)',
-      border: '1px solid rgba(201,168,76,0.3)',
-      borderRadius: 20,
-      overflow: 'hidden',
-      maxWidth: 480,
-      margin: '0 auto',
-    }}>
-      {/* Top shimmer bar */}
-      <div style={{ height: 3, background: 'linear-gradient(90deg, #8b0000, #c9a84c, #4a90d9, #c9a84c, #8b0000)' }} />
+    <div
+      style={{
+        background: PANEL_BG,
+        border: '1px solid rgba(201,168,76,0.24)',
+        borderRadius: 22,
+        overflow: 'hidden',
+        maxWidth: 520,
+        margin: '0 auto',
+        boxShadow: '0 16px 36px rgba(2,6,23,0.32)',
+      }}
+    >
+      <div style={{ height: 3, background: 'linear-gradient(90deg, #7f1d1d, #c9a84c, #2563eb, #c9a84c, #7f1d1d)' }} />
 
-      {/* Header */}
-      <div style={{ padding: '18px 20px 14px', textAlign: 'center', borderBottom: '1px solid rgba(201,168,76,0.15)' }}>
-        <div style={{ fontSize: 18, fontWeight: 900, color: '#c9a84c', letterSpacing: '0.08em' }}>
-          ⚔️ BRONZE ARENA ⚔️
-        </div>
-        <div style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', marginTop: 3 }}>
-          "The Gods are watching"
-        </div>
-        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>PRIZE POOL</div>
-          <div style={{ fontSize: 18, fontWeight: 900, color: '#ffd700' }}>
-            {prizePool.toLocaleString()} coins
+      <div style={{ padding: '18px 16px 14px', borderBottom: '1px solid rgba(201,168,76,0.14)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#c9a84c', textTransform: 'uppercase', letterSpacing: '0.16em' }}>
+              Bronze Arena
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: '#f8fafc', marginTop: 4 }}>
+              Pre-fight lobby
+            </div>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+              Confirm class, level, and loadout before the duel starts.
+            </div>
+          </div>
+
+          <div
+            style={{
+              minWidth: 96,
+              borderRadius: 16,
+              padding: '10px 12px',
+              background: 'rgba(15,23,42,0.85)',
+              border: '1px solid rgba(148,163,184,0.16)',
+              textAlign: 'right',
+            }}
+          >
+            <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Prize pool
+            </div>
+            <div style={{ fontSize: 20, color: '#fbbf24', fontWeight: 900, marginTop: 4 }}>
+              {prizePool.toLocaleString()}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* VS layout */}
-      <div style={{ padding: '20px 16px', display: 'flex', alignItems: 'flex-start', gap: 0 }}>
-        <CharSlot player={userPlayer} isYou hasOpponent={isReady} />
-
-        {/* VS divider */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 12px 0', flexShrink: 0 }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: '#c9a84c', textShadow: '0 0 16px rgba(201,168,76,0.6)' }}>
+      <div style={{ padding: 14, display: 'grid', gap: 10 }}>
+        <CharacterCard player={userPlayer} label="You" isYou ready />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div
+            style={{
+              minWidth: 64,
+              textAlign: 'center',
+              padding: '6px 14px',
+              borderRadius: 999,
+              background: 'rgba(12,18,32,0.96)',
+              border: '1px solid rgba(201,168,76,0.18)',
+              color: '#c9a84c',
+              fontSize: 12,
+              fontWeight: 900,
+              letterSpacing: '0.16em',
+            }}
+          >
             VS
           </div>
         </div>
-
-        <CharSlot player={opponentPlayer} isYou={false} hasOpponent={isReady} />
+        <CharacterCard player={opponentPlayer} label="Opponent" isYou={false} ready={isReady} />
       </div>
 
-      {/* Status bar */}
-      <div style={{
-        margin: '0 16px 16px',
-        borderRadius: 12,
-        padding: '12px 16px',
-        background: isReady ? 'rgba(34,197,94,0.1)' : 'rgba(201,168,76,0.08)',
-        border: `1px solid ${isReady ? 'rgba(34,197,94,0.3)' : 'rgba(201,168,76,0.2)'}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 10,
-      }}>
-        {isReady ? (
-          <>
-            <span style={{ fontSize: 16 }}>⚔️</span>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#22c55e' }}>
-                Battle starts in {countdown ?? '...'}s
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>Both warriors are ready</div>
-            </div>
-          </>
-        ) : (
-          <>
-            <span className="arena-waiting-pulse" style={{ fontSize: 16 }}>⏳</span>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#c9a84c' }}>
-                Waiting for opponent...
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>Your stake: {stakeAmount} coins</div>
-            </div>
-          </>
-        )}
-      </div>
+      <div
+        style={{
+          margin: '0 14px 14px',
+          borderRadius: 16,
+          padding: '12px 14px',
+          background: isReady ? 'rgba(22,101,52,0.18)' : 'rgba(30,41,59,0.7)',
+          border: `1px solid ${isReady ? 'rgba(34,197,94,0.32)' : 'rgba(148,163,184,0.16)'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: isReady ? '#4ade80' : '#f8fafc' }}>
+            {isReady ? `Battle starts in ${countdown ?? '...'}s` : 'Waiting for opponent'}
+          </div>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+            {isReady ? 'Both loadouts locked in for this match.' : `Stake locked: ${stakeAmount.toLocaleString()} coins`}
+          </div>
+        </div>
 
-      {/* Leave button */}
-      <div style={{ padding: '0 16px 16px' }}>
         <button
           onClick={() => setConfirmLeave(true)}
           style={{
-            width: '100%', padding: '10px', borderRadius: 10, border: '1px solid rgba(220,38,38,0.3)',
-            background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            height: 42,
+            minWidth: 112,
+            padding: '0 14px',
+            borderRadius: 12,
+            border: '1px solid rgba(239,68,68,0.28)',
+            background: 'rgba(127,29,29,0.12)',
+            color: '#f87171',
+            fontWeight: 800,
+            fontSize: 13,
+            cursor: 'pointer',
+            flexShrink: 0,
           }}
         >
           Leave Arena

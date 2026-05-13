@@ -7,7 +7,9 @@
       "Bash(docker-compose config *)",
       "Bash(docker-compose build *)",
       "Bash(docker-compose up *)",
-      "PowerShell(Get-Item *)"
+      "PowerShell(Get-Item *)",
+      "Bash(python -m pytest -v)",
+      "Bash(pip install *)"
     ]
   }
 }

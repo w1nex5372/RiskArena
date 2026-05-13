@@ -44,7 +44,26 @@ from manual_credit_logger import credit_tokens_manually, ManualCreditLogger
 import socket_rooms
 import arena_repo
 import progression as _progression
+import daily_quests as _daily_quests
 from auth import SESSION_COOKIE, create_session_token, get_authenticated_user_id
+from itemization import (
+    SCROLL_SHOP,
+    SCROLL_TYPES,
+    aggregate_item_modifiers,
+    can_user_equip_item,
+    choose_inventory_copy_for_equip,
+    enchant_success_chance,
+    item_stat_payload,
+    is_enchantable_slot,
+    is_shop_tier,
+    max_enchant_for_tier,
+    modifiers_to_dict,
+    next_enchant_preview,
+    resolve_effective_equipped_inventory_ids,
+    resolve_enchant_attempt,
+    stat_preview,
+    tier_to_rarity,
+)
 
 # Get environment variables
 PG_HOST = os.environ.get('PG_HOST', 'localhost')
@@ -326,6 +345,11 @@ class RoomPlayer(BaseModel):
     photo_url: Optional[str] = None  # Telegram profile photo
     bet_amount: int
     is_anonymous: bool = False
+    level: int = Field(default=1)
+    class_name: Optional[str] = None
+    weapon: Optional[Dict[str, Any]] = None
+    armor: Optional[Dict[str, Any]] = None
+    ability: Optional[Dict[str, Any]] = None
     joined_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class GameResult(BaseModel):
@@ -356,6 +380,38 @@ class JoinRoomRequest(BaseModel):
     user_id: str
     bet_amount: int = Field(ge=0, le=1_000_000)
     is_anonymous: bool = False
+
+
+async def _fetch_equipped_snapshot(user_id: str) -> Dict[str, Any]:
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT ei.slot, ei.inventory_id, COALESCE(inv.enchant_level, 0) AS enchant_level, i.*
+            FROM equipped_items ei
+            JOIN items i ON i.id = ei.item_id
+            LEFT JOIN LATERAL (
+                SELECT id, enchant_level
+                FROM inventory
+                WHERE user_id = ei.user_id
+                  AND item_id = ei.item_id
+                  AND (ei.inventory_id IS NULL OR id = ei.inventory_id)
+                ORDER BY
+                    CASE WHEN id = ei.inventory_id THEN 0 ELSE 1 END,
+                    acquired_at ASC,
+                    id ASC
+                LIMIT 1
+            ) inv ON TRUE
+            WHERE ei.user_id = $1
+            """,
+            user_id,
+        )
+
+    equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None}
+    for row in rows:
+        slot = row["slot"]
+        if slot in equipped:
+            equipped[slot] = _serialize_equipped_row(row)
+    return equipped
 
 # In-memory storage for active rooms (in production, use Redis)
 active_rooms: Dict[str, GameRoom] = {}
@@ -2419,6 +2475,8 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
     if joining_sid:
         await sio.emit('balance_updated', {'user_id': request.user_id, 'new_balance': new_balance_after_join}, room=joining_sid)
     
+    equipped = await _fetch_equipped_snapshot(request.user_id)
+
     # Add player to room with full Telegram info
     if request.is_anonymous:
         anon_count = sum(1 for p in target_room.players if p.is_anonymous)
@@ -2430,7 +2488,12 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             last_name='',
             photo_url='',
             bet_amount=request.bet_amount,
-            is_anonymous=True
+            is_anonymous=True,
+            level=int(user_doc.get('level') or 1),
+            class_name=user_doc.get('class_name'),
+            weapon=equipped.get('weapon'),
+            armor=equipped.get('armor'),
+            ability=equipped.get('ability'),
         )
     else:
         player = RoomPlayer(
@@ -2440,7 +2503,12 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             last_name=user_doc.get('last_name', ''),
             photo_url=user_doc.get('photo_url', ''),
             bet_amount=request.bet_amount,
-            is_anonymous=False
+            is_anonymous=False,
+            level=int(user_doc.get('level') or 1),
+            class_name=user_doc.get('class_name'),
+            weapon=equipped.get('weapon'),
+            armor=equipped.get('armor'),
+            ability=equipped.get('ability'),
         )
     target_room.players.append(player)
     target_room.prize_pool += request.bet_amount
@@ -2646,11 +2714,93 @@ async def get_room_details(room_id: str):
         "finished_at": room.finished_at.isoformat() if room.finished_at else None,
     }
 
+@api_router.get("/leaderboard/my-rank")
+async def get_my_rank(request: Request):
+    user_id = await get_authenticated_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    async with get_pool().acquire() as conn:
+        coins_rank = await conn.fetchval("""
+            SELECT COUNT(*)+1 FROM users
+            WHERE token_balance > (SELECT token_balance FROM users WHERE id=$1)
+        """, user_id)
+        wins_rank = await conn.fetchval("""
+            SELECT COUNT(*)+1 FROM (
+                SELECT u.id, COUNT(am.id) FILTER (WHERE am.winner_user_id = u.id) AS wins
+                FROM users u
+                LEFT JOIN arena_matches am ON am.status='finished'
+                     AND (am.player_one_id=u.id OR am.player_two_id=u.id)
+                GROUP BY u.id
+            ) sub
+            WHERE wins > (
+                SELECT COUNT(am2.id) FILTER (WHERE am2.winner_user_id=$1)
+                FROM arena_matches am2
+                WHERE am2.status='finished'
+                  AND (am2.player_one_id=$1 OR am2.player_two_id=$1)
+            )
+        """, user_id)
+        level_rank = await conn.fetchval("""
+            SELECT COUNT(*)+1 FROM users
+            WHERE xp > (SELECT xp FROM users WHERE id=$1)
+        """, user_id)
+    return {
+        "coins_rank": int(coins_rank or 1),
+        "wins_rank": int(wins_rank or 1),
+        "level_rank": int(level_rank or 1),
+    }
+
+
 @api_router.get("/leaderboard")
-async def get_leaderboard():
-    """Get top players by token balance"""
-    leaderboard = await dbq.get_leaderboard(10)
-    return {"leaderboard": leaderboard}
+async def get_leaderboard(tab: str = "coins"):
+    if tab not in ("coins", "wins", "level"):
+        tab = "coins"
+    leaderboard = await dbq.get_leaderboard(tab=tab, limit=20)
+    return {"leaderboard": leaderboard, "tab": tab}
+
+
+@api_router.get("/daily-quests")
+async def get_daily_quests(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    quests = await _daily_quests.get_quests_for_user(user_id)
+    return {"quests": quests}
+
+
+@api_router.post("/daily-quests/{quest_key}/claim")
+async def claim_daily_quest(quest_key: str, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        coins, xp = await _daily_quests.claim_quest(user_id, quest_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Award coins and XP
+    updated_user = None
+    async with get_pool().acquire() as conn:
+        if coins > 0:
+            updated_user = await conn.fetchrow(
+                "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1 RETURNING token_balance, xp, level",
+                user_id, coins
+            )
+        if xp > 0:
+            cur_row = await conn.fetchrow("SELECT xp FROM users WHERE id = $1", user_id)
+            cur_xp = int(cur_row["xp"] or 0)
+            xp_res = _progression.award_xp_result(cur_xp, xp)
+            updated_user = await conn.fetchrow(
+                "UPDATE users SET xp = $2, level = $3 WHERE id = $1 RETURNING token_balance, xp, level",
+                user_id, xp_res["new_xp"], xp_res["new_level"]
+            )
+    return {
+        "success": True,
+        "reward_coins": coins,
+        "reward_xp": xp,
+        "new_balance": int(updated_user["token_balance"]) if updated_user else None,
+        "new_xp": int(updated_user["xp"]) if updated_user else None,
+        "new_level": int(updated_user["level"]) if updated_user else None,
+    }
+
 
 @api_router.get("/game-history")
 async def get_game_history(limit: int = 10, user_id: str = ""):
@@ -2818,20 +2968,44 @@ async def get_user_prizes(user_id: str):
 # ─────────────────────────────────────────────────────────────────
 
 _TIER_ORDER = {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5}
-_TIER_TO_RARITY = {
-    "common": "Common",
-    "uncommon": "Rare",
-    "rare": "Rare",
-    "epic": "Epic",
-    "legendary": "Legendary",
-}
+
+
+def _serialize_item_row(row: Any) -> Dict[str, Any]:
+    item = dict(row)
+    item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
+    item["item_id"] = item.get("item_id") or item.get("id")
+    item["rarity"] = tier_to_rarity(item.get("tier"))
+    item["stats"] = stat_preview(item)
+    item.update(item_stat_payload(item))
+    return item
+
+
+def _serialize_inventory_row(row: Any) -> Dict[str, Any]:
+    item = dict(row)
+    item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
+    item["inventory_id"] = item["id"]
+    item["item_id"] = item["catalog_item_id"]
+    item["type"] = item["slot"]
+    item["category"] = item["slot"]
+    item["rarity"] = tier_to_rarity(item.get("tier"))
+    item["stats"] = stat_preview(item)
+    item.update(item_stat_payload(item))
+    return item
+
+
+def _serialize_equipped_row(row: Any) -> Dict[str, Any]:
+    item = _serialize_item_row(row)
+    item["inventory_id"] = item.get("inventory_id")
+    item["id"] = item.get("inventory_id") or item["item_id"]
+    return item
 
 
 @api_router.get("/shop/items")
 async def get_shop_items():
     async with get_pool().acquire() as conn:
         rows = await conn.fetch("""
-            SELECT * FROM items WHERE price > 0
+            SELECT * FROM items
+            WHERE tier IN ('common', 'uncommon', 'rare')
             ORDER BY
                 CASE tier
                     WHEN 'common'    THEN 1
@@ -2840,13 +3014,19 @@ async def get_shop_items():
                     WHEN 'epic'      THEN 4
                     WHEN 'legendary' THEN 5
                     ELSE 6 END,
-                class_name
+                class_name,
+                slot
         """)
-        return {"items": [dict(r) for r in rows]}
+        return {"items": [_serialize_item_row(r) for r in rows]}
 
 
 class ShopBuyBody(BaseModel):
     item_id: int
+
+
+class ScrollBuyBody(BaseModel):
+    scroll_type: str
+    quantity: int = Field(default=1, ge=1, le=100)
 
 
 @api_router.post("/shop/buy")
@@ -2855,10 +3035,13 @@ async def buy_shop_item(body: ShopBuyBody, http_request: Request):
     async with get_pool().acquire() as conn:
         async with conn.transaction():
             item = await conn.fetchrow(
-                "SELECT * FROM items WHERE id = $1 AND price > 0", body.item_id
+                "SELECT * FROM items WHERE id = $1", body.item_id
             )
-            if not item:
+            if not item or not is_shop_tier(item["tier"]):
                 raise HTTPException(status_code=404, detail="Item not found or not purchasable")
+            user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
+            if not user_row or not can_user_equip_item(user_row["class_name"], item["class_name"]):
+                raise HTTPException(status_code=400, detail="Item class does not match your class")
             updated = await conn.fetchrow(
                 "UPDATE users SET token_balance = token_balance - $2 "
                 "WHERE id = $1 AND token_balance >= $2 RETURNING id",
@@ -2866,7 +3049,7 @@ async def buy_shop_item(body: ShopBuyBody, http_request: Request):
             )
             if not updated:
                 raise HTTPException(status_code=400, detail="Insufficient token balance")
-            rarity = _TIER_TO_RARITY.get(item["tier"], "Common")
+            rarity = tier_to_rarity(item["tier"])
             await conn.execute(
                 """
                 INSERT INTO inventory
@@ -2875,7 +3058,147 @@ async def buy_shop_item(body: ShopBuyBody, http_request: Request):
                 """,
                 str(uuid.uuid4()), user_id, item["slot"], item["name"], rarity, item["id"],
             )
-            return {"success": True, "item": dict(item)}
+            new_balance = await conn.fetchval("SELECT token_balance FROM users WHERE id = $1", user_id)
+            return {"success": True, "item": _serialize_item_row(item), "new_balance": int(new_balance or 0)}
+
+
+@api_router.get("/shop/scrolls")
+async def get_scroll_shop():
+    return {"scrolls": [dict(scroll) for scroll in SCROLL_SHOP.values() if scroll["purchasable"]]}
+
+
+@api_router.post("/shop/scrolls/buy")
+async def buy_scroll(body: ScrollBuyBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    scroll = SCROLL_SHOP.get(body.scroll_type)
+    if not scroll or not scroll["purchasable"]:
+        raise HTTPException(status_code=404, detail="Scroll not found or not purchasable")
+    total_price = scroll["price"] * body.quantity
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            updated = await conn.fetchrow(
+                "UPDATE users SET token_balance = token_balance - $2 WHERE id = $1 AND token_balance >= $2 RETURNING token_balance",
+                user_id,
+                total_price,
+            )
+            if not updated:
+                raise HTTPException(status_code=400, detail="Insufficient token balance")
+            row = await conn.fetchrow(
+                """
+                INSERT INTO item_scrolls (user_id, scroll_type, quantity, updated_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (user_id, scroll_type) DO UPDATE
+                    SET quantity = item_scrolls.quantity + EXCLUDED.quantity,
+                        updated_at = NOW()
+                RETURNING quantity
+                """,
+                user_id,
+                body.scroll_type,
+                body.quantity,
+            )
+            return {
+                "success": True,
+                "scroll_type": body.scroll_type,
+                "quantity": int(row["quantity"]),
+                "new_balance": int(updated["token_balance"]),
+            }
+
+
+@api_router.get("/me/scrolls")
+async def get_my_scrolls(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT scroll_type, quantity FROM item_scrolls WHERE user_id = $1",
+            user_id,
+        )
+    by_type = {row["scroll_type"]: int(row["quantity"]) for row in rows}
+    return {"scrolls": {scroll_type: by_type.get(scroll_type, 0) for scroll_type in sorted(SCROLL_TYPES)}}
+
+
+@api_router.get("/me/upgrade")
+async def get_upgrade_state(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        inventory_rows = await conn.fetch(
+            """
+            SELECT inv.id, inv.user_id, inv.item_type, inv.item_name, inv.item_rarity, inv.source, inv.acquired_at,
+                   inv.enchant_level,
+                   inv.item_id AS catalog_item_id,
+                   i.name, i.description, i.class_name, i.slot, i.tier, i.price,
+                   i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
+                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path
+            FROM inventory inv
+            JOIN items i ON i.id = inv.item_id
+            WHERE inv.user_id = $1 AND i.slot IN ('weapon', 'armor')
+            ORDER BY inv.acquired_at DESC, inv.id DESC
+            """,
+            user_id,
+        )
+        equipped_rows = await conn.fetch(
+            "SELECT user_id, slot, inventory_id, item_id FROM equipped_items WHERE user_id = $1",
+            user_id,
+        )
+        scroll_rows = await conn.fetch(
+            "SELECT scroll_type, quantity FROM item_scrolls WHERE user_id = $1",
+            user_id,
+        )
+    scrolls = {row["scroll_type"]: int(row["quantity"]) for row in scroll_rows}
+    equipped_inventory_ids = resolve_effective_equipped_inventory_ids(
+        [dict(row) for row in inventory_rows],
+        [dict(row) for row in equipped_rows],
+    )
+    items = []
+    for row in inventory_rows:
+        item = _serialize_inventory_row({**dict(row), "equipped": row["id"] in equipped_inventory_ids})
+        item["max_enchant"] = max_enchant_for_tier(item["tier"])
+        item["normal_success_chance"] = enchant_success_chance(item["tier"], item["enchant_level"], "normal_scroll")
+        item["blessed_success_chance"] = enchant_success_chance(item["tier"], item["enchant_level"], "blessed_scroll")
+        item["next_enchant_preview"] = {
+            "normal_scroll": next_enchant_preview(item, "normal_scroll"),
+            "blessed_scroll": next_enchant_preview(item, "blessed_scroll"),
+        }
+        items.append(item)
+    return {
+        "items": items,
+        "scrolls": {scroll_type: scrolls.get(scroll_type, 0) for scroll_type in sorted(SCROLL_TYPES)},
+    }
+
+
+@api_router.get("/inventory")
+@api_router.get("/me/inventory")
+async def get_my_inventory(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT inv.id, inv.user_id, inv.item_type, inv.item_name, inv.item_rarity, inv.source, inv.acquired_at,
+                   inv.enchant_level,
+                   inv.item_id AS catalog_item_id,
+                   i.name, i.description, i.class_name, i.slot, i.tier, i.price,
+                   i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
+                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path
+            FROM inventory inv
+            LEFT JOIN items i ON i.id = inv.item_id
+            WHERE inv.user_id = $1
+            ORDER BY inv.acquired_at DESC, inv.id DESC
+            """,
+            user_id,
+        )
+        equipped_rows = await conn.fetch(
+            "SELECT user_id, slot, inventory_id, item_id FROM equipped_items WHERE user_id = $1",
+            user_id,
+        )
+        equipped_inventory_ids = resolve_effective_equipped_inventory_ids(
+            [dict(row) for row in rows],
+            [dict(row) for row in equipped_rows],
+        )
+        return {
+            "items": [
+                _serialize_inventory_row({**dict(row), "equipped": row["id"] in equipped_inventory_ids})
+                for row in rows
+            ]
+        }
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -2888,52 +3211,218 @@ async def get_my_equipped(http_request: Request):
     async with get_pool().acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT ei.slot, i.*
+            SELECT ei.slot, COALESCE(inv.id, ei.inventory_id) AS inventory_id,
+                   COALESCE(inv.enchant_level, 0) AS enchant_level, i.*
             FROM equipped_items ei
             JOIN items i ON i.id = ei.item_id
+            LEFT JOIN LATERAL (
+                SELECT id, enchant_level
+                FROM inventory
+                WHERE user_id = ei.user_id
+                  AND item_id = ei.item_id
+                  AND (ei.inventory_id IS NULL OR id = ei.inventory_id)
+                ORDER BY
+                    CASE WHEN id = ei.inventory_id THEN 0 ELSE 1 END,
+                    acquired_at ASC,
+                    id ASC
+                LIMIT 1
+            ) inv ON TRUE
             WHERE ei.user_id = $1
             """,
             user_id,
         )
         equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None}
+        equipped_items: List[Dict[str, Any]] = []
         for row in rows:
             slot = row["slot"]
+            item = _serialize_equipped_row(row)
             if slot in equipped:
-                equipped[slot] = dict(row)
-        return {"equipped": equipped}
+                equipped[slot] = item
+            equipped_items.append({
+                "id": row["inventory_id"] or row["id"],
+                "inventory_id": row["inventory_id"],
+                "item_id": row["id"],
+                "slot": row["slot"],
+            })
+        return {
+            "equipped": equipped,
+            "equipped_items": equipped_items,
+            "loadout_effective_stats": modifiers_to_dict(aggregate_item_modifiers([dict(row) for row in rows])),
+        }
 
 
 class EquipBody(BaseModel):
-    item_id: int
+    item_id: Optional[int] = None
+    inventory_id: Optional[str] = None
+
+
+class EnchantBody(BaseModel):
+    inventory_id: str
+    scroll_type: str
 
 
 @api_router.post("/me/equip")
 async def equip_item(body: EquipBody, http_request: Request):
     user_id = get_authenticated_user_id(http_request)
     async with get_pool().acquire() as conn:
-        inv_row = await conn.fetchrow(
-            "SELECT 1 FROM inventory WHERE user_id = $1 AND item_id = $2",
-            user_id, body.item_id,
-        )
+        inv_row = None
+        if body.inventory_id:
+            inv_row = await conn.fetchrow(
+                """
+                SELECT inv.id AS inventory_id, inv.item_id, i.*
+                FROM inventory inv
+                JOIN items i ON i.id = inv.item_id
+                WHERE inv.user_id = $1 AND inv.id = $2
+                """,
+                user_id,
+                body.inventory_id,
+            )
+        elif body.item_id is not None:
+            inv_rows = await conn.fetch(
+                """
+                SELECT inv.id AS inventory_id, inv.item_id, i.*
+                FROM inventory inv
+                JOIN items i ON i.id = inv.item_id
+                WHERE inv.user_id = $1 AND inv.item_id = $2
+                ORDER BY inv.acquired_at ASC, inv.id ASC
+                """,
+                user_id,
+                body.item_id,
+            )
+            try:
+                inv_row = choose_inventory_copy_for_equip([dict(row) for row in inv_rows])
+            except LookupError:
+                inv_row = None
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         if not inv_row:
             raise HTTPException(status_code=404, detail="Item not in your inventory")
-        item = await conn.fetchrow("SELECT * FROM items WHERE id = $1", body.item_id)
-        if not item:
-            raise HTTPException(status_code=404, detail="Item not found")
         user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
-        if not user_row or item["class_name"] != user_row["class_name"]:
+        if not user_row or not can_user_equip_item(user_row["class_name"], inv_row["class_name"]):
             raise HTTPException(status_code=400, detail="Item class does not match your class")
         await conn.execute(
             """
-            INSERT INTO equipped_items (user_id, slot, item_id, equipped_at)
-            VALUES ($1, $2, $3, NOW())
+            INSERT INTO equipped_items (user_id, slot, inventory_id, item_id, equipped_at)
+            VALUES ($1, $2, $3, $4, NOW())
             ON CONFLICT (user_id, slot) DO UPDATE
-                SET item_id = EXCLUDED.item_id,
+                SET inventory_id = EXCLUDED.inventory_id,
+                    item_id = EXCLUDED.item_id,
                     equipped_at = NOW()
             """,
-            user_id, item["slot"], body.item_id,
+            user_id, inv_row["slot"], inv_row["inventory_id"], inv_row["item_id"],
         )
-        return {"success": True}
+        return {"success": True, "equipped_slot": inv_row["slot"], "item_id": inv_row["item_id"], "inventory_id": inv_row["inventory_id"]}
+
+
+@api_router.post("/me/enchant")
+async def enchant_item(body: EnchantBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    if body.scroll_type not in SCROLL_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid scroll type")
+
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT inv.id AS inventory_id, inv.user_id, inv.item_id, inv.enchant_level,
+                       i.name, i.class_name, i.slot, i.tier
+                FROM inventory inv
+                JOIN items i ON i.id = inv.item_id
+                WHERE inv.user_id = $1 AND inv.id = $2
+                FOR UPDATE OF inv
+                """,
+                user_id,
+                body.inventory_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Item not in your inventory")
+            if not is_enchantable_slot(row["slot"]):
+                raise HTTPException(status_code=400, detail="Only weapon and armor items can be enchanted")
+
+            user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
+            if not user_row or not can_user_equip_item(user_row["class_name"], row["class_name"]):
+                raise HTTPException(status_code=400, detail="Item class does not match your class")
+
+            current_level = int(row["enchant_level"] or 0)
+            max_level = max_enchant_for_tier(row["tier"])
+            if current_level >= max_level:
+                raise HTTPException(status_code=400, detail="Item is already at max enchant")
+
+            scroll_row = await conn.fetchrow(
+                """
+                SELECT quantity
+                FROM item_scrolls
+                WHERE user_id = $1 AND scroll_type = $2
+                FOR UPDATE
+                """,
+                user_id,
+                body.scroll_type,
+            )
+            if not scroll_row or int(scroll_row["quantity"] or 0) <= 0:
+                raise HTTPException(status_code=400, detail="Scroll unavailable")
+
+            await conn.execute(
+                """
+                UPDATE item_scrolls
+                SET quantity = quantity - 1,
+                    updated_at = NOW()
+                WHERE user_id = $1 AND scroll_type = $2
+                """,
+                user_id,
+                body.scroll_type,
+            )
+
+            roll = random.SystemRandom().random()
+            result = resolve_enchant_attempt(row["tier"], current_level, body.scroll_type, roll)
+
+            if result["success"]:
+                await conn.execute(
+                    "UPDATE inventory SET enchant_level = $3 WHERE user_id = $1 AND id = $2",
+                    user_id,
+                    body.inventory_id,
+                    result["new_enchant_level"],
+                )
+            elif result["destroyed"]:
+                await conn.execute(
+                    """
+                    DELETE FROM equipped_items
+                    WHERE user_id = $1
+                      AND (
+                          inventory_id = $2
+                          OR (inventory_id IS NULL AND item_id = $3)
+                      )
+                    """,
+                    user_id,
+                    body.inventory_id,
+                    row["item_id"],
+                )
+                await conn.execute(
+                    "DELETE FROM inventory WHERE user_id = $1 AND id = $2",
+                    user_id,
+                    body.inventory_id,
+                )
+
+            remaining_scrolls = await conn.fetchval(
+                "SELECT quantity FROM item_scrolls WHERE user_id = $1 AND scroll_type = $2",
+                user_id,
+                body.scroll_type,
+            )
+
+            return {
+                "success": result["success"],
+                "destroyed": result["destroyed"],
+                "inventory_id": body.inventory_id,
+                "item_id": row["item_id"],
+                "slot": row["slot"],
+                "tier": row["tier"],
+                "scroll_type": body.scroll_type,
+                "previous_enchant_level": result["previous_enchant_level"],
+                "new_enchant_level": result["new_enchant_level"],
+                "max_enchant": max_level,
+                "success_chance": result["success_chance"],
+                "roll": result["roll"],
+                "remaining_scrolls": int(remaining_scrolls or 0),
+            }
 
 
 class UnequipBody(BaseModel):
@@ -2969,7 +3458,7 @@ async def get_starter_items(http_request: Request):
             raise HTTPException(status_code=400, detail="Set your class before claiming starter items")
         class_name = user_row["class_name"]
         starter_items = await conn.fetch(
-            "SELECT * FROM items WHERE class_name = $1 AND tier = 'common'", class_name
+            "SELECT * FROM items WHERE class_name = $1 AND tier = 'common' ORDER BY slot ASC", class_name
         )
         given = []
         for item in starter_items:
@@ -2982,11 +3471,11 @@ async def get_starter_items(http_request: Request):
                     """
                     INSERT INTO inventory
                         (id, user_id, item_type, item_name, item_rarity, equipped, item_id, source, acquired_at)
-                    VALUES ($1, $2, $3, $4, 'Common', FALSE, $5, 'starter', NOW())
+                    VALUES ($1, $2, $3, $4, $5, FALSE, $6, 'starter', NOW())
                     """,
-                    str(uuid.uuid4()), user_id, item["slot"], item["name"], item["id"],
+                    str(uuid.uuid4()), user_id, item["slot"], item["name"], tier_to_rarity(item["tier"]), item["id"],
                 )
-                given.append(dict(item))
+                given.append(_serialize_item_row(item))
         return {"given": given, "class_name": class_name}
 
 @api_router.get("/check-winner/{user_id}")

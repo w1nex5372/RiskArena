@@ -1,32 +1,32 @@
 export const CHARACTER_IMAGES = {
   warrior: '/characters/warrior.png',
-  mage:    '/characters/mage.png',
-  rogue:   '/characters/rogue.png',
+  mage: '/characters/mage.png',
+  rogue: '/characters/rogue.png',
 };
 
 export const CLASS_INFO = {
   warrior: {
     name: 'Warrior',
     title: 'Son of Ares',
-    icon: '⚔️',
-    bonus: '+5 Attack, +10 HP',
-    bonuses: ['+5 Attack damage', '+10 HP'],
+    icon: '\u2694\uFE0F',
+    bonus: '+3 Attack, +15 HP',
+    bonuses: ['+3 Attack damage', '+15 HP'],
     color: '#8b0000',
     glow: 'rgba(139,0,0,0.5)',
   },
   mage: {
     name: 'Mage',
     title: 'Heir of Zeus',
-    icon: '⚡',
-    bonus: '+10 Ability, -10 HP',
-    bonuses: ['+10 Ability damage', '-10 HP'],
+    icon: '\u26A1',
+    bonus: '+8 Ability, -10 HP',
+    bonuses: ['+8 Ability damage', '-10 HP'],
     color: '#4a90d9',
     glow: 'rgba(74,144,217,0.5)',
   },
   rogue: {
     name: 'Rogue',
     title: 'Shadow of Hermes',
-    icon: '🗡️',
+    icon: '\uD83D\uDDE1\uFE0F',
     bonus: '+15% Risk chance',
     bonuses: ['+15% Risk win chance', 'Fast strikes'],
     color: '#c9a84c',
@@ -34,6 +34,19 @@ export const CLASS_INFO = {
   },
 };
 
-export function getCharacterImage(className) {
-  return CHARACTER_IMAGES[className] || '/characters/warrior.png';
+export function normalizeCharacterClass(className) {
+  const normalized = String(className || '').trim().toLowerCase();
+  return CHARACTER_IMAGES[normalized] ? normalized : null;
+}
+
+export function getClassInfo(className, fallbackClass = 'warrior') {
+  const normalized = normalizeCharacterClass(className);
+  if (normalized) return CLASS_INFO[normalized];
+  return fallbackClass ? CLASS_INFO[fallbackClass] || null : null;
+}
+
+export function getCharacterImage(className, fallbackClass = 'warrior') {
+  const normalized = normalizeCharacterClass(className);
+  if (normalized) return CHARACTER_IMAGES[normalized];
+  return fallbackClass ? CHARACTER_IMAGES[fallbackClass] || null : null;
 }

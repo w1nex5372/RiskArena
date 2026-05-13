@@ -7,6 +7,7 @@ import asyncpg
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from itemization import seed_rows
 
 load_dotenv(Path(__file__).parent / '.env')
 
@@ -155,8 +156,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     item_rarity VARCHAR(20) NOT NULL DEFAULT 'Common',
     equipped    BOOLEAN NOT NULL DEFAULT FALSE,
     acquired_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CHECK (item_type IN ('weapon', 'armor', 'ability', 'consumable')),
-    CHECK (item_rarity IN ('Common', 'Rare', 'Epic', 'Legendary'))
+    CHECK (item_type IN ('weapon', 'armor', 'ability', 'consumable'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_user ON inventory(user_id);
@@ -164,6 +164,17 @@ CREATE INDEX IF NOT EXISTS idx_inventory_user ON inventory(user_id);
 -- Extend inventory with item reference and acquisition source
 ALTER TABLE inventory ADD COLUMN IF NOT EXISTS item_id INTEGER;
 ALTER TABLE inventory ADD COLUMN IF NOT EXISTS source  TEXT DEFAULT 'drop';
+ALTER TABLE inventory ADD COLUMN IF NOT EXISTS enchant_level INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS item_scrolls (
+    user_id     VARCHAR(36) NOT NULL REFERENCES users(id),
+    scroll_type TEXT NOT NULL,
+    quantity    INTEGER NOT NULL DEFAULT 0,
+    updated_at  TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, scroll_type),
+    CHECK (scroll_type IN ('normal_scroll', 'blessed_scroll')),
+    CHECK (quantity >= 0)
+);
 
 CREATE TABLE IF NOT EXISTS items (
     id               SERIAL PRIMARY KEY,
@@ -178,6 +189,8 @@ CREATE TABLE IF NOT EXISTS items (
     defend_reduction INTEGER DEFAULT 0,
     hp_bonus         INTEGER DEFAULT 0,
     risk_win_chance  REAL DEFAULT 0.0,
+    passive_type     TEXT,
+    passive_value    REAL DEFAULT 0.0,
     image_path       TEXT,
     created_at       TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(name, class_name, tier)
@@ -186,6 +199,7 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE TABLE IF NOT EXISTS equipped_items (
     user_id     TEXT NOT NULL,
     slot        TEXT NOT NULL,
+    inventory_id VARCHAR(36) REFERENCES inventory(id),
     item_id     INTEGER NOT NULL REFERENCES items(id),
     equipped_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (user_id, slot)
@@ -306,6 +320,17 @@ CREATE INDEX IF NOT EXISTS idx_boss_raid_damage_raid     ON boss_raid_damage(rai
 CREATE INDEX IF NOT EXISTS idx_boss_raid_damage_raid_user ON boss_raid_damage(raid_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_boss_raid_rewards_raid    ON boss_raid_rewards(raid_id);
 
+CREATE TABLE IF NOT EXISTS daily_quest_progress (
+    user_id     VARCHAR(36) NOT NULL REFERENCES users(id),
+    quest_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+    quest_key   VARCHAR(50) NOT NULL,
+    progress    INTEGER NOT NULL DEFAULT 0,
+    completed   BOOLEAN NOT NULL DEFAULT FALSE,
+    claimed     BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (user_id, quest_date, quest_key)
+);
+CREATE INDEX IF NOT EXISTS idx_dqp_user_date ON daily_quest_progress(user_id, quest_date);
+
 """
 
 
@@ -402,6 +427,166 @@ async def init():
             ON CONFLICT (name, class_name, tier) DO NOTHING
         """)
         print("✅ All tables created successfully.")
+        await conn.execute("""
+            ALTER TABLE inventory DROP CONSTRAINT IF EXISTS inventory_item_rarity_check;
+        """)
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'inventory_item_rarity_check' AND conrelid = 'inventory'::regclass
+                ) THEN
+                    ALTER TABLE inventory ADD CONSTRAINT inventory_item_rarity_check
+                        CHECK (item_rarity IN ('Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'));
+                END IF;
+            END;
+            $$;
+        """)
+        await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS passive_type TEXT;")
+        await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS passive_value REAL DEFAULT 0.0;")
+        await conn.execute("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS enchant_level INTEGER NOT NULL DEFAULT 0;")
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'inventory_enchant_level_non_negative' AND conrelid = 'inventory'::regclass
+                ) THEN
+                    ALTER TABLE inventory ADD CONSTRAINT inventory_enchant_level_non_negative
+                        CHECK (enchant_level >= 0);
+                END IF;
+            END;
+            $$;
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS item_scrolls (
+                user_id     VARCHAR(36) NOT NULL REFERENCES users(id),
+                scroll_type TEXT NOT NULL,
+                quantity    INTEGER NOT NULL DEFAULT 0,
+                updated_at  TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (user_id, scroll_type),
+                CHECK (scroll_type IN ('normal_scroll', 'blessed_scroll')),
+                CHECK (quantity >= 0)
+            );
+        """)
+        await conn.execute("ALTER TABLE equipped_items ADD COLUMN IF NOT EXISTS inventory_id VARCHAR(36);")
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'equipped_items_inventory_id_fkey' AND conrelid = 'equipped_items'::regclass
+                ) THEN
+                    ALTER TABLE equipped_items ADD CONSTRAINT equipped_items_inventory_id_fkey
+                        FOREIGN KEY (inventory_id) REFERENCES inventory(id);
+                END IF;
+            END;
+            $$;
+        """)
+        await conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_items_class_slot_tier
+            ON items(class_name, slot, tier);
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_items_shop_browse
+            ON items(tier, class_name, slot);
+        """)
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'items_class_name_check' AND conrelid = 'items'::regclass
+                ) THEN
+                    ALTER TABLE items ADD CONSTRAINT items_class_name_check
+                        CHECK (class_name IN ('warrior', 'mage', 'rogue'));
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'items_slot_check' AND conrelid = 'items'::regclass
+                ) THEN
+                    ALTER TABLE items ADD CONSTRAINT items_slot_check
+                        CHECK (slot IN ('weapon', 'armor', 'ability'));
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'items_tier_check' AND conrelid = 'items'::regclass
+                ) THEN
+                    ALTER TABLE items ADD CONSTRAINT items_tier_check
+                        CHECK (tier IN ('common', 'uncommon', 'rare', 'epic', 'legendary'));
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'items_passive_type_check' AND conrelid = 'items'::regclass
+                ) THEN
+                    ALTER TABLE items ADD CONSTRAINT items_passive_type_check
+                        CHECK (
+                            passive_type IS NULL OR
+                            passive_type IN (
+                                'bonus_attack_percent',
+                                'bonus_ability_percent',
+                                'damage_reduction_percent',
+                                'risk_success_bonus',
+                                'boss_damage_percent',
+                                'lifesteal_percent'
+                            )
+                        );
+                END IF;
+            END;
+            $$;
+        """)
+        await conn.executemany(
+            """
+            INSERT INTO items
+                (name, description, class_name, slot, tier, price,
+                 attack_bonus, ability_bonus, defend_reduction, hp_bonus,
+                 risk_win_chance, passive_type, passive_value, image_path)
+            VALUES
+                ($1, $2, $3, $4, $5, $6,
+                 $7, $8, $9, $10,
+                 $11, $12, $13, $14)
+            ON CONFLICT (class_name, slot, tier) DO UPDATE
+            SET name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                price = EXCLUDED.price,
+                attack_bonus = EXCLUDED.attack_bonus,
+                ability_bonus = EXCLUDED.ability_bonus,
+                defend_reduction = EXCLUDED.defend_reduction,
+                hp_bonus = EXCLUDED.hp_bonus,
+                risk_win_chance = EXCLUDED.risk_win_chance,
+                passive_type = EXCLUDED.passive_type,
+                passive_value = EXCLUDED.passive_value,
+                image_path = EXCLUDED.image_path
+            """,
+            seed_rows(),
+        )
+        await conn.execute("""
+            UPDATE equipped_items ei
+            SET inventory_id = (
+                SELECT inv.id
+                FROM inventory inv
+                WHERE inv.user_id = ei.user_id AND inv.item_id = ei.item_id
+                ORDER BY inv.acquired_at ASC, inv.id ASC
+                LIMIT 1
+            )
+            WHERE ei.inventory_id IS NULL
+        """)
+        await conn.execute("""
+            UPDATE inventory inv
+            SET item_type = i.slot,
+                item_name = i.name,
+                item_rarity = CASE i.tier
+                    WHEN 'common' THEN 'Common'
+                    WHEN 'uncommon' THEN 'Uncommon'
+                    WHEN 'rare' THEN 'Rare'
+                    WHEN 'epic' THEN 'Epic'
+                    WHEN 'legendary' THEN 'Legendary'
+                    ELSE inv.item_rarity
+                END
+            FROM items i
+            WHERE inv.item_id = i.id
+        """)
     finally:
         await conn.close()
 

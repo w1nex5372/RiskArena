@@ -1,270 +1,408 @@
-import { useEffect, useState } from 'react';
-import { Shield, ShoppingBag, Sparkles, Sword } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Filter, Shield, ShoppingBag, Sparkles, Sword } from 'lucide-react';
 import { toast } from 'sonner';
 import apiClient from '../../api/client';
+import {
+  CLASS_THEME,
+  TIER_LABEL,
+  formatClassLabel,
+  formatSlotLabel,
+  getClassKey,
+  getItemImageSrc,
+  getItemStatRows,
+  getPassiveText,
+  getSlotKey,
+  getTierKey,
+  getTierTheme,
+} from '../../utils/itemPresentation';
 
-const TIER_ORDER = ['uncommon', 'rare'];
-
-const TIER_COLOR = {
-  common:    '#94a3b8',
-  uncommon:  '#22c55e',
-  rare:      '#3b82f6',
-  epic:      '#a855f7',
-  legendary: '#c9a84c',
-};
-
-const TIER_LABEL = {
-  uncommon: 'Uncommon',
-  rare:     'Rare',
-};
+const SHOP_TIERS = ['common', 'uncommon', 'rare'];
+const SHOP_CLASSES = ['all', 'warrior', 'mage', 'rogue'];
 
 const SLOT_ICON = {
-  weapon:  Sword,
-  armor:   Shield,
+  weapon: Sword,
+  armor: Shield,
   ability: Sparkles,
 };
 
-const CLASS_COLOR = {
-  warrior: { bg: 'rgba(139,0,0,0.2)',       color: '#f87171' },
-  mage:    { bg: 'rgba(74,144,217,0.15)',    color: '#60a5fa' },
-  rogue:   { bg: 'rgba(201,168,76,0.15)',    color: '#c9a84c' },
-};
+function ItemImage({ item, size = 54 }) {
+  const [failed, setFailed] = useState(false);
+  const theme = getTierTheme(item);
+  const src = getItemImageSrc(item);
+  const Icon = SLOT_ICON[getSlotKey(item)] || Sword;
 
-function tierKey(item) {
-  return (item.tier || item.rarity || '').toLowerCase();
-}
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
 
-function ItemImage({ item, size = 56 }) {
-  const [err, setErr] = useState(false);
-  const slot      = (item.slot || item.category || item.type || '').toLowerCase();
-  const className = (item.class_name || 'warrior').toLowerCase();
-  const src       = item.image_path || `/items/${className}_${slot}.png`;
-  const color     = TIER_COLOR[tierKey(item)] || TIER_COLOR.common;
-  const Icon      = SLOT_ICON[slot] || Sword;
-
-  if (err) {
+  if (failed) {
     return (
-      <div style={{
-        width: size, height: size, borderRadius: 12, flexShrink: 0,
-        background: 'rgba(255,255,255,0.04)',
-        border: `1px solid ${color}40`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Icon style={{ width: size * 0.44, height: size * 0.44, color }} />
+      <div
+        style={{
+          width: size,
+          height: size,
+          borderRadius: 16,
+          flexShrink: 0,
+          background: `linear-gradient(135deg, ${theme.soft}, rgba(255,255,255,0.025))`,
+          border: `1px solid ${theme.border}`,
+          boxShadow: `0 0 14px ${theme.glow}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Icon style={{ width: size * 0.42, height: size * 0.42, color: theme.color }} />
       </div>
     );
   }
+
   return (
     <img
       src={src}
       alt={item.name}
       style={{
-        width: size, height: size, borderRadius: 12, objectFit: 'cover',
-        border: `1px solid ${color}40`, flexShrink: 0,
+        width: size,
+        height: size,
+        borderRadius: 16,
+        objectFit: 'cover',
+        border: `1px solid ${theme.border}`,
+        boxShadow: `0 0 14px ${theme.glow}`,
+        flexShrink: 0,
       }}
-      onError={() => setErr(true)}
+      onError={() => setFailed(true)}
     />
   );
 }
 
-export default function ShopScreen({ user }) {
-  const [items,    setItems]    = useState(null);
-  const [ownedIds, setOwnedIds] = useState(new Set());
-  const [buying,   setBuying]   = useState(null);
-  const [balance,  setBalance]  = useState(user?.token_balance || 0);
+function MetaChip({ children, style }) {
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        fontWeight: 850,
+        padding: '3px 7px',
+        borderRadius: 999,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        ...style,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
 
-  // keep balance in sync when user prop changes
-  useEffect(() => { setBalance(user?.token_balance || 0); }, [user?.token_balance]);
+function StatChip({ label, color }) {
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        fontWeight: 800,
+        color,
+        padding: '4px 8px',
+        borderRadius: 999,
+        background: 'rgba(255,255,255,0.045)',
+        border: '1px solid rgba(255,255,255,0.07)',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function StatGroup({ title, rows, color }) {
+  const visibleRows = (rows || []).filter(Boolean).slice(0, 4);
+  if (!visibleRows.length) return null;
+  return (
+    <div style={{ borderRadius: 12, padding: '8px 9px', background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <p style={{ color: '#64748b', fontSize: 9, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
+        {title}
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+        {visibleRows.map((row) => (
+          <StatChip key={`${title}-${row.key || row.stat || row.label}`} label={row.label} color={color} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function ShopScreen({ user, onInventoryChanged }) {
+  const [items, setItems] = useState(null);
+  const [ownedCounts, setOwnedCounts] = useState({});
+  const [buying, setBuying] = useState(null);
+  const [balance, setBalance] = useState(user?.token_balance || 0);
+  const [tierFilter, setTierFilter] = useState('common');
+  const [classFilter, setClassFilter] = useState('all');
+
+  useEffect(() => {
+    setBalance(user?.token_balance || 0);
+  }, [user?.token_balance]);
 
   useEffect(() => {
     apiClient.get('/shop/items')
-      .then((r) => setItems(r.data?.items || r.data || []))
+      .then((response) => setItems(response.data?.items || response.data || []))
       .catch(() => setItems([]));
 
     apiClient.get('/me/inventory')
-      .then((r) => {
-        const inv = r.data?.items || (Array.isArray(r.data) ? r.data : []);
-        setOwnedIds(new Set(inv.map((i) => i.id)));
+      .then((response) => {
+        const inventory = response.data?.items || (Array.isArray(response.data) ? response.data : []);
+        const counts = {};
+        inventory.forEach((item) => {
+          const key = item.item_id;
+          if (!key) return;
+          counts[key] = (counts[key] || 0) + 1;
+        });
+        setOwnedCounts(counts);
       })
       .catch(() => {});
   }, []);
+
+  const visibleItems = useMemo(() => {
+    return (items || []).filter((item) => {
+      const tierMatches = getTierKey(item) === tierFilter;
+      const classMatches = classFilter === 'all' || getClassKey(item) === classFilter;
+      return tierMatches && classMatches;
+    });
+  }, [items, tierFilter, classFilter]);
+
+  const userClass = String(user?.class_name || '').trim().toLowerCase();
 
   const handleBuy = async (item) => {
     if (buying) return;
     setBuying(item.id);
     try {
-      const res = await apiClient.post('/shop/buy', { item_id: item.id });
-      toast.success('Purchased!');
-      setOwnedIds((prev) => new Set([...prev, item.id]));
-      if (res.data?.new_balance != null) setBalance(res.data.new_balance);
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Purchase failed');
+      const response = await apiClient.post('/shop/buy', { item_id: item.id });
+      setOwnedCounts((prev) => ({ ...prev, [item.id]: (prev[item.id] || 0) + 1 }));
+      if (response.data?.new_balance != null) setBalance(response.data.new_balance);
+      onInventoryChanged?.({ newBalance: response.data?.new_balance ?? null });
+      toast.success(`Purchased ${item.name}`);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Purchase failed');
+    } finally {
+      setBuying(null);
     }
-    setBuying(null);
   };
 
-  // Group by tier, skip epic/legendary
-  const grouped = {};
-  (items || []).forEach((item) => {
-    const t = tierKey(item);
-    if (!TIER_ORDER.includes(t)) return;
-    if (!grouped[t]) grouped[t] = [];
-    grouped[t].push(item);
-  });
-
-  const userClass = (user?.class_name || '').toLowerCase();
-
   return (
-    <div style={{ background: '#1a1a2e', minHeight: '100%', paddingBottom: 100, color: '#e8e0d0' }}>
-
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <div style={{
-        margin: '12px 16px 0',
-        borderRadius: 20,
-        background: 'linear-gradient(135deg, #0d0d1a 0%, #1a0a0a 50%, #2d1a00 100%)',
-        border: '1px solid rgba(201,168,76,0.3)',
-        borderBottom: '2px solid rgba(201,168,76,0.4)',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-        padding: '18px 20px 16px',
-        position: 'relative', overflow: 'hidden',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        <div style={{ position: 'absolute', right: -20, top: -20, width: 120, height: 120, background: 'radial-gradient(circle, rgba(201,168,76,0.1) 0%, transparent 70%)', pointerEvents: 'none' }} />
-        <div>
-          <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', color: '#c9a84c', margin: '0 0 4px', textTransform: 'uppercase' }}>
-            Equipment Shop
-          </p>
-          <h1 style={{ color: 'white', fontSize: 26, fontWeight: 900, margin: '0 0 2px', letterSpacing: '-0.02em' }}>ARMORY</h1>
-          <p style={{ color: '#64748b', fontSize: 12, margin: 0 }}>
-            Balance: <span style={{ color: '#c9a84c', fontWeight: 700 }}>{balance.toLocaleString()}</span> coins
-          </p>
+    <div style={{ color: '#e8e0d0' }}>
+      <section
+        className="rounded-[22px] p-4"
+        style={{
+          background: 'linear-gradient(135deg, rgba(13,13,26,0.96), rgba(42,30,8,0.72))',
+          border: '1px solid rgba(201,168,76,0.24)',
+          boxShadow: '0 12px 28px rgba(0,0,0,0.28)',
+        }}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p style={{ color: '#c9a84c', fontSize: 11, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', margin: 0 }}>
+              Armory
+            </p>
+            <h3 style={{ color: '#fff', fontSize: 20, fontWeight: 950, margin: '4px 0 0' }}>
+              Buy class gear
+            </h3>
+            <p style={{ color: '#94a3b8', fontSize: 12, fontWeight: 650, margin: '5px 0 0' }}>
+              Browse all class gear. Purchase requires your active class to match.
+            </p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <ShoppingBag style={{ width: 22, height: 22, color: '#c9a84c', marginLeft: 'auto' }} />
+            <p style={{ color: '#64748b', fontSize: 10, fontWeight: 850, margin: '6px 0 0', textTransform: 'uppercase' }}>
+              Coins
+            </p>
+            <p style={{ color: '#c9a84c', fontWeight: 950, fontSize: 16, margin: 0 }}>
+              {balance.toLocaleString()}
+            </p>
+          </div>
         </div>
-        <div style={{ width: 48, height: 48, borderRadius: 16, background: 'linear-gradient(135deg,#8b6914,#c9a84c)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <ShoppingBag style={{ width: 22, height: 22, color: '#0a0a0a' }} />
-        </div>
-      </div>
 
-      {/* ── Loading skeletons ──────────────────────────────────── */}
-      {items === null && (
-        <div style={{ padding: '12px 16px 0' }}>
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="animate-pulse" style={{ height: 80, borderRadius: 16, background: 'rgba(26,26,46,0.6)', border: '1px solid rgba(201,168,76,0.08)', marginBottom: 10 }} />
+        <div style={{ marginTop: 14 }}>
+          <div className="grid grid-cols-3 gap-2">
+            {SHOP_TIERS.map((tier) => {
+              const active = tierFilter === tier;
+              const theme = getTierTheme({ tier });
+              return (
+                <button
+                  key={tier}
+                  type="button"
+                  onClick={() => setTierFilter(tier)}
+                  style={{
+                    borderRadius: 13,
+                    padding: '9px 6px',
+                    border: active ? `1px solid ${theme.border}` : '1px solid rgba(255,255,255,0.07)',
+                    background: active ? theme.soft : 'rgba(255,255,255,0.035)',
+                    color: active ? theme.color : '#94a3b8',
+                    fontSize: 11,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {TIER_LABEL[tier]}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingTop: 9 }}>
+            {SHOP_CLASSES.map((className) => {
+              const active = classFilter === className;
+              const theme = CLASS_THEME[className] || { bg: 'rgba(255,255,255,0.06)', color: '#cbd5e1' };
+              return (
+                <button
+                  key={className}
+                  type="button"
+                  onClick={() => setClassFilter(className)}
+                  style={{
+                    flexShrink: 0,
+                    borderRadius: 999,
+                    padding: '7px 11px',
+                    border: active ? '1px solid rgba(201,168,76,0.3)' : '1px solid rgba(255,255,255,0.07)',
+                    background: active ? theme.bg : 'rgba(255,255,255,0.035)',
+                    color: active ? theme.color : '#94a3b8',
+                    fontSize: 11,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {className === 'all' ? 'All classes' : formatClassLabel(className)}
+                  {className !== 'all' && className === userClass ? ' (you)' : ''}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {items === null ? (
+        <div className="grid gap-3 mt-3">
+          {[1, 2, 3].map((index) => (
+            <div key={index} className="animate-pulse" style={{ height: 96, borderRadius: 18, background: 'rgba(26,26,46,0.55)', border: '1px solid rgba(201,168,76,0.08)' }} />
           ))}
         </div>
-      )}
+      ) : null}
 
-      {/* ── Tier sections ──────────────────────────────────────── */}
-      {items !== null && TIER_ORDER.map((tier) => {
-        const tierItems = grouped[tier];
-        if (!tierItems || tierItems.length === 0) return null;
-        const color = TIER_COLOR[tier];
-
-        return (
-          <div key={tier} style={{ margin: '20px 16px 0' }}>
-            {/* Section header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 4, height: 16, borderRadius: 2, background: color, flexShrink: 0 }} />
-              <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', color, textTransform: 'uppercase', margin: 0 }}>
-                {TIER_LABEL[tier]}
-              </p>
+      {items !== null ? (
+        <section className="grid gap-3 mt-3">
+          {visibleItems.length === 0 ? (
+            <div className="rounded-[22px] p-7 text-center" style={{ background: 'rgba(26,26,46,0.72)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              <Filter className="w-7 h-7 mx-auto mb-3" style={{ color: '#475569' }} />
+              <p style={{ color: '#94a3b8', fontWeight: 900, fontSize: 13, margin: 0 }}>No gear in this filter</p>
+              <p style={{ color: '#475569', fontSize: 11, margin: '4px 0 0' }}>Try another tier or class.</p>
             </div>
+          ) : (
+            visibleItems.map((item) => {
+              const theme = getTierTheme(item);
+              const baseRows = getItemStatRows(item, { source: 'base_stats' });
+              const effectiveRows = getItemStatRows(item, { source: 'effective_stats' });
+              const passiveText = getPassiveText(item);
+              const itemClass = getClassKey(item);
+              const slot = getSlotKey(item);
+              const classTheme = CLASS_THEME[itemClass] || { bg: 'rgba(255,255,255,0.06)', color: '#94a3b8' };
+              const ownedCount = ownedCounts[item.item_id] || 0;
+              const price = Number(item.price || 0);
+              const canAfford = balance >= price;
+              const isBuying = buying === item.id;
+              const classMismatch = Boolean(userClass && itemClass && userClass !== itemClass);
 
-            {/* Item cards */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {tierItems.map((item) => {
-                const owned      = ownedIds.has(item.id);
-                const itemClass  = (item.class_name || '').toLowerCase();
-                const wrongClass = !!userClass && !!itemClass && itemClass !== userClass;
-                const price      = item.price || item.cost || 0;
-                const canAfford  = balance >= price;
-                const isBuying   = buying === item.id;
-                const slot       = (item.slot || item.category || item.type || '').toLowerCase();
-                const statLine   = item.stats || item.stat_preview || '';
-                const classStyle = CLASS_COLOR[itemClass] || {};
-
-                return (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '12px 14px', borderRadius: 16,
-                      background: owned ? 'rgba(201,168,76,0.04)' : 'rgba(26,26,46,0.8)',
-                      border: `1px solid ${owned ? 'rgba(201,168,76,0.25)' : color + '28'}`,
-                    }}
-                  >
-                    <ItemImage item={item} size={56} />
-
-                    {/* Info */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ color: 'white', fontWeight: 800, fontSize: 14, margin: '0 0 5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.name}
-                      </p>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: statLine ? 4 : 0 }}>
-                        {slot && (
-                          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                            {slot}
-                          </span>
-                        )}
-                        {itemClass && (
-                          <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 6, textTransform: 'uppercase', letterSpacing: '0.06em', background: classStyle.bg || 'rgba(255,255,255,0.06)', color: classStyle.color || '#94a3b8' }}>
-                            {itemClass}
-                          </span>
-                        )}
-                      </div>
-                      {statLine && (
-                        <p style={{ color: '#64748b', fontSize: 11, margin: 0, fontWeight: 500 }}>{statLine}</p>
-                      )}
-                    </div>
-
-                    {/* Price + Action */}
-                    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, minWidth: 60 }}>
-                      {!owned && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                          <span style={{ fontSize: 12 }}>🪙</span>
-                          <span style={{ color: '#c9a84c', fontWeight: 800, fontSize: 13 }}>{price.toLocaleString()}</span>
+              return (
+                <article
+                  key={item.id}
+                  className="rounded-[20px] p-3"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(15,23,42,0.92), rgba(26,26,46,0.9))',
+                    border: `1px solid ${theme.border}`,
+                    boxShadow: `0 0 18px ${theme.glow}`,
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <ItemImage item={item} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ color: '#f8fafc', fontWeight: 950, fontSize: 14, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {item.name}
+                          </p>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+                            <MetaChip style={{ color: theme.color, background: theme.soft, border: `1px solid ${theme.border}` }}>
+                              {TIER_LABEL[getTierKey(item)]}
+                            </MetaChip>
+                            <MetaChip style={{ color: '#cbd5e1', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                              {formatSlotLabel(slot)}
+                            </MetaChip>
+                            <MetaChip style={{ color: classTheme.color, background: classTheme.bg, border: '1px solid transparent' }}>
+                              {formatClassLabel(itemClass)}
+                            </MetaChip>
+                            <MetaChip style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.18)' }}>
+                              +{Number(item.enchant_level || 0)}
+                            </MetaChip>
+                          </div>
                         </div>
-                      )}
-                      {owned ? (
-                        <span style={{ fontSize: 11, fontWeight: 800, color: '#475569' }}>OWNED</span>
-                      ) : wrongClass ? (
-                        <span style={{ fontSize: 11, fontWeight: 800, color: '#f87171' }}>LOCKED</span>
-                      ) : (
-                        <button
-                          onClick={() => handleBuy(item)}
-                          disabled={!canAfford || !!isBuying}
-                          style={{
-                            padding: '6px 14px', borderRadius: 10,
-                            background: canAfford
-                              ? 'linear-gradient(135deg, #8b6914, #c9a84c)'
-                              : 'rgba(255,255,255,0.05)',
-                            border: canAfford
-                              ? '1px solid rgba(201,168,76,0.5)'
-                              : '1px solid rgba(255,255,255,0.06)',
-                            color: canAfford ? '#0a0a0a' : '#334155',
-                            fontWeight: 800, fontSize: 12,
-                            cursor: canAfford && !isBuying ? 'pointer' : 'not-allowed',
-                            opacity: isBuying ? 0.6 : 1,
-                          }}
-                        >
-                          {isBuying ? '...' : 'BUY'}
-                        </button>
-                      )}
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <p style={{ color: '#c9a84c', fontSize: 16, fontWeight: 950, margin: 0 }}>{price.toLocaleString()}</p>
+                          <p style={{ color: '#64748b', fontSize: 10, fontWeight: 800, margin: '1px 0 0' }}>coins</p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gap: 7, marginTop: 9 }}>
+                        <StatGroup title="Base" rows={baseRows} color={theme.color} />
+                        <StatGroup title="Total" rows={effectiveRows} color="#e8e0d0" />
+                      </div>
+
+                      {passiveText ? (
+                        <p style={{ color: theme.color, fontSize: 11, fontWeight: 750, margin: '8px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          Passive: {passiveText}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
 
-      {/* ── Empty state ────────────────────────────────────────── */}
-      {items !== null && Object.keys(grouped).length === 0 && (
-        <div style={{ padding: '60px 24px', textAlign: 'center' }}>
-          <p style={{ fontSize: 40, margin: '0 0 12px' }}>🛡️</p>
-          <p style={{ color: '#64748b', fontWeight: 700, fontSize: 14, margin: 0 }}>No items available right now</p>
-        </div>
-      )}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 11 }}>
+                    <div style={{ minWidth: 0 }}>
+                      {classMismatch ? (
+                        <p style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, margin: 0 }}>
+                          For {formatClassLabel(itemClass)}. Switch class to buy and equip.
+                        </p>
+                      ) : ownedCount > 0 ? (
+                        <p style={{ color: '#c9a84c', fontSize: 11, fontWeight: 800, margin: 0 }}>
+                          Owned copies: {ownedCount}
+                        </p>
+                      ) : (
+                        <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, margin: 0 }}>
+                          Fits your current class.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleBuy(item)}
+                      disabled={classMismatch || !canAfford || isBuying}
+                      style={{
+                        flexShrink: 0,
+                        minWidth: 92,
+                        padding: '9px 13px',
+                        borderRadius: 13,
+                        background: classMismatch || !canAfford
+                          ? 'rgba(255,255,255,0.045)'
+                          : 'linear-gradient(135deg, #8b6914, #c9a84c)',
+                        border: classMismatch || !canAfford
+                          ? '1px solid rgba(255,255,255,0.07)'
+                          : '1px solid rgba(201,168,76,0.5)',
+                        color: classMismatch || !canAfford ? '#64748b' : '#0a0a0a',
+                        fontWeight: 950,
+                        fontSize: 12,
+                        cursor: classMismatch || !canAfford || isBuying ? 'not-allowed' : 'pointer',
+                        opacity: isBuying ? 0.75 : 1,
+                      }}
+                    >
+                      {classMismatch ? 'Class only' : isBuying ? 'Buying...' : ownedCount > 0 ? 'Buy copy' : 'Buy'}
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }

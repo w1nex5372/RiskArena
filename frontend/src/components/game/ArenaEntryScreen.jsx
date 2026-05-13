@@ -2,24 +2,10 @@ import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
 import apiClient from '../../api/client';
 import { CLASS_INFO, getCharacterImage } from '../../utils/characters';
+import { getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
 
 const BET_PRESETS = [200, 250, 300, 350, 400, 450];
 const CLASS_KEYS = ['warrior', 'mage', 'rogue'];
-
-const TIER_COLOR = {
-  common:    '#94a3b8',
-  uncommon:  '#22c55e',
-  rare:      '#3b82f6',
-  epic:      '#a855f7',
-  legendary: '#c9a84c',
-};
-const TIER_BORDER = {
-  common:    'rgba(148,163,184,0.25)',
-  uncommon:  'rgba(34,197,94,0.3)',
-  rare:      'rgba(59,130,246,0.3)',
-  epic:      'rgba(168,85,247,0.3)',
-  legendary: 'rgba(201,168,76,0.45)',
-};
 
 const LOADOUT_SLOTS = [
   { key: 'weapon',    label: 'WEAPON',  Icon: Sword },
@@ -33,6 +19,8 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
   const [entering, setEntering] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [switchFeedback, setSwitchFeedback] = useState(false);
+  const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
+  const [loadoutEffectiveStats, setLoadoutEffectiveStats] = useState({});
 
   const [selectedClass, setSelectedClass] = useState(
     () => (user?.class_name || 'warrior').toLowerCase()
@@ -49,6 +37,32 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
       .catch(() => setHistory([]));
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadEquipped = () =>
+      apiClient
+        .get('/me/equipped')
+        .then((res) => {
+          if (!cancelled) {
+            setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
+            setLoadoutEffectiveStats(res.data?.loadout_effective_stats || {});
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setEquipped({ weapon: null, armor: null, ability: null });
+            setLoadoutEffectiveStats({});
+          }
+        });
+
+    loadEquipped();
+    window.addEventListener('focus', loadEquipped);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', loadEquipped);
+    };
+  }, [user?.class_name, user?.id]);
+
   const cycleClass = (dir) => {
     const idx = CLASS_KEYS.indexOf(selectedClass);
     const next = (idx + dir + CLASS_KEYS.length) % CLASS_KEYS.length;
@@ -61,6 +75,9 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
     try {
       await apiClient.post('/me/class', { class_name: selectedClass });
       onClassChange?.(selectedClass);
+      const equippedResponse = await apiClient.get('/me/equipped');
+      setEquipped(equippedResponse.data?.equipped || { weapon: null, armor: null, ability: null });
+      setLoadoutEffectiveStats(equippedResponse.data?.loadout_effective_stats || {});
       setSwitchFeedback(true);
       setTimeout(() => setSwitchFeedback(false), 1800);
     } catch {
@@ -119,12 +136,9 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
     }
   };
 
-  // Equipped items from user data
-  const equippedItems = user?.equipped_items || [];
-  const getEquipped = (slotKey) =>
-    equippedItems.find((i) =>
-      (i.category || i.type || '').toLowerCase().startsWith(slotKey)
-    ) || null;
+  const getEquipped = (slotKey) => equipped?.[slotKey] || null;
+  const equippedBonusChips = LOADOUT_SLOTS.flatMap(({ key }) => getItemStatRows(getEquipped(key))).slice(0, 5);
+  const aggregateBonusChips = equippedBonusChips.length ? equippedBonusChips : getStatEntries(loadoutEffectiveStats);
 
   return (
     <div style={{ background: '#1a1a2e', minHeight: '100%', paddingBottom: 100, color: '#e8e0d0' }}>
@@ -166,6 +180,31 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
               <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: 500, margin: 0 }}>
                 {classInfo.bonus}
               </p>
+              {aggregateBonusChips.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
+                  {aggregateBonusChips.slice(0, 5).map((chip) => (
+                    <span
+                      key={`${chip.key}-${chip.label}`}
+                      style={{
+                        color: '#c9a84c',
+                        background: 'rgba(201,168,76,0.1)',
+                        border: '1px solid rgba(201,168,76,0.18)',
+                        borderRadius: 999,
+                        padding: '4px 7px',
+                        fontSize: 10,
+                        fontWeight: 800,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {chip.label}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color: '#64748b', fontSize: 10, fontWeight: 700, margin: '9px 0 0' }}>
+                  No equipped item bonuses yet.
+                </p>
+              )}
             </div>
 
             {/* Win / Loss pills */}
@@ -268,30 +307,52 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           {LOADOUT_SLOTS.map(({ key, label, Icon }) => {
-            const item = getEquipped(key);
-            const rarity = item?.rarity || null;
-            const rarityColor = rarity ? (RARITY_COLOR[rarity] || RARITY_COLOR.Common) : null;
-            const rarityBorder = rarity ? (RARITY_BORDER[rarity] || RARITY_BORDER.Common) : 'rgba(201,168,76,0.2)';
-            return (
+                const item = getEquipped(key);
+                const tier = getTierKey(item);
+                const tierTheme = item ? getTierTheme(item) : null;
+            const rarityColor = tierTheme?.color || null;
+            const rarityBorder = tierTheme?.border || 'rgba(201,168,76,0.2)';
+                const statChips = getItemStatRows(item).slice(0, 2);
+                const passiveText = getPassiveText(item);
+                const enchantLevel = Number(item?.enchant_level || 0);
+                return (
               <button
                 key={key}
                 onClick={onNavigateInventory}
                 style={{
-                  height: 80, borderRadius: 14, padding: '8px 4px',
+                  minHeight: 102, borderRadius: 14, padding: '9px 8px',
                   background: item ? 'rgba(26,26,46,0.95)' : 'rgba(255,255,255,0.02)',
                   border: item ? `1px solid ${rarityBorder}` : '1px dashed rgba(201,168,76,0.2)',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
                   cursor: 'pointer',
-                  boxShadow: item ? `0 0 10px ${rarityBorder}` : 'none',
+                  boxShadow: item ? `0 0 12px ${tier === 'legendary' ? 'rgba(201,168,76,0.22)' : tier === 'epic' ? 'rgba(168,85,247,0.18)' : rarityBorder}` : 'none',
                   transition: 'all 0.15s ease',
                 }}
               >
                 <Icon style={{ width: 22, height: 22, color: item ? rarityColor : '#334155', opacity: item ? 1 : 0.35 }} />
                 <p style={{ color: '#475569', fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', margin: 0 }}>{label}</p>
                 {item && (
-                  <p style={{ color: rarityColor, fontSize: 9, fontWeight: 700, margin: 0, maxWidth: '90%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                    {item.name}
-                  </p>
+                  <>
+                    <p style={{ color: rarityColor, fontSize: 9, fontWeight: 700, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                      {item.name}
+                    </p>
+                    <p style={{ color: '#94a3b8', fontSize: 8, fontWeight: 700, margin: 0 }}>
+                      {item.rarity || ''}
+                    </p>
+                    <p style={{ color: '#c9a84c', fontSize: 10, fontWeight: 900, margin: 0 }}>
+                      +{enchantLevel}
+                    </p>
+                    {statChips[0] ? (
+                      <p style={{ color: rarityColor, fontSize: 8, fontWeight: 700, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                        {statChips[0].label}
+                      </p>
+                    ) : null}
+                    {passiveText ? (
+                      <p style={{ color: '#e8e0d0', fontSize: 8, fontWeight: 600, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                        {passiveText}
+                      </p>
+                    ) : null}
+                  </>
                 )}
               </button>
             );

@@ -10,6 +10,8 @@ def test_current_open_round_hides_enemy_action():
         "round_number": 2,
         "player_one_id": "p1",
         "player_two_id": "p2",
+        "player_one_class_name": "warrior",
+        "player_two_class_name": "rogue",
         "rounds": [
             {"round_number": 1, "status": "resolved"},
             {"round_number": 2, "status": "open"},
@@ -29,6 +31,8 @@ def test_current_open_round_hides_enemy_action():
         {"round_number": 1, "user_id": "p2", "action": "defend"},
         {"round_number": 2, "user_id": "p1", "action": "risk"},
     ]
+    assert redacted["player_one_class_name"] == "warrior"
+    assert redacted["player_two_class_name"] == "rogue"
 
 
 def test_non_participant_cannot_read_match_view():

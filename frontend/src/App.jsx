@@ -25,7 +25,9 @@ import ArenaScreen from './components/game/ArenaScreen';
 import ArenaEntryScreen from './components/game/ArenaEntryScreen';
 import BossRaidScreen from './components/game/BossRaidScreen';
 import TournamentScreen from './components/game/TournamentScreen';
+import LeaderboardScreen from './components/leaderboard/LeaderboardScreen';
 import InventoryScreen from './components/inventory/InventoryScreen';
+import DailyQuestsScreen from './components/game/DailyQuestsScreen';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import './App.css';
@@ -114,7 +116,13 @@ function App() {
   const [gameInProgress, setGameInProgress] = useState(false); // Track if game is running
   const [currentGameData, setCurrentGameData] = useState(null); // Store current game info
   const [activeArenaMatchId, setActiveArenaMatchId] = useState(() => sessionStorage.getItem('active_arena_match') || null);
-  const [activeArenaRoomContext, setActiveArenaRoomContext] = useState(null);
+  const [activeArenaRoomContext, setActiveArenaRoomContext] = useState(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('active_arena_context') || 'null');
+    } catch {
+      return null;
+    }
+  });
   
   // New synchronization states
   // Single atomic roulette state - null=hidden, {players,winner}=show wheel
@@ -443,6 +451,9 @@ function App() {
   const openArenaCombat = (matchId, context = {}) => {
     if (!matchId) return;
     sessionStorage.setItem('active_arena_match', matchId);
+    try {
+      sessionStorage.setItem('active_arena_context', JSON.stringify(context || null));
+    } catch {}
     setActiveArenaMatchId(matchId);
     setActiveArenaRoomContext(context);
     setActiveTab('arena');
@@ -460,6 +471,7 @@ function App() {
 
   const closeArenaCombat = () => {
     sessionStorage.removeItem('active_arena_match');
+    sessionStorage.removeItem('active_arena_context');
     setActiveArenaMatchId(null);
     setActiveArenaRoomContext(null);
     setActiveTab('rooms');
@@ -2227,7 +2239,7 @@ function App() {
     hasUser: !!user,
     telegram_id: user?.telegram_id
   });
-  const lightTabs = ['rooms', 'boss', 'tournament', 'inventory'];
+  const lightTabs = ['rooms', 'boss', 'inventory'];
   const useLightChrome = lightTabs.includes(activeTab) || inLobby;
   const appBackground = useLightChrome
     ? 'radial-gradient(circle at top left, rgba(96,165,250,0.18), transparent 34%), linear-gradient(180deg, #f8fbff 0%, #eef6ff 48%, #f8fafc 100%)'
@@ -2335,7 +2347,7 @@ function App() {
                 }`}
               >
                 <Wallet className="w-5 h-5" />
-                <span>Inventory</span>
+                <span>Items</span>
               </button>
               
               <button
@@ -2783,8 +2795,16 @@ function App() {
               <TournamentScreen user={user} />
             )}
 
+            {activeTab === 'leaderboard' && !inLobby && !showWinnerScreen && !gameInProgress && (
+              <LeaderboardScreen user={user} />
+            )}
+
             {activeTab === 'inventory' && !inLobby && !showWinnerScreen && !gameInProgress && (
               <InventoryScreen user={user} />
+            )}
+
+            {activeTab === 'quests' && !inLobby && !showWinnerScreen && !gameInProgress && (
+              <DailyQuestsScreen user={user} onBack={() => setActiveTab('rooms')} />
             )}
 
             {/* Token Purchase Tab */}

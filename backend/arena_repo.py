@@ -1,6 +1,7 @@
 """
 PostgreSQL persistence for Arena Duel MVP.
 """
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -8,18 +9,20 @@ from typing import Dict, Optional
 
 from database import get_pool
 import progression as _prog
+import daily_quests as _daily_quests
 from arena_domain import (
     ArenaAction,
-    ARMOR_HP_BONUS,
     ItemModifiers,
     MAX_ROUNDS,
-    RARITY_MODIFIERS,
     STARTING_HP,
     PlayerCombatState,
     calculate_payout,
+    class_modifiers_for,
+    combine_modifiers,
     normalize_action,
     resolve_round,
 )
+from itemization import aggregate_item_modifiers, modifiers_to_dict
 
 ROUND_TIMEOUT_SECONDS = 30
 
@@ -41,66 +44,222 @@ def _row(row) -> Optional[Dict]:
     return data
 
 
-def _modifiers_for_player(weapon_rarity: Optional[str], ability_rarity: Optional[str]) -> ItemModifiers:
-    """Combine weapon and ability rarity into a single ItemModifiers for one player."""
-    weapon_mod = RARITY_MODIFIERS.get(weapon_rarity or "", ItemModifiers())
-    ability_mod = RARITY_MODIFIERS.get(ability_rarity or "", ItemModifiers())
-    return ItemModifiers(
-        attack_bonus=weapon_mod.attack_bonus,
-        ability_bonus=ability_mod.ability_bonus,
-        risk_win_chance=weapon_mod.risk_win_chance,
+def _item_modifiers_from_dict(modifiers: Optional[dict]) -> ItemModifiers:
+    if not modifiers:
+        return ItemModifiers()
+    normalized = modifiers_to_dict(ItemModifiers())
+    normalized.update(modifiers)
+    return ItemModifiers(**normalized)
+
+
+def _modifier_dict(modifiers: ItemModifiers) -> dict:
+    return modifiers_to_dict(modifiers)
+
+
+async def _fetch_player_class_names_tx(conn, player_one_id: str, player_two_id: str) -> tuple[Optional[str], Optional[str]]:
+    rows = await conn.fetch(
+        "SELECT id, class_name FROM users WHERE id = ANY($1::varchar[])",
+        [player_one_id, player_two_id],
     )
+    by_id = {row["id"]: row["class_name"] for row in rows}
+    return by_id.get(player_one_id), by_id.get(player_two_id)
+
+
+def _metadata_with_combat_state(
+    metadata: Optional[Dict],
+    *,
+    player_one_class_name: Optional[str],
+    player_two_class_name: Optional[str],
+    player_one_modifiers: ItemModifiers,
+    player_two_modifiers: ItemModifiers,
+) -> Dict:
+    data = dict(metadata or {})
+    data["player_one_class_name"] = player_one_class_name
+    data["player_two_class_name"] = player_two_class_name
+    data["p1_modifiers"] = _modifier_dict(player_one_modifiers)
+    data["p2_modifiers"] = _modifier_dict(player_two_modifiers)
+    return data
 
 
 async def _fetch_player_modifiers(conn, player_id: str) -> ItemModifiers:
-    """Query equipped weapon and ability from inventory and return combined modifiers (legacy path)."""
+    """Aggregate all equipped item stats and passives for one player."""
     rows = await conn.fetch(
         """
-        SELECT item_type, item_rarity FROM inventory
-        WHERE user_id = $1 AND equipped = TRUE AND item_type IN ('weapon', 'ability')
+        SELECT i.slot, i.attack_bonus, i.ability_bonus, i.defend_reduction,
+               i.hp_bonus, i.risk_win_chance, i.passive_type, i.passive_value,
+               COALESCE(inv.enchant_level, 0) AS enchant_level
+        FROM equipped_items ei
+        JOIN items i ON i.id = ei.item_id
+        LEFT JOIN LATERAL (
+            SELECT enchant_level
+            FROM inventory
+            WHERE user_id = ei.user_id
+              AND item_id = ei.item_id
+              AND (ei.inventory_id IS NULL OR id = ei.inventory_id)
+            ORDER BY CASE WHEN id = ei.inventory_id THEN 0 ELSE 1 END, acquired_at ASC, id ASC
+            LIMIT 1
+        ) inv ON TRUE
+        WHERE ei.user_id = $1
         """,
         player_id,
     )
-    weapon_rarity = next((r["item_rarity"] for r in rows if r["item_type"] == "weapon"), None)
-    ability_rarity = next((r["item_rarity"] for r in rows if r["item_type"] == "ability"), None)
-    return _modifiers_for_player(weapon_rarity, ability_rarity)
+    return aggregate_item_modifiers([dict(row) for row in rows])
 
 
 async def _get_player_modifiers_tx(conn, user_id: str) -> dict:
-    """Sum all stat bonuses from equipped_items JOIN items for one player."""
+    """Public JSON-friendly snapshot of aggregated equipped modifiers."""
     rows = await conn.fetch(
         """
-        SELECT i.attack_bonus, i.ability_bonus, i.defend_reduction,
-               i.hp_bonus, i.risk_win_chance
+        SELECT i.slot, i.attack_bonus, i.ability_bonus, i.defend_reduction,
+               i.hp_bonus, i.risk_win_chance, i.passive_type, i.passive_value,
+               COALESCE(inv.enchant_level, 0) AS enchant_level
         FROM equipped_items ei
         JOIN items i ON i.id = ei.item_id
+        LEFT JOIN LATERAL (
+            SELECT enchant_level
+            FROM inventory
+            WHERE user_id = ei.user_id
+              AND item_id = ei.item_id
+              AND (ei.inventory_id IS NULL OR id = ei.inventory_id)
+            ORDER BY CASE WHEN id = ei.inventory_id THEN 0 ELSE 1 END, acquired_at ASC, id ASC
+            LIMIT 1
+        ) inv ON TRUE
         WHERE ei.user_id = $1
         """,
         user_id,
     )
-    total: dict = {
-        "attack_bonus": 0,
-        "ability_bonus": 0,
-        "defend_reduction": 0.0,
-        "hp_bonus": 0,
-        "risk_win_chance": 0.0,
-    }
-    for row in rows:
-        total["attack_bonus"]    += int(row["attack_bonus"] or 0)
-        total["ability_bonus"]   += int(row["ability_bonus"] or 0)
-        # DB defend_reduction is an integer percentage (e.g. 3 = 3% extra reduction).
-        # ItemModifiers.defend_reduction is a float fraction subtracted from the
-        # pass-through multiplier, so divide by 100.
-        total["defend_reduction"] += float(row["defend_reduction"] or 0) / 100.0
-        total["hp_bonus"]        += int(row["hp_bonus"] or 0)
-        total["risk_win_chance"] += float(row["risk_win_chance"] or 0)
-    return total
+    return modifiers_to_dict(aggregate_item_modifiers([dict(row) for row in rows]))
 
 
 async def get_player_modifiers(user_id: str) -> dict:
     """Public helper — acquires its own connection from the pool."""
     async with get_pool().acquire() as conn:
         return await _get_player_modifiers_tx(conn, user_id)
+
+
+async def _create_duel_tx(
+    conn,
+    player_one_id: str,
+    player_two_id: str,
+    stake_amount: int,
+    *,
+    debit_stakes: bool,
+    pot_amount: Optional[int],
+    metadata: Optional[Dict],
+    p1_hp: Optional[int],
+    p2_hp: Optional[int],
+    player_rows: Optional[tuple] = None,
+) -> Dict:
+    match_id = str(uuid.uuid4())
+    round_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    deadline = now + timedelta(seconds=ROUND_TIMEOUT_SECONDS)
+
+    if player_rows is None:
+        p1 = await conn.fetchrow("SELECT * FROM users WHERE id = $1 FOR UPDATE", player_one_id)
+        p2 = await conn.fetchrow("SELECT * FROM users WHERE id = $1 FOR UPDATE", player_two_id)
+    else:
+        p1, p2 = player_rows
+    if not p1 or not p2:
+        raise LookupError("User not found")
+    if p1["is_banned"] or p2["is_banned"]:
+        raise PermissionError("Banned users cannot start arena duels")
+    if debit_stakes and (p1["token_balance"] < stake_amount or p2["token_balance"] < stake_amount):
+        raise ArithmeticError("Insufficient token balance")
+    active_conflict = await conn.fetchval(
+        """
+        SELECT 1
+        FROM arena_matches
+        WHERE status = 'active'
+          AND (
+            player_one_id = ANY($1::varchar[])
+            OR player_two_id = ANY($1::varchar[])
+          )
+        LIMIT 1
+        """,
+        [player_one_id, player_two_id],
+    )
+    if active_conflict:
+        raise RuntimeError("One of the players already has an active arena match")
+
+    if debit_stakes:
+        await conn.execute(
+            "UPDATE users SET token_balance = token_balance - $2 WHERE id = $1",
+            player_one_id,
+            stake_amount,
+        )
+        await conn.execute(
+            "UPDATE users SET token_balance = token_balance - $2 WHERE id = $1",
+            player_two_id,
+            stake_amount,
+        )
+
+    metadata_dict = dict(metadata or {})
+    p1_class_name = metadata_dict.get("player_one_class_name") or p1["class_name"]
+    p2_class_name = metadata_dict.get("player_two_class_name") or p2["class_name"]
+
+    p1_modifiers_stored = metadata_dict.get("p1_modifiers")
+    p2_modifiers_stored = metadata_dict.get("p2_modifiers")
+    if p1_modifiers_stored:
+        p1_modifiers = _item_modifiers_from_dict(p1_modifiers_stored)
+    else:
+        p1_modifiers = combine_modifiers(
+            await _fetch_player_modifiers(conn, player_one_id),
+            class_modifiers_for(p1_class_name),
+        )
+    if p2_modifiers_stored:
+        p2_modifiers = _item_modifiers_from_dict(p2_modifiers_stored)
+    else:
+        p2_modifiers = combine_modifiers(
+            await _fetch_player_modifiers(conn, player_two_id),
+            class_modifiers_for(p2_class_name),
+        )
+
+    # Resolve starting HP from the frozen combined modifiers unless the caller
+    # already provided explicit values.
+    if p1_hp is None or p2_hp is None:
+        p1_hp = STARTING_HP + p1_modifiers.hp_bonus
+        p2_hp = STARTING_HP + p2_modifiers.hp_bonus
+
+    metadata_dict = _metadata_with_combat_state(
+        metadata_dict,
+        player_one_class_name=p1_class_name,
+        player_two_class_name=p2_class_name,
+        player_one_modifiers=p1_modifiers,
+        player_two_modifiers=p2_modifiers,
+    )
+
+    pot = pot_amount if pot_amount is not None else stake_amount * 2
+    await conn.execute(
+        """
+        INSERT INTO arena_matches (
+            id, mode, status, player_one_id, player_two_id, stake_amount,
+            pot_amount, burn_amount, round_number, player_one_hp, player_two_hp,
+            player_one_ability_used, player_two_ability_used, metadata, created_at, updated_at
+        )
+        VALUES ($1, 'duel', 'active', $2, $3, $4, $5, 0, 1, $6, $7, FALSE, FALSE, $8, $9, $9)
+        """,
+        match_id,
+        player_one_id,
+        player_two_id,
+        stake_amount,
+        pot,
+        p1_hp,
+        p2_hp,
+        _json(metadata_dict),
+        now,
+    )
+    await conn.execute(
+        """
+        INSERT INTO arena_rounds (id, match_id, round_number, status, deadline_at, created_at)
+        VALUES ($1, $2, 1, 'open', $3, $4)
+        """,
+        round_id,
+        match_id,
+        deadline,
+        now,
+    )
+    return await get_match_tx(conn, match_id)
 
 
 async def create_duel(
@@ -119,95 +278,19 @@ async def create_duel(
     if stake_amount <= 0:
         raise ValueError("Stake amount must be positive")
 
-    match_id = str(uuid.uuid4())
-    round_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
-    deadline = now + timedelta(seconds=ROUND_TIMEOUT_SECONDS)
-
     async with get_pool().acquire() as conn:
         async with conn.transaction():
-            p1 = await conn.fetchrow("SELECT * FROM users WHERE id = $1 FOR UPDATE", player_one_id)
-            p2 = await conn.fetchrow("SELECT * FROM users WHERE id = $1 FOR UPDATE", player_two_id)
-            if not p1 or not p2:
-                raise LookupError("User not found")
-            if p1["is_banned"] or p2["is_banned"]:
-                raise PermissionError("Banned users cannot start arena duels")
-            if debit_stakes and (p1["token_balance"] < stake_amount or p2["token_balance"] < stake_amount):
-                raise ArithmeticError("Insufficient token balance")
-            active_conflict = await conn.fetchval(
-                """
-                SELECT 1
-                FROM arena_matches
-                WHERE status = 'active'
-                  AND (
-                    player_one_id = ANY($1::varchar[])
-                    OR player_two_id = ANY($1::varchar[])
-                  )
-                LIMIT 1
-                """,
-                [player_one_id, player_two_id],
-            )
-            if active_conflict:
-                raise RuntimeError("One of the players already has an active arena match")
-
-            if debit_stakes:
-                await conn.execute(
-                    "UPDATE users SET token_balance = token_balance - $2 WHERE id = $1",
-                    player_one_id,
-                    stake_amount,
-                )
-                await conn.execute(
-                    "UPDATE users SET token_balance = token_balance - $2 WHERE id = $1",
-                    player_two_id,
-                    stake_amount,
-                )
-
-            # Resolve starting HP.  If caller pre-computed modifiers (new item system),
-            # they pass p1_hp / p2_hp directly.  Otherwise fall back to the legacy
-            # inventory-based armor bonus so existing code paths keep working.
-            if p1_hp is None or p2_hp is None:
-                armor1 = await conn.fetchrow(
-                    "SELECT item_rarity FROM inventory WHERE user_id = $1 AND equipped = TRUE AND item_type = 'armor' LIMIT 1",
-                    player_one_id,
-                )
-                armor2 = await conn.fetchrow(
-                    "SELECT item_rarity FROM inventory WHERE user_id = $1 AND equipped = TRUE AND item_type = 'armor' LIMIT 1",
-                    player_two_id,
-                )
-                p1_hp = STARTING_HP + ARMOR_HP_BONUS.get(armor1["item_rarity"] if armor1 else "", 0)
-                p2_hp = STARTING_HP + ARMOR_HP_BONUS.get(armor2["item_rarity"] if armor2 else "", 0)
-
-            pot = pot_amount if pot_amount is not None else stake_amount * 2
-            await conn.execute(
-                """
-                INSERT INTO arena_matches (
-                    id, mode, status, player_one_id, player_two_id, stake_amount,
-                    pot_amount, burn_amount, round_number, player_one_hp, player_two_hp,
-                    player_one_ability_used, player_two_ability_used, metadata, created_at, updated_at
-                )
-                VALUES ($1, 'duel', 'active', $2, $3, $4, $5, 0, 1, $6, $7, FALSE, FALSE, $8, $9, $9)
-                """,
-                match_id,
+            return await _create_duel_tx(
+                conn,
                 player_one_id,
                 player_two_id,
                 stake_amount,
-                pot,
-                p1_hp,
-                p2_hp,
-                _json(metadata or {}),
-                now,
+                debit_stakes=debit_stakes,
+                pot_amount=pot_amount,
+                metadata=metadata,
+                p1_hp=p1_hp,
+                p2_hp=p2_hp,
             )
-            await conn.execute(
-                """
-                INSERT INTO arena_rounds (id, match_id, round_number, status, deadline_at, created_at)
-                VALUES ($1, $2, 1, 'open', $3, $4)
-                """,
-                round_id,
-                match_id,
-                deadline,
-                now,
-            )
-            return await get_match_tx(conn, match_id)
 
 
 async def create_room_duel(
@@ -218,24 +301,38 @@ async def create_room_duel(
     room_type: str,
     pot_amount: Optional[int] = None,
 ) -> Dict:
-    p1_mods = await get_player_modifiers(player_one_id)
-    p2_mods = await get_player_modifiers(player_two_id)
-    return await create_duel(
-        player_one_id,
-        player_two_id,
-        stake_amount,
-        debit_stakes=False,
-        pot_amount=pot_amount if pot_amount is not None else stake_amount * 2,
-        metadata={
-            "source": "room",
-            "room_id": room_id,
-            "room_type": room_type,
-            "p1_modifiers": p1_mods,
-            "p2_modifiers": p2_mods,
-        },
-        p1_hp=STARTING_HP + p1_mods["hp_bonus"],
-        p2_hp=STARTING_HP + p2_mods["hp_bonus"],
-    )
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            p1 = await conn.fetchrow("SELECT * FROM users WHERE id = $1 FOR UPDATE", player_one_id)
+            p2 = await conn.fetchrow("SELECT * FROM users WHERE id = $1 FOR UPDATE", player_two_id)
+            p1_mods = await _get_player_modifiers_tx(conn, player_one_id)
+            p2_mods = await _get_player_modifiers_tx(conn, player_two_id)
+            p1_class_name = p1["class_name"] if p1 else None
+            p2_class_name = p2["class_name"] if p2 else None
+            p1_combined = combine_modifiers(_item_modifiers_from_dict(p1_mods), class_modifiers_for(p1_class_name))
+            p2_combined = combine_modifiers(_item_modifiers_from_dict(p2_mods), class_modifiers_for(p2_class_name))
+            return await _create_duel_tx(
+                conn,
+                player_one_id,
+                player_two_id,
+                stake_amount,
+                debit_stakes=False,
+                pot_amount=pot_amount if pot_amount is not None else stake_amount * 2,
+                metadata=_metadata_with_combat_state(
+                    {
+                        "source": "room",
+                        "room_id": room_id,
+                        "room_type": room_type,
+                    },
+                    player_one_class_name=p1_class_name,
+                    player_two_class_name=p2_class_name,
+                    player_one_modifiers=p1_combined,
+                    player_two_modifiers=p2_combined,
+                ),
+                p1_hp=STARTING_HP + p1_combined.hp_bonus,
+                p2_hp=STARTING_HP + p2_combined.hp_bonus,
+                player_rows=(p1, p2),
+            )
 
 
 async def get_match(match_id: str) -> Optional[Dict]:
@@ -256,6 +353,20 @@ async def get_match_tx(conn, match_id: str) -> Optional[Dict]:
         match_id,
     )
     data = _row(match)
+    metadata = data.get("metadata") or {}
+    if isinstance(metadata, dict):
+        if "player_one_class_name" not in data:
+            data["player_one_class_name"] = metadata.get("player_one_class_name")
+        if "player_two_class_name" not in data:
+            data["player_two_class_name"] = metadata.get("player_two_class_name")
+    if match["status"] != "active" and (not data.get("player_one_class_name") or not data.get("player_two_class_name")):
+        p1_class_name, p2_class_name = await _fetch_player_class_names_tx(
+            conn,
+            data["player_one_id"],
+            data["player_two_id"],
+        )
+        data["player_one_class_name"] = data.get("player_one_class_name") or p1_class_name
+        data["player_two_class_name"] = data.get("player_two_class_name") or p2_class_name
     data["rounds"] = [_row(r) for r in rounds]
     data["actions"] = [_row(a) for a in actions]
     return data
@@ -374,13 +485,19 @@ async def resolve_current_round_tx(conn, match_id: str, default_missing: bool) -
     p1_mods_stored = meta_dict.get("p1_modifiers")
     p2_mods_stored = meta_dict.get("p2_modifiers")
     if p1_mods_stored:
-        p1_mod = ItemModifiers(**p1_mods_stored)
+        p1_mod = _item_modifiers_from_dict(p1_mods_stored)
     else:
-        p1_mod = await _fetch_player_modifiers(conn, match["player_one_id"])
+        p1_mod = combine_modifiers(
+            await _fetch_player_modifiers(conn, match["player_one_id"]),
+            class_modifiers_for(meta_dict.get("player_one_class_name")),
+        )
     if p2_mods_stored:
-        p2_mod = ItemModifiers(**p2_mods_stored)
+        p2_mod = _item_modifiers_from_dict(p2_mods_stored)
     else:
-        p2_mod = await _fetch_player_modifiers(conn, match["player_two_id"])
+        p2_mod = combine_modifiers(
+            await _fetch_player_modifiers(conn, match["player_two_id"]),
+            class_modifiers_for(meta_dict.get("player_two_class_name")),
+        )
 
     result = resolve_round(
         PlayerCombatState(
@@ -462,6 +579,11 @@ async def resolve_current_round_tx(conn, match_id: str, default_missing: bool) -
 async def finish_match_tx(conn, match, result) -> None:
     payout = calculate_payout(match["stake_amount"], result.status)
     now = datetime.now(timezone.utc)
+    try:
+        raw_meta = match["metadata"]
+        metadata = json.loads(raw_meta) if isinstance(raw_meta, str) else (raw_meta or {})
+    except Exception:
+        metadata = {}
     if result.status == "draw":
         await conn.execute(
             "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
@@ -509,6 +631,14 @@ async def finish_match_tx(conn, match, result) -> None:
                 uid, xp_res["new_xp"], xp_res["new_level"],
             )
 
+    final_metadata = dict(metadata or {})
+    final_metadata.update({
+        "resolution": result.resolution,
+        "payout": payout,
+        "max_rounds": MAX_ROUNDS,
+        "xp_results": xp_results,
+    })
+
     await conn.execute(
         """
         UPDATE arena_matches
@@ -535,16 +665,11 @@ async def finish_match_tx(conn, match, result) -> None:
         result.player_one_ability_used,
         result.player_two_ability_used,
         now,
-        _json({"resolution": result.resolution, "payout": payout, "max_rounds": MAX_ROUNDS, "xp_results": xp_results}),
+        _json(final_metadata),
     )
 
     # Persist to completed_games for admin-created duels (no room context).
     # Room-based duels are saved by watch_arena_room_completion in server.py.
-    try:
-        raw_meta = match["metadata"]
-        metadata = json.loads(raw_meta) if isinstance(raw_meta, str) else (raw_meta or {})
-    except Exception:
-        metadata = {}
     if metadata.get("source") != "room":
         winner_json = _json({"user_id": result.winner_user_id}) if result.winner_user_id else None
         players_json = _json([
@@ -572,6 +697,15 @@ async def finish_match_tx(conn, match, result) -> None:
             match["created_at"],
             now,
         )
+
+    # Daily quest hooks — both players played a match
+    quest_tasks = [
+        _daily_quests.increment_quest(p1_id, "play_match"),
+        _daily_quests.increment_quest(p2_id, "play_match"),
+    ]
+    if result.status != "draw" and result.winner_user_id:
+        quest_tasks.append(_daily_quests.increment_quest(result.winner_user_id, "win_arena"))
+    await asyncio.gather(*quest_tasks, return_exceptions=True)
 
 
 async def resolve_expired_rounds(limit: int = 50) -> int:

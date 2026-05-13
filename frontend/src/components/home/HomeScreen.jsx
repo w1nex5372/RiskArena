@@ -109,6 +109,32 @@ export default function HomeScreen({
         </div>
       </div>
 
+      {/* ── DAILY QUESTS CARD ───────────────────────────────── */}
+      <div style={{ margin: '16px 16px 0' }}>
+        <div onClick={() => setActiveTab?.('quests')} style={{
+          margin: '0 0 0px',
+          padding: '14px 16px',
+          borderRadius: 14,
+          background: 'linear-gradient(135deg, rgba(201,168,76,0.12), rgba(15,23,42,0.8))',
+          border: '1px solid rgba(201,168,76,0.28)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#c9a84c', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+              Daily Quests
+            </div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginTop: 3 }}>
+              Complete tasks, earn rewards
+            </div>
+          </div>
+          <div style={{ fontSize: 22 }}>📋</div>
+        </div>
+      </div>
+
       {/* ── SECTION B: Game Modes ────────────────────────────── */}
       <div style={{ margin: '24px 16px 0' }}>
         <SectionLabel>Game Modes</SectionLabel>
@@ -177,7 +203,7 @@ export default function HomeScreen({
         <SectionLabel>Overview</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[
-            { icon: '📅', label: 'DAILY QUESTS', value: 'Coming soon', muted: true },
+            { icon: '📅', label: 'DAILY QUESTS', value: 'View Quests', muted: false, onClick: () => setActiveTab?.('quests') },
             { icon: '🎁', label: 'FREE CHEST',   value: 'Coming soon', muted: true },
             {
               icon: '🏆',
@@ -191,11 +217,12 @@ export default function HomeScreen({
               ),
             },
             { icon: '📊', label: 'RANK', value: rank ? `#${rank}` : 'Unranked' },
-          ].map(({ icon, label, value, muted, custom }) => (
-            <div key={label} style={{
+          ].map(({ icon, label, value, muted, custom, onClick }) => (
+            <div key={label} onClick={onClick} style={{
               background: 'rgba(26,26,46,0.6)',
               border: '1px solid rgba(201,168,76,0.1)',
               borderRadius: 12, padding: '12px 14px',
+              cursor: onClick ? 'pointer' : 'default',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
                 <span style={{ fontSize: 16 }}>{icon}</span>

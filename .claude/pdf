@@ -1,0 +1,313 @@
+• Backend Agent
+
+  Role: Senior backend gameplay systems engineer for RiskArena.
+
+  Goal:
+  Implement the backend foundation for a unified Items system with L2-
+  style enchanting for owned weapon and armor copies.
+
+  Product direction locked:
+  - Items navigation in frontend will become a unified hub with:
+    - Loadout
+    - Shop
+    - Upgrade
+  - Enchanting applies only to:
+    - weapon
+    - armor
+  - Ability items are not enchantable for now
+
+  Existing design constraints:
+  - Tiers: Common -> Uncommon -> Rare -> Epic -> Legendary
+  - Every class has a full set for every tier:
+    - weapon
+    - armor
+    - ability
+  - Shop sells: Common, Uncommon, Rare
+  - Epic and Legendary are reward/drop-only
+  - Duplicates are allowed
+  - Only one equipped item per slot
+  - Epic and Legendary can have item-specific passives
+  - Backend is authoritative for all combat-impacting values
+
+  Important identity contract:
+  - `inventory_id` = unique owned copy
+  - `item_id` = catalog item definition
+  - Enchanting must be stored and resolved per owned copy, not per catalog
+  item
+
+  What to implement:
+
+  1. Schema/data model
+  - Extend the current item/inventory model to support enchanting
+  - Add per-inventory enchant tracking
+  - Add support for scroll ownership/counts in the simplest robust way
+  that fits the current architecture
+  - Keep migration changes additive and safe for existing DBs
+
+  2. Enchanting rules
+  Implement L2-style enchanting for owned copies.
+
+  Enchantable:
+  - weapon
+  - armor
+
+  Not enchantable:
+  - ability
+  - consumables
+
+  Max enchant:
+  - Common: +5
+  - Uncommon: +6
+  - Rare: +8
+  - Epic: +10
+  - Legendary: +12
+
+  Safe thresholds:
+  - Common / Uncommon / Rare: safe through +3
+  - Epic / Legendary: safe through +2
+
+  Scroll types:
+  - normal_scroll
+  - blessed_scroll
+
+  Normal scroll:
+  - success guaranteed up to safe threshold
+  - above safe threshold, success chance decreases by current enchant
+  level
+  - failure above safe threshold destroys the item copy and removes it
+  from inventory
+
+  Blessed scroll:
+  - usable on the same enchantable items
+  - on failure, item is not destroyed
+  - MVP failure behavior: enchant stays unchanged
+
+  3. Success chance model
+  - Implement a clear backend probability table or deterministic chance
+  mapping by:
+    - item tier
+    - current enchant level
+    - scroll type
+  - Keep it simple and easy to rebalance later
+
+  4. Scroll economy
+  - Add backend support for scroll ownership/consumption
+  - Normal scrolls should be obtainable via shop
+  - Blessed scrolls should be rarer/premium-ready
+  - Do not implement crafting or broader upgrade systems
+
+  5. Combat integration
+  Apply enchant bonuses automatically in backend combat calculations.
+
+  Recommended effect model:
+  - weapon enchant increases attack scaling, and optionally small ability
+  scaling where appropriate
+  - armor enchant increases hp scaling and/or survivability scaling
+  - final combat stats should include:
+    - class bonuses
+    - equipped base item stats
+    - passive effects
+    - enchant bonuses
+
+  Apply where relevant:
+  - arena combat
+  - boss calculations where item modifiers already matter
+
+  6. API support
+  Add/adjust endpoints for:
+  - fetching upgrade/enchantable inventory state
+  - fetching scroll availability
+  - performing enchant attempts
+  - returning result payloads for success/failure/destruction
+  - validating ownership, item slot, class restrictions if relevant, max
+  cap, and scroll availability
+
+  Use atomic transactions for enchant attempts.
+
+  7. Duplicate handling
+  - Duplicates remain allowed
+  - Enchant level belongs to the specific owned copy
+  - Destroying one copy must not affect duplicates
+  - Equipped copy replacement logic must remain correct
+
+  8. Tests
+  Add focused tests for:
+  - per-copy enchant isolation
+  - max enchant cap
+  - safe-threshold guaranteed success
+  - normal scroll destruction failure
+  - blessed scroll non-destruction failure
+  - scroll consumption
+  - invalid item/slot handling
+  - combat modifier integration from enchant
+  - transaction safety / ownership checks
+
+  Constraints:
+  - No frontend implementation here
+  - No unrelated feature work
+  - No marketplace/NFT/crafting
+  - No enchanting for ability items
+  - Keep changes pragmatic and testable
+
+  Deliverables:
+  - schema/model updates
+  - enchant backend endpoints
+  - combat integration
+  - tests
+  - summary of touched files
+  - short contract note for frontend
+
+  Reviewer Prompt For Backend
+
+  Review this RiskArena backend enchanting/items change with a strict bug/
+  risk/regression mindset.
+
+  Focus on:
+  - schema consistency
+  - per-copy identity via inventory_id
+  - duplicate item isolation
+  - equip compatibility after enchant changes
+  - normal scroll destruction behavior
+  - blessed scroll failure behavior
+  - max enchant enforcement
+  - transaction safety
+  - API contract clarity for frontend
+  - combat calculation correctness
+  - unintended regressions in existing item/shop/equip flows
+
+  Output rules:
+  - Findings first, ordered by severity
+  - Use concrete file references
+  - Call out data loss or state corruption risks explicitly
+  - If no findings, say so clearly and mention residual risks/testing gaps
+
+  Frontend Agent
+
+  Role: Senior frontend systems/UI engineer for RiskArena.
+
+  Goal:
+  Implement the unified Items hub and frontend enchant UX on top of the
+  backend itemization/enchant contract.
+
+  Product direction locked:
+  - Bottom navigation `Items` should lead to a unified Items hub
+  - Internal sections:
+    - Loadout
+    - Shop
+    - Upgrade
+  - Shop must be clearly reachable from the UI
+  - Upgrade must support L2-style enchanting for weapon and armor items
+
+  Existing design constraints:
+  - Tiers: Common -> Uncommon -> Rare -> Epic -> Legendary
+  - Shop sells: Common, Uncommon, Rare
+  - Epic and Legendary are reward/drop-only
+  - Duplicates are allowed
+  - Equip only one item per slot
+  - Epic and Legendary can have passive effects
+  - Backend is authoritative for all combat-impacting values
+
+  Important contract assumptions:
+  - `inventory_id` identifies the owned copy
+  - `item_id` identifies the catalog definition
+  - duplicate owned copies must render separately
+  - equipped state must be tied to `inventory_id`
+  - enchant level is per owned copy
+  - backend decides enchant success/failure/destruction
+
+  What to implement:
+
+  1. Unified Items hub
+  - Replace the current inventory-only Items flow with a hub/screen that
+  contains:
+    - Loadout
+    - Shop
+    - Upgrade
+  - Keep mobile-first usability
+  - Preserve current visual direction
+  - Make the tab switching obvious and light
+
+  2. Loadout section
+  - Preserve the current loadout/inventory capabilities
+  - Keep duplicate owned copies visually distinct
+  - Ensure equipped state is correct for the exact copy
+  - Show enchant level on items where relevant
+  - Keep tier/class/stat/passive readability high
+
+  3. Shop section
+  - Make shop reachable inside Items
+  - Support Common, Uncommon, Rare shop tiers
+  - Do not show Epic/Legendary as purchasable
+  - Do not block duplicate purchases
+  - Keep class lock messaging clear
+
+  4. Upgrade section
+  Build a clear enchant UI for owned weapon/armor copies.
+
+  The screen should show:
+  - owned enchantable items
+  - current enchant level
+  - item tier
+  - selected scroll type
+  - safe range messaging
+  - current risk state
+  - destruction warning for normal scrolls above safe threshold
+  - result feedback after each attempt
+
+  5. Scroll UX
+  Render scroll choices clearly:
+  - normal scroll
+  - blessed scroll
+
+  Expected messaging:
+  - normal scroll can destroy item above safe threshold
+  - blessed scroll is safer and does not destroy item on failure
+
+  6. Premium feel
+  - Epic and Legendary items should feel more premium visually
+  - Enchant level should be easy to scan
+  - Upgrade flow should feel tense but readable, not noisy
+
+  7. Data usage
+  - Do not invent client-side combat math
+  - Consume backend result payloads as source of truth
+  - If backend returns result states like success/fail/destroyed, render
+  them clearly
+  - Handle inventory refresh after enchant attempts correctly
+
+  8. Error and refresh behavior
+  - After enchant attempts, refresh the relevant inventory/loadout state
+  correctly
+  - If an item copy is destroyed, it must disappear cleanly from UI
+  - If equipped item copy changes or is removed, the UI must update
+  correctly
+  - Keep focus/window return refresh behavior sensible
+
+  Constraints:
+  - No backend rewrites
+  - No unrelated redesign
+  - No new game loops
+  - No tournament/admin/daily quest work
+  - Keep edits focused on items-related frontend
+
+  Deliverables:
+  - unified Items hub
+  - reachable Shop
+  - Upgrade UI
+  - correct duplicate and equipped-copy behavior
+  - enchant state rendering
+  - summary of touched files
+  - note any backend response fields the UI depends on
+
+  Reviewer Prompt For Frontend
+  - stale state after enchant/equip/class changes
+  - destroyed-item disappearance handling
+  - error handling and refresh behavior
+  - mobile readability
+  - scope discipline
+
+  Output rules:
+  - Findings first, ordered by severity
+  - Use concrete file references
+  - Call out frontend/backend contract mismatch risks explicitly
+  - If no findings, say so clearly and mention residual risks/testing ga

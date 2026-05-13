@@ -54,6 +54,12 @@ class ItemModifiers:
     defend_reduction: float = 0.0   # subtracted from pass-through multiplier → less damage gets through
     risk_win_chance: float = 0.0    # added to 0.5 base win probability
     hp_bonus: int = 0               # added to STARTING_HP at match creation
+    bonus_attack_percent: float = 0.0
+    bonus_ability_percent: float = 0.0
+    damage_reduction_percent: float = 0.0
+    risk_success_bonus: float = 0.0
+    boss_damage_percent: float = 0.0
+    lifesteal_percent: float = 0.0
 
 
 # Weapon / ability rarity → combat bonuses applied each round.
@@ -74,6 +80,12 @@ ARMOR_HP_BONUS: Dict[str, int] = {
 }
 
 _NO_MODIFIERS = ItemModifiers()
+VALID_CLASSES = {"warrior", "mage", "rogue"}
+CLASS_MODIFIERS: Dict[str, ItemModifiers] = {
+    "warrior": ItemModifiers(attack_bonus=3, hp_bonus=15),
+    "mage": ItemModifiers(ability_bonus=8, hp_bonus=-10),
+    "rogue": ItemModifiers(risk_win_chance=0.15),
+}
 
 
 def apply_modifiers(base_action_result: Dict, modifiers: ItemModifiers) -> Dict:
@@ -85,7 +97,44 @@ def apply_modifiers(base_action_result: Dict, modifiers: ItemModifiers) -> Dict:
         result["ability"] = result.get("ability", ABILITY_DAMAGE) + modifiers.ability_bonus
     if modifiers.hp_bonus:
         result["starting_hp"] = result.get("starting_hp", STARTING_HP) + modifiers.hp_bonus
+    if modifiers.bonus_attack_percent:
+        result["attack"] = int(round(result.get("attack", ATTACK_DAMAGE) * (1.0 + modifiers.bonus_attack_percent)))
+    if modifiers.bonus_ability_percent:
+        result["ability"] = int(round(result.get("ability", ABILITY_DAMAGE) * (1.0 + modifiers.bonus_ability_percent)))
     return result
+
+
+def normalize_class_name(class_name: Optional[str]) -> Optional[str]:
+    normalized = (class_name or "").strip().lower()
+    return normalized if normalized in VALID_CLASSES else None
+
+
+def class_modifiers_for(class_name: Optional[str]) -> ItemModifiers:
+    normalized = normalize_class_name(class_name)
+    if not normalized:
+        return _NO_MODIFIERS
+    return CLASS_MODIFIERS[normalized]
+
+
+def combine_modifiers(*modifiers: Optional[ItemModifiers]) -> ItemModifiers:
+    combined = ItemModifiers()
+    for modifier in modifiers:
+        if not modifier:
+            continue
+        combined = ItemModifiers(
+            attack_bonus=combined.attack_bonus + modifier.attack_bonus,
+            ability_bonus=combined.ability_bonus + modifier.ability_bonus,
+            defend_reduction=combined.defend_reduction + modifier.defend_reduction,
+            risk_win_chance=combined.risk_win_chance + modifier.risk_win_chance,
+            hp_bonus=combined.hp_bonus + modifier.hp_bonus,
+            bonus_attack_percent=combined.bonus_attack_percent + modifier.bonus_attack_percent,
+            bonus_ability_percent=combined.bonus_ability_percent + modifier.bonus_ability_percent,
+            damage_reduction_percent=combined.damage_reduction_percent + modifier.damage_reduction_percent,
+            risk_success_bonus=combined.risk_success_bonus + modifier.risk_success_bonus,
+            boss_damage_percent=combined.boss_damage_percent + modifier.boss_damage_percent,
+            lifesteal_percent=combined.lifesteal_percent + modifier.lifesteal_percent,
+        )
+    return combined
 
 
 def normalize_action(action: str) -> str:
@@ -104,20 +153,27 @@ def _incoming_damage(
     """Return (outgoing_damage, ability_used_now, self_damage)."""
     mod = modifiers or _NO_MODIFIERS
     if action == ArenaAction.ATTACK.value:
-        return ATTACK_DAMAGE + mod.attack_bonus, False, 0
+        damage = ATTACK_DAMAGE + mod.attack_bonus
+        return int(round(damage * (1.0 + mod.bonus_attack_percent))), False, 0
     if action == ArenaAction.DEFEND.value:
         return 0, False, 0
     if action == ArenaAction.ABILITY.value:
         if not ability_available:
             # ability already spent — fall back to a basic attack with weapon bonus
-            return ATTACK_DAMAGE + mod.attack_bonus, False, 0
-        return ABILITY_DAMAGE + mod.ability_bonus, True, 0
+            damage = ATTACK_DAMAGE + mod.attack_bonus
+            return int(round(damage * (1.0 + mod.bonus_attack_percent))), False, 0
+        damage = ABILITY_DAMAGE + mod.ability_bonus
+        return int(round(damage * (1.0 + mod.bonus_ability_percent))), True, 0
     if action == ArenaAction.RISK.value:
-        win_chance = min(0.9, 0.5 + mod.risk_win_chance)
+        win_chance = min(0.9, 0.5 + mod.risk_win_chance + mod.risk_success_bonus)
         if rng.random() < win_chance:
             return RISK_DAMAGE, False, 0
         return 0, False, RISK_SELF_DAMAGE
     raise ValueError("Invalid arena action")
+
+
+def _max_hp_for(modifiers: ItemModifiers) -> int:
+    return max(1, STARTING_HP + modifiers.hp_bonus)
 
 
 def resolve_round(
@@ -147,14 +203,17 @@ def resolve_round(
     # Formula: pass_through = max(0.0, 1 - DEFEND_REDUCTION - mod.defend_reduction)
     # Default (no armor): 1 - 0.5 - 0.0 = 0.5 → same as before.
     if p1_action == ArenaAction.DEFEND.value:
-        pass_through = max(0.0, 1.0 - DEFEND_REDUCTION - p1_mod.defend_reduction)
+        pass_through = max(0.0, 1.0 - DEFEND_REDUCTION - p1_mod.defend_reduction - p1_mod.damage_reduction_percent)
         p2_damage = int(p2_damage * pass_through)
     if p2_action == ArenaAction.DEFEND.value:
-        pass_through = max(0.0, 1.0 - DEFEND_REDUCTION - p2_mod.defend_reduction)
+        pass_through = max(0.0, 1.0 - DEFEND_REDUCTION - p2_mod.defend_reduction - p2_mod.damage_reduction_percent)
         p1_damage = int(p1_damage * pass_through)
 
-    p1_hp = max(0, player_one.hp - p2_damage - p1_self_damage)
-    p2_hp = max(0, player_two.hp - p1_damage - p2_self_damage)
+    p1_lifesteal = int(p1_damage * p1_mod.lifesteal_percent) if p1_damage > 0 else 0
+    p2_lifesteal = int(p2_damage * p2_mod.lifesteal_percent) if p2_damage > 0 else 0
+
+    p1_hp = max(0, min(_max_hp_for(p1_mod), player_one.hp - p2_damage - p1_self_damage + p1_lifesteal))
+    p2_hp = max(0, min(_max_hp_for(p2_mod), player_two.hp - p1_damage - p2_self_damage + p2_lifesteal))
     p1_ability_used = player_one.ability_used or p1_used_ability_now
     p2_ability_used = player_two.ability_used or p2_used_ability_now
 
@@ -197,6 +256,8 @@ def resolve_round(
             "player_two_damage_dealt": p2_damage,
             "player_one_self_damage": p1_self_damage,
             "player_two_self_damage": p2_self_damage,
+            "player_one_lifesteal": p1_lifesteal,
+            "player_two_lifesteal": p2_lifesteal,
             "player_one_ability_used_now": p1_used_ability_now,
             "player_two_ability_used_now": p2_used_ability_now,
         },

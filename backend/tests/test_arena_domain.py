@@ -3,8 +3,11 @@ import random
 import pytest
 
 from arena_domain import (
+    ItemModifiers,
     PlayerCombatState,
     calculate_payout,
+    class_modifiers_for,
+    combine_modifiers,
     normalize_action,
     resolve_round,
 )
@@ -59,6 +62,125 @@ def test_risk_can_deal_damage_or_self_damage_deterministically_with_injected_rng
     assert success.player_one_hp == 100
     assert failure.player_two_hp == 100
     assert failure.player_one_hp == 85
+
+
+def test_warrior_class_adds_attack_damage_and_extra_hp():
+    warrior_mods = class_modifiers_for("warrior")
+
+    result = resolve_round(
+        p("p1", hp=100 + warrior_mods.hp_bonus),
+        p("p2"),
+        "attack",
+        "attack",
+        1,
+        random.Random(1),
+        player_one_modifiers=warrior_mods,
+    )
+
+    assert warrior_mods == ItemModifiers(attack_bonus=3, hp_bonus=15)
+    assert result.player_one_hp == 95
+    assert result.player_two_hp == 77
+
+
+def test_mage_class_boosts_ability_damage_and_has_lower_hp():
+    mage_mods = class_modifiers_for("mage")
+
+    result = resolve_round(
+        p("p1", hp=100 + mage_mods.hp_bonus),
+        p("p2"),
+        "ability",
+        "attack",
+        1,
+        random.Random(1),
+        player_one_modifiers=mage_mods,
+    )
+
+    assert mage_mods == ItemModifiers(ability_bonus=8, hp_bonus=-10)
+    assert result.player_one_hp == 70
+    assert result.player_two_hp == 62
+
+
+def test_rogue_class_increases_risk_success_chance():
+    baseline = resolve_round(p("p1"), p("p2"), "risk", "defend", 1, random.Random(5))
+    rogue = resolve_round(
+        p("p1"),
+        p("p2"),
+        "risk",
+        "defend",
+        1,
+        random.Random(5),
+        player_one_modifiers=class_modifiers_for("rogue"),
+    )
+
+    assert baseline.player_two_hp == 100
+    assert baseline.player_one_hp == 85
+    assert rogue.player_two_hp == 83
+    assert rogue.player_one_hp == 100
+
+
+def test_class_and_item_modifiers_stack_cleanly():
+    combined = combine_modifiers(
+        class_modifiers_for("warrior"),
+        ItemModifiers(attack_bonus=5, hp_bonus=10),
+    )
+
+    result = resolve_round(
+        p("p1", hp=100 + combined.hp_bonus),
+        p("p2"),
+        "attack",
+        "defend",
+        1,
+        random.Random(1),
+        player_one_modifiers=combined,
+    )
+
+    assert combined.attack_bonus == 8
+    assert combined.hp_bonus == 25
+    assert result.player_one_hp == 125
+    assert result.player_two_hp == 86
+
+
+def test_attack_percent_passive_increases_damage():
+    result = resolve_round(
+        p("p1"),
+        p("p2"),
+        "attack",
+        "defend",
+        1,
+        random.Random(1),
+        player_one_modifiers=ItemModifiers(bonus_attack_percent=0.25),
+    )
+
+    assert result.player_two_hp == 88
+
+
+def test_enchanted_weapon_modifier_changes_arena_damage():
+    result = resolve_round(
+        p("p1"),
+        p("p2"),
+        "attack",
+        "defend",
+        1,
+        random.Random(1),
+        player_one_modifiers=ItemModifiers(attack_bonus=10, bonus_attack_percent=0.10),
+    )
+
+    assert result.player_two_hp == 84
+
+
+def test_lifesteal_passive_restores_hp_after_damage():
+    result = resolve_round(
+        p("p1", hp=60),
+        p("p2"),
+        "attack",
+        "defend",
+        1,
+        random.Random(1),
+        player_one_modifiers=ItemModifiers(lifesteal_percent=0.5),
+    )
+
+    assert result.player_one_hp == 65
+    assert result.details["player_one_lifesteal"] == 5
 
 
 def test_knockout_sets_winner():

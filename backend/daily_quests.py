@@ -1,0 +1,137 @@
+"""
+Daily quest definitions and progress helpers.
+No FastAPI imports — called from server.py and repos.
+"""
+from datetime import date
+from typing import Dict, List
+
+from database import get_pool
+
+QUESTS: List[Dict] = [
+    {
+        "key": "login",
+        "label": "Daily Login",
+        "description": "Log in today",
+        "icon": "🌅",
+        "goal": 1,
+        "reward_coins": 5,
+        "reward_xp": 0,
+    },
+    {
+        "key": "play_match",
+        "label": "Battle Ready",
+        "description": "Play 3 arena matches",
+        "icon": "⚔️",
+        "goal": 3,
+        "reward_coins": 30,
+        "reward_xp": 10,
+    },
+    {
+        "key": "win_arena",
+        "label": "Arena Victor",
+        "description": "Win 2 arena matches",
+        "icon": "🏆",
+        "goal": 2,
+        "reward_coins": 50,
+        "reward_xp": 0,
+    },
+    {
+        "key": "boss_raid",
+        "label": "Raid Warrior",
+        "description": "Attack the Boss Raid",
+        "icon": "🔥",
+        "goal": 1,
+        "reward_coins": 20,
+        "reward_xp": 0,
+    },
+    {
+        "key": "deal_damage",
+        "label": "Damage Dealer",
+        "description": "Deal 500 damage in Boss Raid",
+        "icon": "💥",
+        "goal": 500,
+        "reward_coins": 0,
+        "reward_xp": 30,
+    },
+]
+
+QUEST_MAP: Dict[str, Dict] = {q["key"]: q for q in QUESTS}
+
+
+async def increment_quest(user_id: str, quest_key: str, amount: int = 1) -> None:
+    """
+    Upsert progress for a quest. Marks completed=TRUE when progress >= goal.
+    Safe to call multiple times (idempotent once completed).
+    """
+    quest = QUEST_MAP.get(quest_key)
+    if not quest:
+        return
+    today = date.today().isoformat()
+    goal = quest["goal"]
+    async with get_pool().acquire() as conn:
+        await conn.execute("""
+            INSERT INTO daily_quest_progress (user_id, quest_date, quest_key, progress, completed, claimed)
+            VALUES ($1, $2::date, $3, LEAST($4, $5), ($4 >= $5), FALSE)
+            ON CONFLICT (user_id, quest_date, quest_key) DO UPDATE
+            SET progress  = LEAST(daily_quest_progress.progress + $4, $5),
+                completed = (daily_quest_progress.progress + $4 >= $5)
+            WHERE NOT daily_quest_progress.completed
+        """, user_id, today, quest_key, amount, goal)
+
+
+async def get_quests_for_user(user_id: str) -> List[Dict]:
+    """
+    Return today's quest list with current progress merged in.
+    Auto-completes the login quest (progress=1) on first call each day.
+    """
+    today = date.today().isoformat()
+    async with get_pool().acquire() as conn:
+        # Auto-complete login quest
+        await conn.execute("""
+            INSERT INTO daily_quest_progress (user_id, quest_date, quest_key, progress, completed, claimed)
+            VALUES ($1, $2::date, 'login', 1, TRUE, FALSE)
+            ON CONFLICT (user_id, quest_date, quest_key) DO NOTHING
+        """, user_id, today)
+        rows = await conn.fetch("""
+            SELECT quest_key, progress, completed, claimed
+            FROM daily_quest_progress
+            WHERE user_id = $1 AND quest_date = $2::date
+        """, user_id, today)
+    progress_map = {r["quest_key"]: dict(r) for r in rows}
+    result = []
+    for q in QUESTS:
+        p = progress_map.get(q["key"], {})
+        result.append({
+            **q,
+            "progress": p.get("progress", 0),
+            "completed": p.get("completed", False),
+            "claimed":   p.get("claimed",   False),
+        })
+    return result
+
+
+async def claim_quest(user_id: str, quest_key: str):
+    """
+    Mark quest as claimed. Returns (coins, xp) to award, or raises ValueError.
+    Does NOT update token_balance/xp — caller must do that.
+    """
+    quest = QUEST_MAP.get(quest_key)
+    if not quest:
+        raise ValueError("Unknown quest")
+    today = date.today().isoformat()
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT completed, claimed FROM daily_quest_progress
+            WHERE user_id = $1 AND quest_date = $2::date AND quest_key = $3
+        """, user_id, today, quest_key)
+        if not row:
+            raise ValueError("Quest not started")
+        if not row["completed"]:
+            raise ValueError("Quest not completed yet")
+        if row["claimed"]:
+            raise ValueError("Already claimed")
+        await conn.execute("""
+            UPDATE daily_quest_progress SET claimed = TRUE
+            WHERE user_id = $1 AND quest_date = $2::date AND quest_key = $3
+        """, user_id, today, quest_key)
+    return quest["reward_coins"], quest["reward_xp"]

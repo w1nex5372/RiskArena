@@ -1,4 +1,4 @@
-import { Backpack, Crown, Swords, Trophy, UserCircle, Users, Zap } from 'lucide-react';
+import { Backpack, Crown, Medal, Swords, UserCircle, Users, Zap } from 'lucide-react';
 
 function NavBtn({ tab, activeTab, onClick, icon: Icon, label }) {
   const isActive = activeTab === tab;
@@ -52,7 +52,7 @@ export default function BottomNav({ activeTab, setActiveTab, user }) {
       <NavBtn tab="rooms"      activeTab={activeTab} onClick={() => setActiveTab('rooms')}      icon={Users}      label="Home"    />
       <NavBtn tab="arena"      activeTab={activeTab} onClick={() => setActiveTab('arena')}      icon={Swords}     label="Arena"   />
       <NavBtn tab="boss"       activeTab={activeTab} onClick={() => setActiveTab('boss')}       icon={Zap}        label="Raid"    />
-      <NavBtn tab="tournament" activeTab={activeTab} onClick={() => setActiveTab('tournament')} icon={Trophy}     label="Cup"     />
+      <NavBtn tab="leaderboard" activeTab={activeTab} onClick={() => setActiveTab('leaderboard')} icon={Medal}  label="Ranks"   />
       <NavBtn tab="inventory"  activeTab={activeTab} onClick={() => setActiveTab('inventory')}  icon={Backpack}   label="Items"   />
       <NavBtn tab="profile"    activeTab={activeTab} onClick={() => setActiveTab('profile')}    icon={UserCircle} label="Profile" />
       {(user?.is_admin === true || user?.is_owner === true) && (

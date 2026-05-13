@@ -226,14 +226,33 @@ async def increment_user_tokens_by_telegram_id(telegram_id: int, amount: int) ->
         return _row_to_dict(row)
 
 
-async def get_leaderboard(limit: int = 10) -> List[Dict]:
+async def get_leaderboard(tab: str = "coins", limit: int = 20) -> List[Dict]:
+    base_select = """
+        SELECT u.id, u.first_name, u.telegram_username, u.photo_url,
+               u.token_balance, u.level, u.xp, u.class_name,
+               COUNT(am.id) FILTER (WHERE am.winner_user_id = u.id) AS wins
+        FROM users u
+        LEFT JOIN arena_matches am ON am.status = 'finished'
+             AND (am.player_one_id = u.id OR am.player_two_id = u.id)
+        GROUP BY u.id
+    """
+    if tab == "wins":
+        order = "ORDER BY wins DESC, u.token_balance DESC"
+    elif tab == "level":
+        order = "ORDER BY u.xp DESC, u.token_balance DESC"
+    else:
+        order = "ORDER BY u.token_balance DESC, u.xp DESC"
     async with get_pool().acquire() as conn:
         rows = await conn.fetch(
-            """SELECT first_name, telegram_username, token_balance, photo_url
-               FROM users ORDER BY token_balance DESC LIMIT $1""",
+            f"{base_select} {order} LIMIT $1",
             limit
         )
-        return _rows_to_list(rows)
+        result = []
+        for row in rows:
+            d = dict(row)
+            d["wins"] = int(d["wins"] or 0)
+            result.append(d)
+        return result
 
 
 async def search_users(query: str, limit: int = 50) -> List[Dict]:

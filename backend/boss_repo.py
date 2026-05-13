@@ -1,6 +1,7 @@
 """
 PostgreSQL persistence for Boss Raid.
 """
+import asyncio
 import json
 import random
 import uuid
@@ -10,6 +11,8 @@ from typing import Dict, List, Optional, Tuple
 from database import get_pool
 from boss_domain import compute_attack_damage, compute_phase, compute_rewards
 import progression as _prog
+import daily_quests as _daily_quests
+from itemization import aggregate_item_modifiers, tier_to_rarity
 
 RAID_DURATION_HOURS = 1
 
@@ -29,6 +32,65 @@ def _row(row) -> Optional[Dict]:
         if isinstance(value, datetime):
             data[key] = value.isoformat()
     return data
+
+
+async def _fetch_player_modifiers(conn, user_id: str):
+    rows = await conn.fetch(
+        """
+        SELECT i.slot, i.attack_bonus, i.ability_bonus, i.defend_reduction,
+               i.hp_bonus, i.risk_win_chance, i.passive_type, i.passive_value,
+               COALESCE(inv.enchant_level, 0) AS enchant_level
+        FROM equipped_items ei
+        JOIN items i ON i.id = ei.item_id
+        LEFT JOIN LATERAL (
+            SELECT enchant_level
+            FROM inventory
+            WHERE user_id = ei.user_id
+              AND item_id = ei.item_id
+              AND (ei.inventory_id IS NULL OR id = ei.inventory_id)
+            ORDER BY CASE WHEN id = ei.inventory_id THEN 0 ELSE 1 END, acquired_at ASC, id ASC
+            LIMIT 1
+        ) inv ON TRUE
+        WHERE ei.user_id = $1
+        """,
+        user_id,
+    )
+    return aggregate_item_modifiers([dict(row) for row in rows])
+
+
+async def _grant_boss_item_drop_tx(conn, user_id: str, tier: Optional[str], rng: random.Random) -> Optional[Dict]:
+    if not tier:
+        return None
+    user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
+    class_name = user_row["class_name"] if user_row else None
+    if not class_name:
+        return None
+    items = await conn.fetch(
+        """
+        SELECT * FROM items
+        WHERE class_name = $1 AND tier = $2
+        ORDER BY slot ASC
+        """,
+        class_name,
+        tier,
+    )
+    if not items:
+        return None
+    granted = dict(items[rng.randrange(len(items))])
+    await conn.execute(
+        """
+        INSERT INTO inventory
+            (id, user_id, item_type, item_name, item_rarity, equipped, item_id, source, acquired_at)
+        VALUES ($1, $2, $3, $4, $5, FALSE, $6, 'boss', NOW())
+        """,
+        str(uuid.uuid4()),
+        user_id,
+        granted["slot"],
+        granted["name"],
+        tier_to_rarity(granted["tier"]),
+        granted["id"],
+    )
+    return granted
 
 
 async def get_active_raid() -> Optional[Dict]:
@@ -154,11 +216,13 @@ async def _settle_raid_tx(conn, raid_id: str) -> List[Dict]:
     status_row = await conn.fetchrow("SELECT status FROM boss_raids WHERE id = $1", raid_id)
     defeated = status_row["status"] == "defeated" if status_row else False
 
-    rewards = compute_rewards(damage_by_user, defeated=defeated)
+    rng = random.Random(f"{raid_id}:rewards")
+    rewards = compute_rewards(damage_by_user, defeated=defeated, rng=rng)
     now = datetime.now(timezone.utc)
     reward_dicts: List[Dict] = []
 
     for r in rewards:
+        granted_item = await _grant_boss_item_drop_tx(conn, r.user_id, r.item_drop_tier, rng)
         await conn.execute(
             """
             INSERT INTO boss_raid_rewards (raid_id, user_id, coins, xp, item_drop, claimed_at)
@@ -168,7 +232,7 @@ async def _settle_raid_tx(conn, raid_id: str) -> List[Dict]:
             r.user_id,
             r.coins,
             r.xp,
-            r.item_drop,
+            granted_item["name"] if granted_item else r.item_drop,
             now,
         )
         await conn.execute(
@@ -189,7 +253,8 @@ async def _settle_raid_tx(conn, raid_id: str) -> List[Dict]:
             "user_id": r.user_id,
             "coins": r.coins,
             "xp": r.xp,
-            "item_drop": r.item_drop,
+            "item_drop": granted_item["name"] if granted_item else r.item_drop,
+            "item_drop_tier": r.item_drop_tier,
             "leveled_up": xp_res["leveled_up"],
             "new_level": xp_res["new_level"],
         })
@@ -243,7 +308,13 @@ async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]]]:
                 state["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
                 return state, rewards
 
-            damage = compute_attack_damage(rng)
+            modifiers = await _fetch_player_modifiers(conn, user_id)
+            damage = compute_attack_damage(
+                rng,
+                flat_bonus=modifiers.attack_bonus,
+                attack_percent_bonus=modifiers.bonus_attack_percent,
+                boss_damage_percent=modifiers.boss_damage_percent,
+            )
             new_hp = max(0, row["current_hp"] - damage)
             new_phase = compute_phase(new_hp, row["max_hp"])
 
@@ -256,6 +327,13 @@ async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]]]:
                 user_id,
                 damage,
                 now,
+            )
+
+            # Daily quest hooks for boss raid participation and damage
+            await asyncio.gather(
+                _daily_quests.increment_quest(user_id, "boss_raid"),
+                _daily_quests.increment_quest(user_id, "deal_damage", amount=damage),
+                return_exceptions=True,
             )
 
             rewards: Optional[List[Dict]] = None
