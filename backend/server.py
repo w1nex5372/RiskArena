@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, Request, Response
 from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import socketio
@@ -21,6 +21,8 @@ from pathlib import Path
 import hashlib
 import hmac
 import aiohttp
+from collections import defaultdict, deque
+from urllib.parse import parse_qsl
 # PostgreSQL via asyncpg (see database.py and db_queries.py)
 from solana.rpc.async_api import AsyncClient
 from solders.pubkey import Pubkey
@@ -40,16 +42,14 @@ from payment_recovery import run_startup_recovery
 from rpc_monitor import rpc_alert_system
 from manual_credit_logger import credit_tokens_manually, ManualCreditLogger
 import socket_rooms
+import arena_repo
+import progression as _progression
+from auth import SESSION_COOKIE, create_session_token, get_authenticated_user_id
 
 # Get environment variables
 PG_HOST = os.environ.get('PG_HOST', 'localhost')
 PG_DB   = os.environ.get('PG_DB', 'casino_db')
-CORS_ORIGINS_ENV = os.environ.get(
-    'CORS_ORIGINS',
-    'http://localhost:3000,https://telebet-2.preview.emergentagent.com,https://erniocasino.vercel.app'
-).split(',')
-CORS_ORIGINS_ENV = [origin.strip() for origin in CORS_ORIGINS_ENV if origin.strip()]
-REQUIRED_CORS_ORIGINS = [
+CORS_ORIGINS = [
     "https://erniocasino.vercel.app",
     "https://www.erniocasino.vercel.app",
     "http://localhost:3000",
@@ -57,13 +57,55 @@ REQUIRED_CORS_ORIGINS = [
     "https://web.telegram.org",
     "https://telegram.org",
 ]
-CORS_ORIGINS = list(dict.fromkeys(CORS_ORIGINS_ENV + REQUIRED_CORS_ORIGINS))
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN_HERE')
+RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get('RATE_LIMIT_WINDOW_SECONDS', '60'))
+RATE_LIMIT_DEFAULT_MAX = int(os.environ.get('RATE_LIMIT_DEFAULT_MAX', '120'))
+RATE_LIMIT_SENSITIVE_MAX = int(os.environ.get('RATE_LIMIT_SENSITIVE_MAX', '30'))
+RATE_LIMIT_AUTH_MAX = int(os.environ.get('RATE_LIMIT_AUTH_MAX', '12'))
+RATE_LIMIT_ADMIN_MAX = int(os.environ.get('RATE_LIMIT_ADMIN_MAX', '60'))
 
 # Solana Configuration for devnet (test environment as requested)
 SOLANA_RPC_URL = os.environ.get('SOLANA_RPC_URL', 'https://api.devnet.solana.com')
 CASINO_WALLET_PRIVATE_KEY = os.environ.get('CASINO_WALLET_PRIVATE_KEY', '')
 CASINO_WALLET_ADDRESS = os.environ.get('CASINO_WALLET_ADDRESS', 'YourWalletAddressHere12345678901234567890123456789')
+ADMIN_KEY = os.environ.get('ADMIN_KEY', '')
+
+def verify_admin_key(admin_key: str) -> bool:
+    return bool(ADMIN_KEY) and secrets.compare_digest(admin_key or '', ADMIN_KEY)
+
+_rate_limit_hits: Dict[str, deque] = defaultdict(deque)
+
+def _client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get('x-forwarded-for')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    return request.client.host if request.client else 'unknown'
+
+def _rate_limit_for_path(path: str) -> int:
+    if path.startswith('/api/auth/telegram'):
+        return RATE_LIMIT_AUTH_MAX
+    if path.startswith('/api/admin'):
+        return RATE_LIMIT_ADMIN_MAX
+    if (
+        path.startswith('/api/join-room')
+        or path.endswith('/payment-wallet')
+        or path.startswith('/api/promo-codes/use')
+    ):
+        return RATE_LIMIT_SENSITIVE_MAX
+    return RATE_LIMIT_DEFAULT_MAX
+
+def _check_rate_limit(request: Request) -> bool:
+    now = time.time()
+    path = request.url.path
+    limit = _rate_limit_for_path(path)
+    key = f"{_client_ip(request)}:{request.method}:{path}"
+    bucket = _rate_limit_hits[key]
+    while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
+        bucket.popleft()
+    if len(bucket) >= limit:
+        return False
+    bucket.append(now)
+    return True
 
 # HD Wallet Derivation System
 class SolanaWalletDerivation:
@@ -162,16 +204,25 @@ app = FastAPI(title="Solana Casino Battle Royale")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if not _check_rate_limit(request):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many requests. Please try again later."},
+            headers={"Retry-After": str(RATE_LIMIT_WINDOW_SECONDS)},
+        )
+    return await call_next(request)
 
 # Socket.IO setup
 sio = socketio.AsyncServer(
-    cors_allowed_origins="*",
+    cors_allowed_origins=CORS_ORIGINS,
     logger=True,
     engineio_logger=True,
     async_mode='asgi',
@@ -203,11 +254,11 @@ PRIZE_LINKS = {
 # (Now configured above in environment variables section)
 
 ROOM_SETTINGS = {
-    RoomType.FREE:     {"min_bet": 0,   "max_bet": 0,    "name": "Free Room",  "min_players": 2, "max_players": 3},
-    RoomType.BRONZE:   {"min_bet": 200, "max_bet": 450,  "name": "Bronze Room","min_players": 2, "max_players": 3},
-    RoomType.SILVER:   {"min_bet": 350, "max_bet": 800,  "name": "Silver Room","min_players": 2, "max_players": 3},
-    RoomType.GOLD:     {"min_bet": 650, "max_bet": 1200, "name": "Gold Room",  "min_players": 2, "max_players": 3},
-    RoomType.FREEROLL: {"min_bet": 0,   "max_bet": 0,    "name": "Free Roll",  "min_players": 2, "max_players": 30},
+    RoomType.FREE:     {"min_bet": 0,   "max_bet": 0,    "name": "Free Room",  "min_players": 2, "max_players": 3,  "game_mode": "roulette"},
+    RoomType.BRONZE:   {"min_bet": 200, "max_bet": 450,  "name": "Bronze Room","min_players": 2, "max_players": 2,  "game_mode": "duel"},
+    RoomType.SILVER:   {"min_bet": 350, "max_bet": 800,  "name": "Silver Room","min_players": 2, "max_players": 3,  "game_mode": "roulette"},
+    RoomType.GOLD:     {"min_bet": 650, "max_bet": 1200, "name": "Gold Room",  "min_players": 2, "max_players": 3,  "game_mode": "roulette"},
+    RoomType.FREEROLL: {"min_bet": 0,   "max_bet": 0,    "name": "Free Roll",  "min_players": 2, "max_players": 30, "game_mode": "roulette"},
 }
 
 # Dynamic room configs loaded from DB on startup (overrides ROOM_SETTINGS defaults)
@@ -222,6 +273,7 @@ class TelegramAuthData(BaseModel):
     photo_url: Optional[str] = None
     auth_date: int
     hash: str
+    init_data: Optional[str] = None
 
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -239,12 +291,31 @@ class User(BaseModel):
     is_admin: bool = Field(default=False)
     is_owner: bool = Field(default=False)
     role: str = Field(default="user")  # user, admin, owner
-    last_daily_claim: Optional[str] = None  # Timestamp of last daily token claim
+    session_token: Optional[str] = None
+    last_daily_claim: Optional[str] = None
+    xp: int = Field(default=0)
+    level: int = Field(default=1)
+    class_name: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserCreate(BaseModel):
     telegram_auth_data: TelegramAuthData
+
+
+def attach_session(response: Response, user_payload: dict) -> dict:
+    token = create_session_token(user_payload["id"])
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        secure=os.environ.get("SESSION_COOKIE_SECURE", "true").lower() not in ("0", "false", "no"),
+        samesite=os.environ.get("SESSION_COOKIE_SAMESITE", "none"),
+        max_age=int(os.environ.get("SESSION_TTL_SECONDS", "86400")),
+    )
+    enriched = dict(user_payload)
+    enriched["session_token"] = token
+    return enriched
 
 
 class RoomPlayer(BaseModel):
@@ -274,6 +345,7 @@ class GameRoom(BaseModel):
     winner: Optional[RoomPlayer] = None
     prize_link: Optional[str] = None
     match_id: Optional[str] = None  # Set when game round starts
+    arena_match_id: Optional[str] = None  # Set for 1v1 Arena Duel rooms
     round_number: int = Field(default=1)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
@@ -297,44 +369,48 @@ freeroll_config: dict = {"max_players": 30, "prize": 500, "is_locked": False}
 
 # Telegram authentication functions
 def verify_telegram_auth(auth_data: dict, bot_token: str) -> bool:
-    """Verify Telegram authentication data - PRODUCTION VERSION"""
+    """Verify Telegram WebApp initData using Telegram's HMAC check."""
     if not auth_data:
         logging.warning("No auth data provided")
         return False
-    
-    # Production: Verify required fields
+    if not bot_token or bot_token == 'YOUR_TELEGRAM_BOT_TOKEN_HERE':
+        logging.warning("Telegram bot token is not configured")
+        return False
+
     required_fields = ['id', 'first_name', 'auth_date']
     for field in required_fields:
         if field not in auth_data:
             logging.warning(f"Missing required field: {field}")
             return False
-    
-    # Production: Verify auth_date is recent (within 24 hours)
+
     current_time = datetime.now(timezone.utc).timestamp()
     auth_time = auth_data.get('auth_date', 0)
-    if current_time - auth_time > 86400:  # 24 hours
-        logging.warning(f"Auth data too old: {current_time - auth_time} seconds")
+    if current_time - int(auth_time) > 86400:
+        logging.warning(f"Auth data too old: {current_time - int(auth_time)} seconds")
         return False
-    
-    # For Telegram Web App integration, we trust these hash types
-    if auth_data.get('hash') in ['telegram_auto', 'telegram_webapp']:
-        return True
-        
-    if 'hash' not in auth_data:
+
+    raw_init_data = auth_data.get('init_data')
+    if not raw_init_data and isinstance(auth_data.get('hash'), str) and '=' in auth_data['hash']:
+        raw_init_data = auth_data['hash']
+
+    if raw_init_data:
+        pairs = dict(parse_qsl(raw_init_data, keep_blank_values=True))
+        received_hash = pairs.pop('hash', None)
+        if not received_hash:
+            logging.warning("Telegram initData missing hash")
+            return False
+        data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(pairs.items()))
+        secret_key = hmac.new(b'WebAppData', bot_token.encode(), hashlib.sha256).digest()
+        expected_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected_hash, received_hash)
+
+    received_hash = auth_data.get('hash')
+    if not received_hash:
         return False
-    
-    # Extract hash and remove it from data
-    received_hash = auth_data.pop('hash')
-    
-    # Create data check string
-    data_check_string = '\n'.join([f"{k}={v}" for k, v in sorted(auth_data.items()) if k != 'hash'])
-    
-    # Create secret key
+    check_data = {k: v for k, v in auth_data.items() if k not in ('hash', 'init_data') and v is not None}
+    data_check_string = '\n'.join(f"{k}={v}" for k, v in sorted(check_data.items()))
     secret_key = hashlib.sha256(bot_token.encode()).digest()
-    
-    # Calculate expected hash
     expected_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    
     return hmac.compare_digest(expected_hash, received_hash)
 
 def is_telegram_user_legitimate(telegram_data: TelegramAuthData) -> bool:
@@ -545,7 +621,7 @@ async def get_or_create_derived_address(user_id: str, telegram_id: int) -> dict:
         )
         
         logging.info(f"✅ Created derived address for user {telegram_id}: {derived_info['address']}")
-        return derived_info
+        return {"address": derived_info["address"], "user_id": user_id, "telegram_id": telegram_id}
         
     except Exception as e:
         logging.error(f"Error getting/creating derived address: {e}")
@@ -1070,6 +1146,9 @@ async def broadcast_room_updates():
                 'players': serialized_players,
                 'status': room.status,
                 'prize_pool': room.prize_pool,
+                'match_id': room.match_id,
+                'arena_match_id': room.arena_match_id,
+                'mode': 'duel' if room.arena_match_id else None,
                 'round_number': room.round_number,
                 'players_count': len(room.players),
                 'max_players': room.max_players,
@@ -1089,9 +1168,69 @@ async def broadcast_room_updates():
         import traceback
         logging.error(traceback.format_exc())
 
+
+def is_arena_duel_room(room: GameRoom) -> bool:
+    return (
+        room.min_players == 2
+        and room.max_players == 2
+        and len(room.players) == 2
+        and all(not p.user_id.startswith("bot_") for p in room.players)
+        and room.players[0].bet_amount > 0
+        and room.players[1].bet_amount > 0
+    )
+
+
 async def start_game_round(room: GameRoom):
     """Start a game round when enough players have joined - with strict event sequence"""
     if len(room.players) < room.min_players:
+        return
+
+    if is_arena_duel_room(room):
+        room.status = "ready"
+        room.prize_pool = sum(p.bet_amount for p in room.players)
+        room.started_at = datetime.now(timezone.utc)
+        try:
+            arena_match = await arena_repo.create_room_duel(
+                room.players[0].user_id,
+                room.players[1].user_id,
+                room.players[0].bet_amount,
+                room.id,
+                room.room_type.value if hasattr(room.room_type, "value") else str(room.room_type),
+                pot_amount=room.prize_pool,
+            )
+        except Exception as exc:
+            logging.error(f"Failed to create arena duel for room {room.id}: {exc}")
+            room.status = "waiting"
+            room.started_at = None
+            return
+
+        room.match_id = arena_match["id"]
+        room.arena_match_id = arena_match["id"]
+
+        serialized_players = []
+        for p in room.players:
+            player_dict = p.dict()
+            if "joined_at" in player_dict and isinstance(player_dict["joined_at"], datetime):
+                player_dict["joined_at"] = player_dict["joined_at"].isoformat()
+            serialized_players.append(player_dict)
+
+        payload = {
+            "room_id": room.id,
+            "room_type": room.room_type,
+            "match_id": arena_match["id"],
+            "arena_match_id": arena_match["id"],
+            "mode": "duel",
+            "players": serialized_players,
+            "prize_pool": room.prize_pool,
+            "stake_amount": room.players[0].bet_amount,
+            "message": "Arena duel is ready",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        await socket_rooms.broadcast_to_room(sio, room.id, "room_ready", payload)
+        await socket_rooms.broadcast_to_room(sio, room.id, "game_starting", payload)
+        asyncio.create_task(watch_arena_room_completion(room.id, arena_match["id"]))
+        await broadcast_room_updates()
+        logging.info(f"Arena duel bridge created match {arena_match['id']} for room {room.id}")
         return
     
     # Generate unique match ID for this game
@@ -1304,11 +1443,117 @@ async def start_game_round(room: GameRoom):
     
     # Broadcast updated room states (global broadcast)
     await broadcast_room_updates()
-    
-    # Clear chat history for finished room
-    room_chat.pop(room.id, None)
 
-    logging.info(f"✅ Game cycle complete for {room.room_type} room")
+
+async def watch_arena_room_completion(room_id: str, arena_match_id: str):
+    last_round_seen = 1  # round 1 is open at match creation; only emit on advances
+    max_iterations = 3600  # safety cap: 30 min at 2 s/poll
+    iterations = 0
+    while iterations < max_iterations:
+        iterations += 1
+        await asyncio.sleep(2)
+        try:
+            match = await arena_repo.get_match(arena_match_id)
+        except Exception as exc:
+            logging.error(f"[Arena] Failed to watch match {arena_match_id}: {exc}")
+            continue
+
+        if not match:
+            logging.warning(f"[Arena] Match {arena_match_id} not found in DB, stopping watcher")
+            break
+
+        # Push round-advance notification so clients don't wait for the next poll
+        current_round = match.get("round_number", 1)
+        if current_round > last_round_seen and match.get("status") == "active":
+            last_round_seen = current_round
+            room = active_rooms.get(room_id)
+            if room and room.arena_match_id == arena_match_id:
+                await socket_rooms.broadcast_to_room(sio, room_id, "match_update", {
+                    "arena_match_id": arena_match_id,
+                    "room_id": room_id,
+                    "round_number": current_round,
+                    "player_one_hp": match.get("player_one_hp"),
+                    "player_two_hp": match.get("player_two_hp"),
+                    "status": "active",
+                })
+
+        if match.get("status") not in ("finished", "draw", "cancelled"):
+            continue
+
+        room = active_rooms.get(room_id)
+        if not room or room.arena_match_id != arena_match_id:
+            return
+
+        room.status = "finished"
+        room.finished_at = datetime.now(timezone.utc)
+        winner_user_id = match.get("winner_user_id")
+        if winner_user_id:
+            room.winner = next((p for p in room.players if p.user_id == winner_user_id), None)
+
+        await socket_rooms.broadcast_to_room(sio, room_id, "arena_match_finished", {
+            "room_id": room.id,
+            "room_type": room.room_type,
+            "match_id": arena_match_id,
+            "arena_match_id": arena_match_id,
+            "mode": "duel",
+            "status": match.get("status"),
+            "winner_user_id": winner_user_id,
+            "payout_amount": match.get("payout_amount", 0),
+            "finished_at": room.finished_at.isoformat(),
+        })
+
+        # Persist arena result to completed_games so it shows in game history
+        try:
+            serialized_players = []
+            for p in room.players:
+                player_dict = p.dict()
+                if "joined_at" in player_dict and isinstance(player_dict["joined_at"], datetime):
+                    player_dict["joined_at"] = player_dict["joined_at"].isoformat()
+                serialized_players.append(player_dict)
+            room_type_str = (
+                room.room_type.value
+                if hasattr(room.room_type, "value")
+                else str(room.room_type).split(".")[-1].lower()
+            )
+            game_doc = {
+                "id": room.id,
+                "room_type": room_type_str,
+                "players": serialized_players,
+                "status": match.get("status", "finished"),
+                "prize_pool": room.prize_pool,
+                "winner": room.winner.dict() if room.winner else None,
+                "prize_link": None,
+                "match_id": arena_match_id,
+                "round_number": room.round_number,
+                "created_at": room.created_at,
+                "started_at": room.started_at,
+                "finished_at": room.finished_at,
+            }
+            await dbq.insert_completed_game(game_doc)
+        except Exception as exc:
+            logging.error(f"[Arena] Failed to save completed game: {exc}")
+
+        await asyncio.sleep(8)
+        current_room = active_rooms.get(room_id)
+        if current_room and current_room.arena_match_id == arena_match_id:
+            del active_rooms[room_id]
+
+            new_room = GameRoom(
+                room_type=room.room_type,
+                round_number=room.round_number + 1,
+            )
+            cfg = room_configs.get(room.room_type, {})
+            defaults = ROOM_SETTINGS.get(RoomType(room.room_type), {})
+            new_room.max_players = cfg.get("max_players", defaults.get("max_players", 3))
+            new_room.min_players = cfg.get("min_players", defaults.get("min_players", 2))
+            active_rooms[new_room.id] = new_room
+            await broadcast_room_updates()
+        return
+    else:
+        logging.warning(
+            f"[Arena] Watcher for match {arena_match_id} reached max_iterations limit "
+            f"({max_iterations} polls), stopping without resolution"
+        )
 
 # Initialize rooms
 async def initialize_rooms():
@@ -1431,7 +1676,7 @@ async def get_casino_wallet():
 async def add_tokens_to_user(admin_key: str, username: str, tokens: int):
     """Add tokens to a specific user by username"""
     
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     
     try:
@@ -1484,7 +1729,7 @@ async def add_tokens_to_user(admin_key: str, username: str, tokens: int):
 async def add_tokens_by_telegram_id(telegram_id: int, admin_key: str, tokens: int):
     """Add tokens to a user by their Telegram ID - useful for testing"""
     
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     
     try:
@@ -1523,7 +1768,7 @@ async def cleanup_database_for_production(admin_key: str):
     """ADMIN ONLY: Clean database for production launch"""
     try:
         # Simple admin key check (in production, use proper authentication)
-        if admin_key != "PRODUCTION_CLEANUP_2025":
+        if not verify_admin_key(admin_key):
             raise HTTPException(status_code=403, detail="Unauthorized")
         
         # Clear ALL tables completely
@@ -1552,7 +1797,7 @@ async def cleanup_database_for_production(admin_key: str):
 @api_router.get("/admin/reset-game-history")
 async def reset_game_history(admin_key: str):
     """ADMIN ONLY: Clear all game history and stats, keep user accounts"""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
         async with dbq.get_pool().acquire() as conn:
@@ -1572,7 +1817,7 @@ async def reset_game_history(admin_key: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/auth/telegram", response_model=User)
-async def telegram_auth(user_data: UserCreate):
+async def telegram_auth(user_data: UserCreate, response: Response):
     """Authenticate user with Telegram data"""
     telegram_data = user_data.telegram_auth_data
     
@@ -1585,8 +1830,9 @@ async def telegram_auth(user_data: UserCreate):
     if not telegram_data.id or not telegram_data.first_name:
         raise HTTPException(status_code=400, detail="Missing required Telegram user data")
     
-    # Skip hash verification for now since Web App integration can be complex
-    # In production, you'd want proper hash verification
+    if not verify_telegram_auth(telegram_data.dict(), TELEGRAM_BOT_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid Telegram authentication")
+
     logging.info(f"🔍 Authenticating Telegram user: {telegram_data.first_name} (ID: {telegram_data.id})")
     
     # Check if user already exists
@@ -1595,32 +1841,41 @@ async def telegram_auth(user_data: UserCreate):
     logging.info(f"🔎 Search result: {'FOUND' if existing_user else 'NOT FOUND'}")
 
     if existing_user:
-        # Special handling for admin @cia_nera - ensure unlimited tokens
-        if telegram_data.id == 7983427898:
-            logging.info(f"👑 Admin @cia_nera detected - ensuring unlimited tokens")
-            await dbq.update_user_fields_by_telegram_id(
-                telegram_data.id,
-                {
-                    "last_login": datetime.now(timezone.utc).isoformat(),
-                    "token_balance": 1000000000
-                }
-            )
-            existing_user['token_balance'] = 1000000000
+        now_utc = datetime.now(timezone.utc)
+        last_login_raw = existing_user.get('last_login')
+        if isinstance(last_login_raw, str):
+            last_login_raw = datetime.fromisoformat(last_login_raw)
+
+        # Award daily login XP if last login was on a previous calendar day
+        gave_daily_xp = False
+        if last_login_raw is None or last_login_raw.date() < now_utc.date():
+            cur_xp = int(existing_user.get('xp') or 0)
+            xp_res = _progression.award_xp_result(cur_xp, _progression.XP_DAILY_LOGIN)
+            async with get_pool().acquire() as _conn:
+                await _conn.execute(
+                    "UPDATE users SET xp = $2, level = $3, last_login = $4 WHERE telegram_id = $1",
+                    telegram_data.id, xp_res["new_xp"], xp_res["new_level"], now_utc,
+                )
+            gave_daily_xp = True
         else:
-            # Update last login time for regular users
             await dbq.update_user_fields_by_telegram_id(
                 telegram_data.id,
-                {"last_login": datetime.now(timezone.utc).isoformat()}
+                {"last_login": now_utc.isoformat()},
             )
-        
-        # Convert back from stored format
+
+        existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
+
         if isinstance(existing_user['created_at'], str):
             existing_user['created_at'] = datetime.fromisoformat(existing_user['created_at'])
         if isinstance(existing_user['last_login'], str):
             existing_user['last_login'] = datetime.fromisoformat(existing_user['last_login'])
-        
-        logging.info(f"✅ Returning existing user: {existing_user['first_name']} with balance: {existing_user.get('token_balance', 0)}")
-        return User(**existing_user)
+
+        logging.info(
+            f"✅ Returning existing user: {existing_user['first_name']} "
+            f"balance={existing_user.get('token_balance', 0)} "
+            f"xp={existing_user.get('xp', 0)} daily_xp={gave_daily_xp}"
+        )
+        return User(**attach_session(response, existing_user))
     
     # Create new user
     user = User(
@@ -1636,12 +1891,6 @@ async def telegram_auth(user_data: UserCreate):
     user_dict['created_at'] = user_dict['created_at'].isoformat()
     user_dict['last_login'] = user_dict['last_login'].isoformat()
     
-    # Special handling for admin @cia_nera - unlimited tokens
-    if telegram_data.id == 7983427898:
-        user_dict['token_balance'] = 1000000000  # 1 billion tokens for admin
-        logging.info(f"👑 Creating admin @cia_nera with unlimited tokens!")
-    else:
-        pass
 
     try:
         await dbq.insert_user(user_dict)
@@ -1661,8 +1910,6 @@ async def telegram_auth(user_data: UserCreate):
             raise HTTPException(status_code=500, detail="Failed to finalize Telegram authentication")
 
         update_fields = {"last_login": datetime.now(timezone.utc).isoformat()}
-        if telegram_data.id == 7983427898:
-            update_fields["token_balance"] = 1000000000
 
         await dbq.update_user_fields_by_telegram_id(telegram_data.id, update_fields)
         existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
@@ -1679,15 +1926,11 @@ async def telegram_auth(user_data: UserCreate):
             existing_user.get('token_balance', 0)
         )
 
-        return User(**existing_user)
+        return User(**attach_session(response, existing_user))
 
-    if telegram_data.id == 7983427898:
-        user.token_balance = user_dict['token_balance']
-        logging.info(f"👑 Admin @cia_nera created with {user.token_balance} tokens!")
-    else:
-        logging.info(f"🆕 Created new user: {user.first_name} (telegram_id: {user.telegram_id})")
+    logging.info(f"🆕 Created new user: {user.first_name} (telegram_id: {user.telegram_id})")
 
-    return user
+    return User(**attach_session(response, user.dict()))
 
 # Solana Token Purchase Endpoints
 class TokenPurchaseRequest(BaseModel):
@@ -1778,7 +2021,7 @@ async def get_purchase_history(user_id: str, limit: int = 5, offset: int = 0):
 @api_router.post("/admin/update-user-name/{telegram_id}")
 async def update_user_name(telegram_id: int, first_name: str, username: str = "", photo_url: str = "", admin_key: str = ""):
     """Update user name, username and photo"""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Invalid admin key")
     
     # Update user data
@@ -1808,7 +2051,7 @@ async def update_user_name(telegram_id: int, first_name: str, username: str = ""
 @api_router.post("/admin/process-payment")
 async def manually_process_payment(wallet_address: str, signature: str, admin_key: str = ""):
     """ADMIN ONLY: Manually trigger payment processing for a specific transaction"""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Invalid admin key")
     
     try:
@@ -1860,7 +2103,7 @@ async def manual_credit_tokens(
         transaction_signature: Optional Solana transaction signature
         admin_key: Admin authentication key
     """
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Invalid admin key")
     
     result = await credit_tokens_manually(
@@ -1876,7 +2119,7 @@ async def manual_credit_tokens(
 @api_router.get("/admin/recovery-status")
 async def get_recovery_status(admin_key: str = ""):
     """ADMIN ONLY: Get payment recovery system status"""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Invalid admin key")
     
     # Get RPC health status
@@ -1907,7 +2150,7 @@ async def rescan_payments(admin_key: str = "", wallet_address: Optional[str] = N
     If wallet_address provided, scans only that wallet
     Otherwise scans all pending wallets
     """
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Invalid admin key")
     
     try:
@@ -1999,7 +2242,7 @@ async def rescan_payments(admin_key: str = "", wallet_address: Optional[str] = N
 @api_router.post("/admin/reset-processor")
 async def reset_solana_processor(admin_key: str = ""):
     """ADMIN ONLY: Force reset Solana processor (for RPC URL changes)"""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Invalid admin key")
     
     try:
@@ -2045,6 +2288,9 @@ async def get_active_rooms():
             "max_players": room.max_players,
             "status": room.status,
             "prize_pool": room.prize_pool,
+            "match_id": room.match_id,
+            "arena_match_id": room.arena_match_id,
+            "mode": "duel" if room.arena_match_id else None,
             "round_number": room.round_number,
             "settings": ROOM_SETTINGS.get(room.room_type, ROOM_SETTINGS["bronze"]),
             "is_locked": (room.room_type == RoomType.FREEROLL and freeroll_config.get('is_locked', False))
@@ -2079,6 +2325,9 @@ async def get_user_room_status(user_id: str):
                         "players": serialized_players,
                         "players_count": len(room.players),
                         "prize_pool": room.prize_pool,
+                        "match_id": room.match_id,
+                        "arena_match_id": room.arena_match_id,
+                        "mode": "duel" if room.arena_match_id else None,
                         "min_players": room.min_players,
                         "max_players": room.max_players,
                         "position": next((i+1 for i, p in enumerate(room.players) if p.user_id == user_id), 0)
@@ -2103,9 +2352,12 @@ async def get_user_room_status(user_id: str):
         raise HTTPException(status_code=500, detail="Failed to check room status")
 
 @api_router.post("/join-room")
-async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks):
+async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks, http_request: Request):
     """Join a room with a bet"""
     logging.info(f"Join room request: {request.dict()}")
+    authenticated_user_id = get_authenticated_user_id(http_request)
+    if str(request.user_id) != str(authenticated_user_id):
+        raise HTTPException(status_code=403, detail="Authenticated user mismatch")
     
     # Find room of the requested type
     target_room = None
@@ -2259,8 +2511,11 @@ class LeaveRoomRequest(BaseModel):
     user_id: str
 
 @api_router.post("/leave-room")
-async def leave_room(request: LeaveRoomRequest):
+async def leave_room(request: LeaveRoomRequest, http_request: Request):
     """Remove player from a waiting room and refund their bet"""
+    authenticated_user_id = get_authenticated_user_id(http_request)
+    if str(request.user_id) != str(authenticated_user_id):
+        raise HTTPException(status_code=403, detail="Authenticated user mismatch")
     room = active_rooms.get(request.room_id)
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -2383,6 +2638,8 @@ async def get_room_details(room_id: str):
         "status": room.status,
         "prize_pool": room.prize_pool,
         "match_id": room.match_id,
+        "arena_match_id": room.arena_match_id,
+        "mode": "duel" if room.arena_match_id else None,
         "round_number": room.round_number,
         "settings": ROOM_SETTINGS[room.room_type],
         "winner": serialize_player(room.winner) if room.winner else None,
@@ -2464,6 +2721,9 @@ async def get_user_by_telegram_id(telegram_id: int):
         "username": user_doc.get('telegram_username', ''),
         "photo_url": user_doc.get('photo_url', ''),
         "token_balance": user_doc.get('token_balance', 0),
+        "xp": user_doc.get('xp', 0),
+        "level": user_doc.get('level', 1),
+        "class_name": user_doc.get('class_name'),
         "created_at": user_doc.get('created_at'),
         "last_login": user_doc.get('last_login'),
         "last_daily_claim": user_doc.get('last_daily_claim'),
@@ -2472,6 +2732,31 @@ async def get_user_by_telegram_id(telegram_id: int):
         "is_owner": user_doc.get('is_owner', False),
         "role": user_doc.get('role', 'user')
     }
+
+class ClassUpdateBody(BaseModel):
+    class_name: str
+
+@api_router.post("/me/class")
+async def set_my_class(body: ClassUpdateBody, http_request: Request):
+    """Update the authenticated user's class (warrior / mage / rogue)."""
+    valid_classes = {"warrior", "mage", "rogue"}
+    if body.class_name not in valid_classes:
+        raise HTTPException(status_code=400, detail="class_name must be warrior, mage, or rogue")
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET class_name = $2 WHERE id = $1",
+            user_id, body.class_name,
+        )
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": user_doc.get("id"),
+        "class_name": user_doc.get("class_name"),
+        "message": f"Class updated to {body.class_name}",
+    }
+
 
 @api_router.get("/user/{user_id}")
 async def get_user_data(user_id: str):
@@ -2489,6 +2774,9 @@ async def get_user_data(user_id: str):
             "username": user_doc.get('telegram_username', ''),
             "photo_url": user_doc.get('photo_url', ''),
             "token_balance": user_doc.get('token_balance', 0),
+            "xp": user_doc.get('xp', 0),
+            "level": user_doc.get('level', 1),
+            "class_name": user_doc.get('class_name'),
             "created_at": user_doc.get('created_at'),
             "last_login": user_doc.get('last_login'),
             "is_verified": user_doc.get('is_verified', False),
@@ -2500,11 +2788,206 @@ async def get_user_data(user_id: str):
         logging.error(f"Failed to get user data: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user data")
 
+@api_router.get("/me/progress")
+async def get_my_progress(http_request: Request):
+    """Return the authenticated user's XP and level progression."""
+    user_id = get_authenticated_user_id(http_request)
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    xp = int(user_doc.get('xp') or 0)
+    level = int(user_doc.get('level') or 1)
+    return {
+        "user_id": user_id,
+        "xp": xp,
+        "level": level,
+        "xp_to_next_level": _progression.xp_to_next_level(xp),
+        "xp_for_current_level": _progression.xp_for_level(level),
+    }
+
+
 @api_router.get("/user/{user_id}/prizes")
 async def get_user_prizes(user_id: str):
     """Get all prize links won by a specific user"""
     prizes = await dbq.get_user_prizes(user_id)
     return {"prizes": prizes}
+
+
+# ─────────────────────────────────────────────────────────────────
+# Shop endpoints
+# ─────────────────────────────────────────────────────────────────
+
+_TIER_ORDER = {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5}
+_TIER_TO_RARITY = {
+    "common": "Common",
+    "uncommon": "Rare",
+    "rare": "Rare",
+    "epic": "Epic",
+    "legendary": "Legendary",
+}
+
+
+@api_router.get("/shop/items")
+async def get_shop_items():
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT * FROM items WHERE price > 0
+            ORDER BY
+                CASE tier
+                    WHEN 'common'    THEN 1
+                    WHEN 'uncommon'  THEN 2
+                    WHEN 'rare'      THEN 3
+                    WHEN 'epic'      THEN 4
+                    WHEN 'legendary' THEN 5
+                    ELSE 6 END,
+                class_name
+        """)
+        return {"items": [dict(r) for r in rows]}
+
+
+class ShopBuyBody(BaseModel):
+    item_id: int
+
+
+@api_router.post("/shop/buy")
+async def buy_shop_item(body: ShopBuyBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            item = await conn.fetchrow(
+                "SELECT * FROM items WHERE id = $1 AND price > 0", body.item_id
+            )
+            if not item:
+                raise HTTPException(status_code=404, detail="Item not found or not purchasable")
+            updated = await conn.fetchrow(
+                "UPDATE users SET token_balance = token_balance - $2 "
+                "WHERE id = $1 AND token_balance >= $2 RETURNING id",
+                user_id, item["price"],
+            )
+            if not updated:
+                raise HTTPException(status_code=400, detail="Insufficient token balance")
+            rarity = _TIER_TO_RARITY.get(item["tier"], "Common")
+            await conn.execute(
+                """
+                INSERT INTO inventory
+                    (id, user_id, item_type, item_name, item_rarity, equipped, item_id, source, acquired_at)
+                VALUES ($1, $2, $3, $4, $5, FALSE, $6, 'shop', NOW())
+                """,
+                str(uuid.uuid4()), user_id, item["slot"], item["name"], rarity, item["id"],
+            )
+            return {"success": True, "item": dict(item)}
+
+
+# ─────────────────────────────────────────────────────────────────
+# Equipment endpoints
+# ─────────────────────────────────────────────────────────────────
+
+@api_router.get("/me/equipped")
+async def get_my_equipped(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT ei.slot, i.*
+            FROM equipped_items ei
+            JOIN items i ON i.id = ei.item_id
+            WHERE ei.user_id = $1
+            """,
+            user_id,
+        )
+        equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None}
+        for row in rows:
+            slot = row["slot"]
+            if slot in equipped:
+                equipped[slot] = dict(row)
+        return {"equipped": equipped}
+
+
+class EquipBody(BaseModel):
+    item_id: int
+
+
+@api_router.post("/me/equip")
+async def equip_item(body: EquipBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        inv_row = await conn.fetchrow(
+            "SELECT 1 FROM inventory WHERE user_id = $1 AND item_id = $2",
+            user_id, body.item_id,
+        )
+        if not inv_row:
+            raise HTTPException(status_code=404, detail="Item not in your inventory")
+        item = await conn.fetchrow("SELECT * FROM items WHERE id = $1", body.item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
+        if not user_row or item["class_name"] != user_row["class_name"]:
+            raise HTTPException(status_code=400, detail="Item class does not match your class")
+        await conn.execute(
+            """
+            INSERT INTO equipped_items (user_id, slot, item_id, equipped_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (user_id, slot) DO UPDATE
+                SET item_id = EXCLUDED.item_id,
+                    equipped_at = NOW()
+            """,
+            user_id, item["slot"], body.item_id,
+        )
+        return {"success": True}
+
+
+class UnequipBody(BaseModel):
+    slot: str
+
+
+@api_router.post("/me/unequip")
+async def unequip_item(body: UnequipBody, http_request: Request):
+    if body.slot not in ("weapon", "armor", "ability"):
+        raise HTTPException(status_code=400, detail="slot must be weapon, armor, or ability")
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        await conn.execute(
+            "DELETE FROM equipped_items WHERE user_id = $1 AND slot = $2",
+            user_id, body.slot,
+        )
+    return {"success": True}
+
+
+# ─────────────────────────────────────────────────────────────────
+# Starter items
+# ─────────────────────────────────────────────────────────────────
+
+@api_router.get("/me/starter-items")
+async def get_starter_items(http_request: Request):
+    """Give the 3 common items for the user's class if not already in inventory."""
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT class_name FROM users WHERE id = $1", user_id
+        )
+        if not user_row or not user_row["class_name"]:
+            raise HTTPException(status_code=400, detail="Set your class before claiming starter items")
+        class_name = user_row["class_name"]
+        starter_items = await conn.fetch(
+            "SELECT * FROM items WHERE class_name = $1 AND tier = 'common'", class_name
+        )
+        given = []
+        for item in starter_items:
+            already = await conn.fetchval(
+                "SELECT 1 FROM inventory WHERE user_id = $1 AND item_id = $2",
+                user_id, item["id"],
+            )
+            if not already:
+                await conn.execute(
+                    """
+                    INSERT INTO inventory
+                        (id, user_id, item_type, item_name, item_rarity, equipped, item_id, source, acquired_at)
+                    VALUES ($1, $2, $3, $4, 'Common', FALSE, $5, 'starter', NOW())
+                    """,
+                    str(uuid.uuid4()), user_id, item["slot"], item["name"], item["id"],
+                )
+                given.append(dict(item))
+        return {"given": given, "class_name": class_name}
 
 @api_router.get("/check-winner/{user_id}")
 async def check_if_winner(user_id: str):
@@ -2516,7 +2999,7 @@ async def check_if_winner(user_id: str):
 @api_router.post("/admin/adjust-tokens/{telegram_id}")
 async def adjust_tokens(telegram_id: int, tokens: int, admin_key: str = ""):
     """Add or remove tokens from a user by Telegram ID. Use negative tokens to remove."""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
         user_doc = await dbq.get_user_by_telegram_id(telegram_id)
@@ -2546,7 +3029,7 @@ async def adjust_tokens(telegram_id: int, tokens: int, admin_key: str = ""):
 @api_router.post("/admin/remove-fake-player")
 async def remove_fake_player(room_type: str, admin_key: str = ""):
     """Remove the last bot player from a waiting room."""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     target_room = None
     for room in active_rooms.values():
@@ -2579,7 +3062,7 @@ async def remove_fake_player(room_type: str, admin_key: str = ""):
 @api_router.post("/admin/add-fake-player")
 async def add_fake_player(room_type: str, player_name: str, bet_amount: int, admin_key: str = "", background_tasks: BackgroundTasks = None):
     """Add a fake/bot player to a room to fill it up."""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     room_type_enum = None
@@ -2665,7 +3148,7 @@ async def add_fake_player(room_type: str, player_name: str, bet_amount: int, adm
 @api_router.get("/admin/list-users")
 async def list_users(admin_key: str = "", limit: int = 20, search: str = ""):
     """List users with optional search by name/username."""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
         if search:
@@ -2689,7 +3172,7 @@ async def list_users(admin_key: str = "", limit: int = 20, search: str = ""):
 
 @api_router.post("/admin/ban/{telegram_id}")
 async def ban_user_endpoint(telegram_id: int, admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     user = await dbq.get_user_by_telegram_id(telegram_id)
     if not user:
@@ -2700,7 +3183,7 @@ async def ban_user_endpoint(telegram_id: int, admin_key: str = ""):
 
 @api_router.post("/admin/unban/{telegram_id}")
 async def unban_user_endpoint(telegram_id: int, admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     await dbq.unban_user(telegram_id)
     return {"success": True, "message": f"User {telegram_id} unbanned"}
@@ -2708,7 +3191,7 @@ async def unban_user_endpoint(telegram_id: int, admin_key: str = ""):
 
 @api_router.post("/admin/set-role/{telegram_id}")
 async def set_role_endpoint(telegram_id: int, is_admin: bool = False, is_owner: bool = False, admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     user = await dbq.get_user_by_telegram_id(telegram_id)
     if not user:
@@ -2720,7 +3203,7 @@ async def set_role_endpoint(telegram_id: int, is_admin: bool = False, is_owner: 
 
 @api_router.get("/admin/stats")
 async def get_admin_stats_endpoint(admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
         stats = await dbq.get_admin_stats()
@@ -2734,7 +3217,7 @@ async def get_admin_stats_endpoint(admin_key: str = ""):
 
 @api_router.get("/admin/recent-games")
 async def get_recent_games_endpoint(admin_key: str = "", limit: int = 15):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
         games = await dbq.get_recent_completed_games(limit)
@@ -2746,15 +3229,14 @@ async def get_recent_games_endpoint(admin_key: str = "", limit: int = 15):
 @api_router.get("/admin/wallets")
 async def get_wallets(admin_key: str = "", limit: int = 10):
     """ADMIN: View recent temporary wallets — public key, private key, sweep status"""
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
-        import json as _json
         async with dbq.get_pool().acquire() as conn:
             rows = await conn.fetch(
                 """SELECT wallet_address, user_id, required_sol, token_amount,
                           status, payment_detected, tokens_credited, sol_forwarded,
-                          private_key, created_at
+                          private_key IS NOT NULL AS has_private_key, created_at
                    FROM temporary_wallets
                    ORDER BY created_at DESC
                    LIMIT $1""",
@@ -2765,13 +3247,7 @@ async def get_wallets(admin_key: str = "", limit: int = 10):
             w = dict(r)
             if w.get("created_at"):
                 w["created_at"] = w["created_at"].isoformat()
-            try:
-                pk = _json.loads(w["private_key"]) if w.get("private_key") else None
-            except Exception:
-                pk = w.get("private_key")
             w["public_key"] = w["wallet_address"]
-            w["private_key_bytes"] = pk
-            w["private_key_length"] = len(pk) if isinstance(pk, list) else 0
             wallets.append(w)
         return {"wallets": wallets, "count": len(wallets)}
     except Exception as e:
@@ -2780,7 +3256,7 @@ async def get_wallets(admin_key: str = "", limit: int = 10):
 
 @api_router.post("/admin/broadcast")
 async def broadcast_message(message: str, admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     message = message.strip().replace('\x00', '')
     if not message:
@@ -2827,7 +3303,7 @@ async def broadcast_message(message: str, admin_key: str = ""):
 
 @api_router.post("/admin/force-start/{room_type}")
 async def force_start_room(room_type: str, admin_key: str = "", background_tasks: BackgroundTasks = None):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     target_room = None
     for room in active_rooms.values():
@@ -2862,7 +3338,7 @@ async def force_start_room(room_type: str, admin_key: str = "", background_tasks
 @api_router.post("/admin/toggle-maintenance")
 async def toggle_maintenance(admin_key: str = ""):
     global maintenance_mode
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     maintenance_mode = not maintenance_mode
     logging.info(f"🔧 Maintenance mode {'ON' if maintenance_mode else 'OFF'}")
@@ -2873,14 +3349,14 @@ async def toggle_maintenance(admin_key: str = ""):
 
 @api_router.get("/admin/maintenance-status")
 async def get_maintenance_status_endpoint(admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     return {"maintenance_mode": maintenance_mode}
 
 
 @api_router.get("/admin/daily-stats")
 async def get_daily_stats_endpoint(admin_key: str = "", days: int = 7):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
         return {"days": await dbq.get_daily_stats(days)}
@@ -2890,7 +3366,7 @@ async def get_daily_stats_endpoint(admin_key: str = "", days: int = 7):
 
 @api_router.post("/admin/promo-codes")
 async def create_promo_code_endpoint(code: str, token_amount: int, max_uses: int = 1, unlimited: bool = False, admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     ok = await dbq.create_promo_code(code, token_amount, max_uses, unlimited=unlimited)
     if not ok:
@@ -2900,14 +3376,14 @@ async def create_promo_code_endpoint(code: str, token_amount: int, max_uses: int
 
 @api_router.get("/admin/promo-codes")
 async def list_promo_codes_endpoint(admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     return {"codes": await dbq.get_promo_codes()}
 
 
 @api_router.delete("/admin/promo-codes/{code}")
 async def delete_promo_code_endpoint(code: str, admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     ok = await dbq.delete_promo_code(code)
     if not ok:
@@ -2925,7 +3401,7 @@ async def use_promo_code_endpoint(code: str, telegram_id: int):
 
 @api_router.get("/admin/export-users")
 async def export_users_csv(admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     from fastapi.responses import StreamingResponse
     import io, csv
@@ -2944,7 +3420,7 @@ async def export_users_csv(admin_key: str = ""):
 
 @api_router.post("/admin/force-close-room/{room_type}")
 async def force_close_room_endpoint(room_type: str, admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     closed = []
     for room_id, room in list(active_rooms.items()):
@@ -2974,7 +3450,7 @@ async def get_public_room_configs():
 
 @api_router.get("/admin/room-configs")
 async def get_room_configs_endpoint(admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     result = []
     for rt in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
@@ -3000,7 +3476,7 @@ async def update_room_config_endpoint(
     min_players: int = None,
     admin_key: str = ""
 ):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     if room_type not in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
         raise HTTPException(status_code=400, detail="Invalid room type")
@@ -3053,7 +3529,7 @@ async def update_room_config_endpoint(
 
 @api_router.get("/admin/freeroll-config")
 async def get_freeroll_config(admin_key: str = ""):
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     return freeroll_config
 
@@ -3066,7 +3542,7 @@ async def update_freeroll_config(
     admin_key: str = ""
 ):
     global freeroll_config
-    if admin_key != "PRODUCTION_CLEANUP_2025":
+    if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     if max_players is not None:
         freeroll_config['max_players'] = max_players
@@ -3079,6 +3555,16 @@ async def update_freeroll_config(
         freeroll_config['is_locked'] = is_locked
     return freeroll_config
 
+
+# Include Arena MVP routes before mounting the API router.
+from arena_api import router as arena_router
+api_router.include_router(arena_router)
+
+# Include Boss Raid routes.
+import boss_api as _boss_api_module
+from boss_api import router as boss_router
+api_router.include_router(boss_router)
+_boss_api_module.set_sio(sio)  # give boss_api access to the Socket.IO server
 
 # Include the router
 app.include_router(api_router)
@@ -3137,10 +3623,16 @@ async def startup_event():
     # Start wallet cleanup scheduler with grace period
     asyncio.create_task(wallet_cleanup_scheduler())
 
-    # Clear existing game history for fresh start (as requested)
+    # Start Arena Duel timeout resolver
+    asyncio.create_task(arena_timeout_resolver())
+
+    # Start Boss Raid spawner / expiry settler
+    asyncio.create_task(boss_raid_spawner())
+
+    # Do not delete game history on startup in production.
     try:
-        deleted_count = await dbq.delete_all_completed_games()
-        logging.info(f"🗑️ [Startup] Cleared {deleted_count} existing game history records for fresh start")
+        deleted_count = 0
+        logging.info("[Startup] Game history cleanup disabled")
     except Exception as e:
         logging.error(f"❌ [Startup] Failed to clear game history: {e}")
 
@@ -3174,6 +3666,74 @@ async def redundant_payment_scanner():
         
         # Wait 15 seconds before next scan (faster detection)
         await asyncio.sleep(15)
+
+
+async def arena_timeout_resolver():
+    await asyncio.sleep(5)
+    logging.info("[Arena] Timeout resolver started")
+    while True:
+        try:
+            resolved = await arena_repo.resolve_expired_rounds()
+            if resolved:
+                logging.info(f"[Arena] Resolved {resolved} expired round(s)")
+        except Exception as e:
+            logging.error(f"[Arena] Timeout resolver error: {e}")
+            import traceback
+            logging.error(traceback.format_exc())
+        await asyncio.sleep(5)
+
+
+async def boss_raid_spawner():
+    """
+    Background task (60s interval) that:
+    1. Settles any active raids whose deadline has passed.
+    2. Spawns a new boss when no active raid exists.
+    """
+    import boss_repo as _boss_repo
+    import boss_domain as _boss_domain
+
+    await asyncio.sleep(10)
+    logging.info("[BossRaid] Spawner started (60s interval)")
+
+    while True:
+        try:
+            # Settle expired raids and emit raid_finished for each
+            settled = await _boss_repo.settle_expired_raids()
+            for s in settled:
+                logging.info(f"[BossRaid] Settled expired raid {s['raid_id']}: {s['name']}")
+                await sio.emit("raid_finished", {
+                    "boss_name": s["name"],
+                    "status": "expired",
+                    "rewards": s["rewards"],
+                })
+
+            # Spawn a new boss if none is active
+            active = await _boss_repo.get_active_raid()
+            if not active:
+                name = random.choice(_boss_domain.BOSS_NAMES)
+                level = random.randint(1, 5)
+                raid = await _boss_repo.spawn_raid(name, level)
+                logging.info(
+                    f"[BossRaid] Spawned '{name}' level {level} "
+                    f"(HP {raid['max_hp']}, ends {raid['raid_end_at']})"
+                )
+                await sio.emit("boss_spawned", {
+                    "id": raid["id"],
+                    "name": raid["name"],
+                    "level": raid["level"],
+                    "max_hp": raid["max_hp"],
+                    "current_hp": raid["current_hp"],
+                    "phase": raid["phase"],
+                    "raid_end_at": raid["raid_end_at"],
+                    "status": "active",
+                })
+        except Exception as exc:
+            logging.error(f"[BossRaid] Spawner error: {exc}")
+            import traceback
+            logging.error(traceback.format_exc())
+
+        await asyncio.sleep(60)
+
 
 async def wallet_cleanup_scheduler():
     """
@@ -3233,4 +3793,3 @@ async def shutdown_event():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8001))
     uvicorn.run("server:app", host="0.0.0.0", port=port)
-

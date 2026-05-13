@@ -41,6 +41,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS total_purchases INTEGER NOT NULL DEFA
 ALTER TABLE users ADD COLUMN IF NOT EXISTS basket_items    INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_status      VARCHAR(50) NOT NULL DEFAULT 'Regular';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned       BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS xp              INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS level           INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS class_name      VARCHAR(20) DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS promo_codes (
     code         VARCHAR(50) PRIMARY KEY,
@@ -144,6 +147,52 @@ CREATE INDEX IF NOT EXISTS idx_tmp_wallets_address ON temporary_wallets(wallet_a
 CREATE INDEX IF NOT EXISTS idx_tmp_wallets_user_id ON temporary_wallets(user_id);
 CREATE INDEX IF NOT EXISTS idx_tmp_wallets_status  ON temporary_wallets(status);
 
+CREATE TABLE IF NOT EXISTS inventory (
+    id          VARCHAR(36) PRIMARY KEY,
+    user_id     VARCHAR(36) NOT NULL REFERENCES users(id),
+    item_type   VARCHAR(20) NOT NULL,
+    item_name   VARCHAR(100) NOT NULL,
+    item_rarity VARCHAR(20) NOT NULL DEFAULT 'Common',
+    equipped    BOOLEAN NOT NULL DEFAULT FALSE,
+    acquired_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CHECK (item_type IN ('weapon', 'armor', 'ability', 'consumable')),
+    CHECK (item_rarity IN ('Common', 'Rare', 'Epic', 'Legendary'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_user ON inventory(user_id);
+
+-- Extend inventory with item reference and acquisition source
+ALTER TABLE inventory ADD COLUMN IF NOT EXISTS item_id INTEGER;
+ALTER TABLE inventory ADD COLUMN IF NOT EXISTS source  TEXT DEFAULT 'drop';
+
+CREATE TABLE IF NOT EXISTS items (
+    id               SERIAL PRIMARY KEY,
+    name             TEXT NOT NULL,
+    description      TEXT,
+    class_name       TEXT NOT NULL,
+    slot             TEXT NOT NULL,
+    tier             TEXT NOT NULL,
+    price            INTEGER DEFAULT 0,
+    attack_bonus     INTEGER DEFAULT 0,
+    ability_bonus    INTEGER DEFAULT 0,
+    defend_reduction INTEGER DEFAULT 0,
+    hp_bonus         INTEGER DEFAULT 0,
+    risk_win_chance  REAL DEFAULT 0.0,
+    image_path       TEXT,
+    created_at       TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(name, class_name, tier)
+);
+
+CREATE TABLE IF NOT EXISTS equipped_items (
+    user_id     TEXT NOT NULL,
+    slot        TEXT NOT NULL,
+    item_id     INTEGER NOT NULL REFERENCES items(id),
+    equipped_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, slot)
+);
+
+CREATE INDEX IF NOT EXISTS idx_equipped_items_user ON equipped_items(user_id);
+
 CREATE TABLE IF NOT EXISTS room_configs (
     room_type   VARCHAR(20) PRIMARY KEY,
     min_bet     INTEGER NOT NULL DEFAULT 0,
@@ -151,6 +200,111 @@ CREATE TABLE IF NOT EXISTS room_configs (
     max_players INTEGER NOT NULL DEFAULT 3,
     min_players INTEGER NOT NULL DEFAULT 2
 );
+
+CREATE TABLE IF NOT EXISTS arena_matches (
+    id                      VARCHAR(36) PRIMARY KEY,
+    mode                    VARCHAR(20) NOT NULL DEFAULT 'duel',
+    status                  VARCHAR(20) NOT NULL DEFAULT 'active',
+    player_one_id           VARCHAR(36) NOT NULL REFERENCES users(id),
+    player_two_id           VARCHAR(36) NOT NULL REFERENCES users(id),
+    stake_amount            INTEGER NOT NULL CHECK (stake_amount > 0),
+    pot_amount              INTEGER NOT NULL CHECK (pot_amount >= 0),
+    payout_amount           INTEGER NOT NULL DEFAULT 0 CHECK (payout_amount >= 0),
+    burn_amount             INTEGER NOT NULL DEFAULT 0 CHECK (burn_amount >= 0),
+    winner_user_id          VARCHAR(36),
+    round_number            INTEGER NOT NULL DEFAULT 1,
+    player_one_hp           INTEGER NOT NULL DEFAULT 100,
+    player_two_hp           INTEGER NOT NULL DEFAULT 100,
+    player_one_ability_used BOOLEAN NOT NULL DEFAULT FALSE,
+    player_two_ability_used BOOLEAN NOT NULL DEFAULT FALSE,
+    metadata                JSONB NOT NULL DEFAULT '{}',
+    created_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    finished_at             TIMESTAMP WITH TIME ZONE,
+    CHECK (player_one_id <> player_two_id),
+    CHECK (status IN ('active', 'finished', 'draw', 'cancelled'))
+);
+
+CREATE TABLE IF NOT EXISTS arena_rounds (
+    id                   VARCHAR(36) PRIMARY KEY,
+    match_id             VARCHAR(36) NOT NULL REFERENCES arena_matches(id) ON DELETE CASCADE,
+    round_number         INTEGER NOT NULL,
+    status               VARCHAR(20) NOT NULL DEFAULT 'open',
+    deadline_at          TIMESTAMP WITH TIME ZONE NOT NULL,
+    player_one_action    VARCHAR(20),
+    player_two_action    VARCHAR(20),
+    player_one_hp_after  INTEGER,
+    player_two_hp_after  INTEGER,
+    resolution_details   JSONB NOT NULL DEFAULT '{}',
+    created_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    resolved_at          TIMESTAMP WITH TIME ZONE,
+    UNIQUE(match_id, round_number),
+    CHECK (status IN ('open', 'resolved'))
+);
+
+CREATE TABLE IF NOT EXISTS arena_actions (
+    id           VARCHAR(36) PRIMARY KEY,
+    match_id     VARCHAR(36) NOT NULL REFERENCES arena_matches(id) ON DELETE CASCADE,
+    round_number INTEGER NOT NULL,
+    user_id      VARCHAR(36) NOT NULL REFERENCES users(id),
+    action       VARCHAR(20) NOT NULL,
+    is_auto      BOOLEAN NOT NULL DEFAULT FALSE,
+    submitted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(match_id, round_number, user_id),
+    CHECK (action IN ('attack', 'defend', 'ability', 'risk'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_arena_matches_player_one ON arena_matches(player_one_id);
+CREATE INDEX IF NOT EXISTS idx_arena_matches_player_two ON arena_matches(player_two_id);
+CREATE INDEX IF NOT EXISTS idx_arena_matches_status ON arena_matches(status);
+CREATE INDEX IF NOT EXISTS idx_arena_rounds_match ON arena_rounds(match_id, round_number);
+CREATE INDEX IF NOT EXISTS idx_arena_actions_match_round ON arena_actions(match_id, round_number);
+
+
+CREATE TABLE IF NOT EXISTS boss_raids (
+    id              VARCHAR(36) PRIMARY KEY,
+    name            VARCHAR(100) NOT NULL,
+    level           INTEGER NOT NULL DEFAULT 1,
+    phase           INTEGER NOT NULL DEFAULT 1,
+    max_hp          INTEGER NOT NULL,
+    current_hp      INTEGER NOT NULL,
+    status          VARCHAR(20) NOT NULL DEFAULT 'active',
+    raid_end_at     TIMESTAMP WITH TIME ZONE NOT NULL,
+    loot_table      JSONB NOT NULL DEFAULT '{}',
+    rewards_settled BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    CHECK (status IN ('active', 'defeated', 'expired'))
+);
+
+CREATE TABLE IF NOT EXISTS boss_raid_damage (
+    id       SERIAL PRIMARY KEY,
+    raid_id  VARCHAR(36) NOT NULL REFERENCES boss_raids(id),
+    user_id  VARCHAR(36) NOT NULL REFERENCES users(id),
+    damage   INTEGER NOT NULL,
+    dealt_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS boss_raid_rewards (
+    id         SERIAL PRIMARY KEY,
+    raid_id    VARCHAR(36) NOT NULL REFERENCES boss_raids(id),
+    user_id    VARCHAR(36) NOT NULL,
+    coins      INTEGER NOT NULL DEFAULT 0,
+    xp         INTEGER NOT NULL DEFAULT 0,
+    item_drop  VARCHAR(100),
+    claimed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Migration: add FK on existing boss_raid_rewards.raid_id if missing
+ALTER TABLE boss_raid_rewards
+    DROP CONSTRAINT IF EXISTS boss_raid_rewards_raid_id_fkey;
+ALTER TABLE boss_raid_rewards
+    ADD CONSTRAINT boss_raid_rewards_raid_id_fkey
+    FOREIGN KEY (raid_id) REFERENCES boss_raids(id);
+
+CREATE INDEX IF NOT EXISTS idx_boss_raids_status         ON boss_raids(status);
+CREATE INDEX IF NOT EXISTS idx_boss_raid_damage_raid     ON boss_raid_damage(raid_id);
+CREATE INDEX IF NOT EXISTS idx_boss_raid_damage_raid_user ON boss_raid_damage(raid_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_boss_raid_rewards_raid    ON boss_raid_rewards(raid_id);
 
 """
 
@@ -186,6 +340,66 @@ async def init():
                 END IF;
             END;
             $$;
+        """)
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'xp_non_negative' AND conrelid = 'users'::regclass
+                ) THEN
+                    ALTER TABLE users ADD CONSTRAINT xp_non_negative CHECK (xp >= 0);
+                END IF;
+            END;
+            $$;
+        """)
+        # Migration: add FK on inventory.item_id if not already present
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'inventory_item_id_fkey' AND conrelid = 'inventory'::regclass
+                ) THEN
+                    ALTER TABLE inventory ADD CONSTRAINT inventory_item_id_fkey
+                        FOREIGN KEY (item_id) REFERENCES items(id);
+                END IF;
+            END;
+            $$;
+        """)
+        # Seed items (idempotent via ON CONFLICT DO NOTHING on name+class_name+tier)
+        await conn.execute("""
+            INSERT INTO items
+                (name, description, class_name, slot, tier, price,
+                 attack_bonus, ability_bonus, defend_reduction, hp_bonus, risk_win_chance, image_path)
+            VALUES
+            -- COMMON starter items (price = 0)
+            ('Iron Sword',       'Starter warrior weapon',  'warrior', 'weapon',  'common',    0,    3,  0, 0,  5, 0.00, '/items/warrior_weapon.png'),
+            ('Bronze Plate',     'Starter warrior armor',   'warrior', 'armor',   'common',    0,    0,  0, 1, 10, 0.00, '/items/warrior_armor.png'),
+            ('War Horn',         'Starter warrior ability', 'warrior', 'ability', 'common',    0,    0,  3, 0,  0, 0.00, '/items/warrior_ability.png'),
+            ('Apprentice Staff', 'Starter mage weapon',     'mage',    'weapon',  'common',    0,    2,  3, 0,  0, 0.00, '/items/mage_weapon.png'),
+            ('Cloth Robes',      'Starter mage armor',      'mage',    'armor',   'common',    0,    0,  0, 0,  8, 0.00, '/items/mage_armor.png'),
+            ('Spell Scroll',     'Starter mage ability',    'mage',    'ability', 'common',    0,    0,  4, 0,  0, 0.03, '/items/mage_ability.png'),
+            ('Short Dagger',     'Starter rogue weapon',    'rogue',   'weapon',  'common',    0,    4,  0, 0,  0, 0.05, '/items/rogue_weapon.png'),
+            ('Leather Vest',     'Starter rogue armor',     'rogue',   'armor',   'common',    0,    0,  0, 2,  6, 0.00, '/items/rogue_armor.png'),
+            ('Poison Vial',      'Starter rogue ability',   'rogue',   'ability', 'common',    0,    0,  3, 0,  0, 0.05, '/items/rogue_ability.png'),
+            -- UNCOMMON shop items (price = 500)
+            ('Knight''s Blade',  'Uncommon warrior weapon', 'warrior', 'weapon',  'uncommon',  500,  6,  0, 0, 10, 0.00, NULL),
+            ('Crystal Staff',    'Uncommon mage weapon',    'mage',    'weapon',  'uncommon',  500,  5,  6, 0,  0, 0.00, NULL),
+            ('Shadow Dagger',    'Uncommon rogue weapon',   'rogue',   'weapon',  'uncommon',  500,  7,  0, 0,  0, 0.08, NULL),
+            -- RARE shop items (price = 1500)
+            ('Ares'' Sword',     'Rare warrior weapon',     'warrior', 'weapon',  'rare',     1500, 10,  0, 3, 15, 0.00, NULL),
+            ('Arcane Staff',     'Rare mage weapon',        'mage',    'weapon',  'rare',     1500,  8, 10, 0,  0, 0.08, NULL),
+            ('Viper''s Fang',    'Rare rogue weapon',       'rogue',   'weapon',  'rare',     1500, 11,  0, 2,  0, 0.12, NULL),
+            -- EPIC drop-only items (price = 0)
+            ('Warbringer',       'Epic warrior weapon',     'warrior', 'weapon',  'epic',        0, 15,  5, 6, 25, 0.00, NULL),
+            ('Void Staff',       'Epic mage weapon',        'mage',    'weapon',  'epic',        0, 13, 15, 0,  0, 0.15, NULL),
+            ('Deathmark Blade',  'Epic rogue weapon',       'rogue',   'weapon',  'epic',        0, 16,  0, 4,  0, 0.18, NULL),
+            -- LEGENDARY drop-only items (price = 0)
+            ('Blade of Olympus', 'Legendary warrior weapon','warrior', 'weapon',  'legendary',   0, 22,  8,10, 40, 0.00, NULL),
+            ('Staff of Zeus',    'Legendary mage weapon',   'mage',    'weapon',  'legendary',   0, 18, 20, 0,  0, 0.25, NULL),
+            ('Shadow of Hermes', 'Legendary rogue weapon',  'rogue',   'weapon',  'legendary',   0, 20,  6, 6,  0, 0.28, NULL)
+            ON CONFLICT (name, class_name, tier) DO NOTHING
         """)
         print("✅ All tables created successfully.")
     finally:

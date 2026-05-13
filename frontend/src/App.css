@@ -28,7 +28,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: linear-gradient(135deg, #08080f 0%, #1a0320 40%, #0f0015 70%, #08080f 100%);
+  background: #1a1a2e;
+  color: #e8e0d0;
   min-height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
@@ -36,6 +37,7 @@ body {
 
 #root {
   min-height: 100%;
+  background: #1a1a2e;
 }
 
 .App {
@@ -186,6 +188,18 @@ h1, h2, h3, .heading {
 }
 
 /* Custom glow effects */
+.glow-blue {
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.4);
+}
+
+.glow-gold {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+}
+
 .glow-yellow {
   box-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
 }
@@ -196,6 +210,12 @@ h1, h2, h3, .heading {
 
 .glow-red {
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Animated gradient background */
@@ -759,3 +779,165 @@ input[type="number"] {
 body:has(.winner-screen-overlay) {
   overflow: auto !important;
 }
+
+/* ── Arena battle animations ─────────────────────────────────────────────── */
+
+@keyframes charShake {
+  0%,100% { transform: translateX(0); }
+  20%      { transform: translateX(-12px); }
+  40%      { transform: translateX(12px); }
+  60%      { transform: translateX(-8px); }
+  80%      { transform: translateX(8px); }
+}
+
+@keyframes charShakeFlip {
+  0%,100% { transform: scaleX(-1) translateX(0); }
+  20%      { transform: scaleX(-1) translateX(-12px); }
+  40%      { transform: scaleX(-1) translateX(12px); }
+  60%      { transform: scaleX(-1) translateX(-8px); }
+  80%      { transform: scaleX(-1) translateX(8px); }
+}
+
+@keyframes charGlow {
+  0%,100% { filter: drop-shadow(0 0 10px #4a90d9); }
+  50%      { filter: drop-shadow(0 0 30px #4a90d9); }
+}
+
+@keyframes damageFloat {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-60px) scale(1.4); }
+}
+
+@keyframes screenFlashRed {
+  0%,100% { opacity: 0; }
+  50%      { opacity: 0.3; }
+}
+
+@keyframes screenFlashGold {
+  0%,100% { opacity: 0; }
+  50%      { opacity: 0.25; }
+}
+
+@keyframes idlePulse {
+  0%,100% { transform: scale(1); }
+  50%      { transform: scale(1.03); }
+}
+
+@keyframes victoryGlow {
+  0%,100% { filter: drop-shadow(0 0 20px #c9a84c); }
+  50%      { filter: drop-shadow(0 0 50px #ffd700); }
+}
+
+@keyframes goldParticleFall {
+  0%   { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+@keyframes hpPulse {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.6; }
+}
+
+@keyframes arenaWaiting {
+  0%,100% { opacity: 0.5; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.08); }
+}
+
+.arena-shake          { animation: charShake 0.4s ease; }
+.arena-shake-flip     { animation: charShakeFlip 0.4s ease; }
+.arena-glow-char      { animation: charGlow 0.6s ease; }
+.arena-idle-pulse     { animation: idlePulse 2s ease-in-out infinite; }
+.arena-victory-glow   { animation: victoryGlow 1.5s ease-in-out infinite; }
+.hp-pulse             { animation: hpPulse 0.8s ease-in-out infinite; }
+.arena-waiting-pulse  { animation: arenaWaiting 1.5s ease-in-out infinite; }
+
+.arena-damage-float {
+  position: absolute;
+  font-size: 20px;
+  font-weight: 900;
+  pointer-events: none;
+  animation: damageFloat 0.9s ease-out forwards;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  z-index: 10;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.arena-flash-red {
+  position: fixed;
+  inset: 0;
+  background: rgba(139,0,0,0.4);
+  pointer-events: none;
+  z-index: 80;
+  animation: screenFlashRed 0.3s ease forwards;
+}
+
+.arena-flash-gold {
+  position: fixed;
+  inset: 0;
+  background: rgba(201,168,76,0.35);
+  pointer-events: none;
+  z-index: 80;
+  animation: screenFlashGold 0.3s ease forwards;
+}
+
+.arena-gold-particle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffd700;
+  pointer-events: none;
+  animation: goldParticleFall linear forwards;
+}
+
+/* ── Arena round-result banner ───────────────────────────────────────────── */
+@keyframes roundBannerFade {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  15%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  78%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(10px); }
+}
+.round-result-banner {
+  animation: roundBannerFade 2.5s ease-in-out forwards;
+}
+
+/* ── Timer urgency pulse ──────────────────────────────────────────────────── */
+@keyframes timerUrgent {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+.timer-urgent {
+  animation: timerUrgent 0.55s ease-in-out infinite;
+}
+
+/* ── Greek Mythology Theme Utilities ─────────────────────────────────────── */
+.myth-card {
+  background: linear-gradient(135deg, rgba(26,26,46,0.95) 0%, rgba(22,33,62,0.95) 100%);
+  border: 1px solid rgba(201,168,76,0.2);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4), inset 0 1px 0 rgba(201,168,76,0.08);
+}
+
+.myth-gold { color: #c9a84c; }
+
+.myth-glow-gold { box-shadow: 0 0 20px rgba(201,168,76,0.4); }
+.myth-glow-blue { box-shadow: 0 0 20px rgba(74,144,217,0.4); }
+.myth-border-gold { border: 1px solid rgba(201,168,76,0.3); }
+
+/* Phase 3: light mobile-app UI should read like an app, not game art. */
+.mobile-app-shell {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.mobile-app-shell h1,
+.mobile-app-shell h2,
+.mobile-app-shell h3,
+.mobile-app-shell h4,
+.mobile-app-shell h5,
+.mobile-app-shell h6,
+.mobile-app-shell .heading {
+  font-family: inherit;
+  letter-spacing: 0;
+}
+

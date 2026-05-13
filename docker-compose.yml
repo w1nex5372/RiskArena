@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: riskarena-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: casino_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d casino_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: riskarena-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: casino_db
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      ADMIN_KEY: ${ADMIN_KEY:?ADMIN_KEY is required}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      ALLOW_INSECURE_DEV_AUTH: "false"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-YOUR_TELEGRAM_BOT_TOKEN_HERE}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      CASINO_WALLET_PRIVATE_KEY: ${CASINO_WALLET_PRIVATE_KEY:-}
+      CASINO_WALLET_ADDRESS: ${CASINO_WALLET_ADDRESS:-YourWalletAddressHere12345678901234567890123456789}
+      PORT: "8001"
+    ports:
+      - "8001:8001"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-}
+        REACT_APP_ADMIN_KEY: ${ADMIN_KEY:-}
+    container_name: riskarena-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres-data:
