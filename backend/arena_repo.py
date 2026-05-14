@@ -633,12 +633,47 @@ async def finish_match_tx(conn, match, result) -> None:
                 uid, xp_res["new_xp"], xp_res["new_level"],
             )
 
+    # Win streak tracking
+    _STREAK_MILESTONES = {3: 50, 5: 100, 7: 200}
+    streak_results: dict[str, dict] = {}
+    if result.status == "draw":
+        for uid in (p1_id, p2_id):
+            await conn.execute("UPDATE users SET current_win_streak = 0 WHERE id = $1", uid)
+            streak_results[str(uid)] = {"streak": 0, "bonus": 0, "is_record": False}
+    else:
+        loser_id_streak = p2_id if result.winner_user_id == p1_id else p1_id
+        winner_row = await conn.fetchrow(
+            """
+            UPDATE users
+            SET current_win_streak = current_win_streak + 1,
+                max_win_streak     = GREATEST(max_win_streak, current_win_streak + 1)
+            WHERE id = $1
+            RETURNING current_win_streak, max_win_streak
+            """,
+            result.winner_user_id,
+        )
+        new_streak = winner_row["current_win_streak"]
+        streak_bonus = _STREAK_MILESTONES.get(new_streak, 0)
+        if streak_bonus > 0:
+            await conn.execute(
+                "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
+                result.winner_user_id, streak_bonus,
+            )
+        streak_results[str(result.winner_user_id)] = {
+            "streak": new_streak,
+            "bonus": streak_bonus,
+            "is_record": new_streak == winner_row["max_win_streak"],
+        }
+        await conn.execute("UPDATE users SET current_win_streak = 0 WHERE id = $1", loser_id_streak)
+        streak_results[str(loser_id_streak)] = {"streak": 0, "bonus": 0, "is_record": False}
+
     final_metadata = dict(metadata or {})
     final_metadata.update({
         "resolution": result.resolution,
         "payout": payout,
         "max_rounds": MAX_ROUNDS,
         "xp_results": xp_results,
+        "streak_results": streak_results,
     })
 
     await conn.execute(

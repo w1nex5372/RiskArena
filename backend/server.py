@@ -1547,6 +1547,13 @@ async def watch_arena_room_completion(room_id: str, arena_match_id: str):
         if winner_user_id:
             room.winner = next((p for p in room.players if p.user_id == winner_user_id), None)
 
+        _meta = match.get("metadata") or {}
+        if isinstance(_meta, str):
+            try: _meta = json.loads(_meta)
+            except Exception: _meta = {}
+        _streak_results = _meta.get("streak_results", {})
+        _winner_streak = _streak_results.get(str(winner_user_id), {}) if winner_user_id else {}
+
         await socket_rooms.broadcast_to_room(sio, room_id, "arena_match_finished", {
             "room_id": room.id,
             "room_type": room.room_type,
@@ -1557,6 +1564,9 @@ async def watch_arena_room_completion(room_id: str, arena_match_id: str):
             "winner_user_id": winner_user_id,
             "payout_amount": match.get("payout_amount", 0),
             "finished_at": room.finished_at.isoformat(),
+            "winner_streak": _winner_streak.get("streak", 0),
+            "streak_bonus": _winner_streak.get("bonus", 0),
+            "streak_is_record": _winner_streak.get("is_record", False),
         })
 
         # Persist arena result to completed_games so it shows in game history
@@ -2873,7 +2883,9 @@ async def get_user_by_telegram_id(telegram_id: int):
         "is_verified": user_doc.get('is_verified', False),
         "is_admin": user_doc.get('is_admin', False),
         "is_owner": user_doc.get('is_owner', False),
-        "role": user_doc.get('role', 'user')
+        "role": user_doc.get('role', 'user'),
+        "current_win_streak": user_doc.get('current_win_streak', 0),
+        "max_win_streak": user_doc.get('max_win_streak', 0),
     }
 
 class ClassUpdateBody(BaseModel):
@@ -2925,7 +2937,9 @@ async def get_user_data(user_id: str):
             "is_verified": user_doc.get('is_verified', False),
             "is_admin": user_doc.get('is_admin', False),
             "is_owner": user_doc.get('is_owner', False),
-            "role": user_doc.get('role', 'user')
+            "role": user_doc.get('role', 'user'),
+            "current_win_streak": user_doc.get('current_win_streak', 0),
+            "max_win_streak": user_doc.get('max_win_streak', 0),
         }
     except Exception as e:
         logging.error(f"Failed to get user data: {e}")
@@ -3494,6 +3508,40 @@ async def sell_item(body: SellBody, http_request: Request):
             )
 
             return {"new_balance": int(new_balance or 0), "sell_price": sell_price, "item_name": row["item_name"]}
+
+
+# ─────────────────────────────────────────────────────────────────
+# Admin: give items
+# ─────────────────────────────────────────────────────────────────
+
+@api_router.post("/admin/give-all-items")
+async def admin_give_all_items(admin_key: str, telegram_id: int):
+    """ADMIN: Insert every item from the catalog into a user's inventory (once per item)."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    async with get_pool().acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT id FROM users WHERE telegram_id = $1", telegram_id
+        )
+        if not user_row:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_id = user_row["id"]
+        all_items = await conn.fetch("SELECT id, slot, name, tier FROM items ORDER BY id")
+        added = 0
+        for item in all_items:
+            rarity = {"common": "Common", "uncommon": "Uncommon", "rare": "Rare",
+                      "epic": "Epic", "legendary": "Legendary"}.get(
+                (item["tier"] or "common").lower(), "Common"
+            )
+            await conn.execute(
+                """
+                INSERT INTO inventory (id, user_id, item_type, item_name, item_rarity, source, item_id, acquired_at)
+                VALUES ($1, $2, $3, $4, $5, 'admin_grant', $6, NOW())
+                """,
+                str(uuid.uuid4()), user_id, item["slot"], item["name"], rarity, item["id"],
+            )
+            added += 1
+        return {"added": added, "user_id": user_id, "telegram_id": telegram_id}
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -584,6 +584,10 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
     const payout = match?.payout_amount || 0;
     const myXpData = match?.metadata?.xp_results?.[String(user?.id)];
     const xpGained = myXpData?.xp_gained || 0;
+    const myStreakData = match?.metadata?.streak_results?.[String(user?.id)];
+    const currentStreak = myStreakData?.streak || 0;
+    const streakBonus = myStreakData?.bonus || 0;
+    const streakIsRecord = myStreakData?.is_record || false;
 
     if (didWin) {
       return (
@@ -611,6 +615,22 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
               style={{ height: 160, objectFit: 'contain', margin: '0 auto 16px', display: 'block' }}
             />
             <div style={{ fontSize: 32, fontWeight: 900, color: '#fbbf24', marginBottom: 16 }}>Match won</div>
+
+            {/* Streak badge */}
+            {currentStreak >= 2 && (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: currentStreak >= 5 ? 'rgba(239,68,68,0.18)' : 'rgba(249,115,22,0.15)',
+                border: `1px solid ${currentStreak >= 5 ? 'rgba(239,68,68,0.45)' : 'rgba(249,115,22,0.35)'}`,
+                borderRadius: 20, padding: '5px 14px', marginBottom: 12,
+              }}>
+                <span style={{ fontSize: 16 }}>🔥</span>
+                <span style={{ fontSize: 13, fontWeight: 900, color: currentStreak >= 5 ? '#f87171' : '#fb923c' }}>
+                  {currentStreak} Win Streak{streakIsRecord ? ' — New Record!' : '!'}
+                </span>
+              </div>
+            )}
+
             <div
               style={{
                 display: 'inline-flex',
@@ -619,7 +639,7 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
                 border: '1px solid rgba(201,168,76,0.28)',
                 borderRadius: 14,
                 padding: '12px 20px',
-                marginBottom: 20,
+                marginBottom: streakBonus > 0 ? 8 : 20,
               }}
             >
               <div>
@@ -636,6 +656,21 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
                 </>
               ) : null}
             </div>
+
+            {/* Streak bonus row */}
+            {streakBonus > 0 && (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                background: 'rgba(249,115,22,0.12)', border: '1px solid rgba(249,115,22,0.3)',
+                borderRadius: 12, padding: '8px 16px', marginBottom: 20,
+              }}>
+                <span style={{ fontSize: 14 }}>🔥</span>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: '#fb923c' }}>+{streakBonus} streak bonus!</div>
+                  <div style={{ fontSize: 10, color: '#94a3b8' }}>{currentStreak}-win streak reward</div>
+                </div>
+              </div>
+            )}
             {onExit ? (
               <button
                 onClick={onExit}

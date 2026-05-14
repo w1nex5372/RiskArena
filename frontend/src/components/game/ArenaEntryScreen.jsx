@@ -261,6 +261,14 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
                   </span>
                 </div>
               )}
+              {(user?.current_win_streak || 0) >= 2 && (
+                <div style={{ background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 20, padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 12 }}>🔥</span>
+                  <span style={{ color: '#fb923c', fontWeight: 800, fontSize: 12 }}>
+                    {user.current_win_streak} streak
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
