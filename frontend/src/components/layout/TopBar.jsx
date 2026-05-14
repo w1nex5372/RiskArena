@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Coins, Plus } from 'lucide-react';
+import { Coins, Plus, Settings } from 'lucide-react';
 import apiClient from '../../api/client';
 import { CLASS_INFO } from '../../utils/characters';
 
@@ -21,7 +21,7 @@ function setCachedProgress(data) {
   } catch {}
 }
 
-export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyTokens, onOpenItems }) {
+export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyTokens, onOpenItems, onOpenSettings }) {
   const [progress, setProgress] = useState(() => getCachedProgress());
 
   useEffect(() => {
@@ -108,6 +108,18 @@ export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyT
             }}
           >
             <Plus style={{ width: 16, height: 16 }} />
+          </button>
+          <button
+            onClick={onOpenSettings}
+            style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+              color: 'white', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <Settings style={{ width: 16, height: 16, color: '#94a3b8' }} />
           </button>
         </div>
       </div>

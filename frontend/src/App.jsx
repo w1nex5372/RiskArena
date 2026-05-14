@@ -29,6 +29,9 @@ import LeaderboardScreen from './components/leaderboard/LeaderboardScreen';
 import InventoryScreen from './components/inventory/InventoryScreen';
 import DailyQuestsScreen from './components/game/DailyQuestsScreen';
 import DailyChestScreen from './components/game/DailyChestScreen';
+import SettingsScreen from './components/settings/SettingsScreen';
+import TosScreen from './components/settings/TosScreen';
+import PrivacyScreen from './components/settings/PrivacyScreen';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import './App.css';
@@ -2286,6 +2289,7 @@ function App() {
         userPrizes={userPrizes}
         onBuyTokens={() => setActiveTab('tokens')}
         onOpenItems={() => setActiveTab('inventory')}
+        onOpenSettings={() => setActiveTab('settings')}
       />
 
       <div className="flex">
@@ -2857,6 +2861,21 @@ function App() {
                   setTopBarVersion((version) => version + 1);
                 }}
               />
+            )}
+
+            {activeTab === 'settings' && !inLobby && !showWinnerScreen && !gameInProgress && (
+              <SettingsScreen
+                user={user}
+                onNavigate={(page) => setActiveTab(page)}
+              />
+            )}
+
+            {activeTab === 'tos' && (
+              <TosScreen onBack={() => setActiveTab('settings')} />
+            )}
+
+            {activeTab === 'privacy' && (
+              <PrivacyScreen onBack={() => setActiveTab('settings')} />
             )}
 
             {/* Token Purchase Tab */}

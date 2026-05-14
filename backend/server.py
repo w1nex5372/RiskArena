@@ -2945,6 +2945,66 @@ async def get_user_data(user_id: str):
         logging.error(f"Failed to get user data: {e}")
         raise HTTPException(status_code=500, detail="Failed to get user data")
 
+_DEFAULT_SETTINGS = {
+    "notifications": {"battle": True, "daily_chest": True, "quests": True},
+    "gameplay": {"remember_bet": True},
+    "privacy": {"show_leaderboard": True, "show_stats": True},
+    "responsible": {"daily_limit": 0, "session_reminder": "off"},
+}
+
+def _merge_settings(stored: dict) -> dict:
+    import copy
+    result = copy.deepcopy(_DEFAULT_SETTINGS)
+    for section, defaults in _DEFAULT_SETTINGS.items():
+        if section in stored and isinstance(stored[section], dict):
+            result[section].update(stored[section])
+    return result
+
+@api_router.get("/me/settings")
+async def get_my_settings(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow("SELECT settings FROM users WHERE id = $1", user_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        raw = row["settings"] or {}
+        if isinstance(raw, str):
+            try: raw = json.loads(raw)
+            except Exception: raw = {}
+    return _merge_settings(raw)
+
+class SettingsUpdateBody(BaseModel):
+    notifications: Optional[Dict[str, Any]] = None
+    gameplay: Optional[Dict[str, Any]] = None
+    privacy: Optional[Dict[str, Any]] = None
+    responsible: Optional[Dict[str, Any]] = None
+
+@api_router.post("/me/settings")
+async def update_my_settings(body: SettingsUpdateBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow("SELECT settings FROM users WHERE id = $1", user_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        raw = row["settings"] or {}
+        if isinstance(raw, str):
+            try: raw = json.loads(raw)
+            except Exception: raw = {}
+        merged = _merge_settings(raw)
+        patch = body.dict(exclude_none=True)
+        for section, values in patch.items():
+            if section in merged and isinstance(values, dict):
+                merged[section].update(values)
+        await conn.execute(
+            "UPDATE users SET settings = $2 WHERE id = $1",
+            user_id, json.dumps(merged),
+        )
+    return merged
+
 @api_router.get("/me/progress")
 async def get_my_progress(http_request: Request):
     """Return the authenticated user's XP and level progression."""
