@@ -2863,7 +2863,7 @@ function App() {
               />
             )}
 
-            {activeTab === 'settings' && !inLobby && !showWinnerScreen && !gameInProgress && (
+            {activeTab === 'settings' && (
               <SettingsScreen
                 user={user}
                 onNavigate={(page) => setActiveTab(page)}

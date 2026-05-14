@@ -10,6 +10,8 @@ from typing import Dict, Optional
 from database import get_pool
 import progression as _prog
 import daily_quests as _daily_quests
+
+_STREAK_MILESTONES = {3: 50, 5: 100, 7: 200}
 from arena_domain import (
     ArenaAction,
     ItemModifiers,
@@ -634,14 +636,12 @@ async def finish_match_tx(conn, match, result) -> None:
             )
 
     # Win streak tracking
-    _STREAK_MILESTONES = {3: 50, 5: 100, 7: 200}
     streak_results: dict[str, dict] = {}
     if result.status == "draw":
         for uid in (p1_id, p2_id):
             await conn.execute("UPDATE users SET current_win_streak = 0 WHERE id = $1", uid)
             streak_results[str(uid)] = {"streak": 0, "bonus": 0, "is_record": False}
     else:
-        loser_id_streak = p2_id if result.winner_user_id == p1_id else p1_id
         winner_row = await conn.fetchrow(
             """
             UPDATE users
@@ -662,10 +662,10 @@ async def finish_match_tx(conn, match, result) -> None:
         streak_results[str(result.winner_user_id)] = {
             "streak": new_streak,
             "bonus": streak_bonus,
-            "is_record": new_streak == winner_row["max_win_streak"],
+            "is_record": new_streak > 1 and new_streak == winner_row["max_win_streak"],
         }
-        await conn.execute("UPDATE users SET current_win_streak = 0 WHERE id = $1", loser_id_streak)
-        streak_results[str(loser_id_streak)] = {"streak": 0, "bonus": 0, "is_record": False}
+        await conn.execute("UPDATE users SET current_win_streak = 0 WHERE id = $1", loser_id)
+        streak_results[str(loser_id)] = {"streak": 0, "bonus": 0, "is_record": False}
 
     final_metadata = dict(metadata or {})
     final_metadata.update({

@@ -31,6 +31,7 @@ from solders.system_program import transfer, TransferParams
 import time
 import base58
 import uvicorn
+import copy
 
 # Load environment variables FIRST before importing modules that read them
 ROOT_DIR = Path(__file__).parent
@@ -2953,7 +2954,6 @@ _DEFAULT_SETTINGS = {
 }
 
 def _merge_settings(stored: dict) -> dict:
-    import copy
     result = copy.deepcopy(_DEFAULT_SETTINGS)
     for section, defaults in _DEFAULT_SETTINGS.items():
         if section in stored and isinstance(stored[section], dict):

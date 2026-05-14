@@ -141,7 +141,7 @@ function DamageFloat({ amount, action }) {
       : action === 'risk' ? '\uD83C\uDFB2'
         : action === 'self' ? '\u2620'
           : '\u2694\uFE0F';
-  const sign = action === 'self' ? '-' : '-';
+  const sign = action === 'self' ? '-' : '+';
 
   return (
     <div className="arena-damage-float" style={{ color, top: 14 }}>

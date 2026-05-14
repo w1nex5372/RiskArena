@@ -85,7 +85,14 @@ export default function SettingsScreen({ user, onNavigate }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    apiClient.get('/me/settings').then((r) => setSettings(r.data)).catch(() => {});
+    apiClient.get('/me/settings')
+      .then((r) => setSettings(r.data))
+      .catch(() => setSettings({
+        notifications: { battle: true, daily_chest: true, quests: true },
+        gameplay: { remember_bet: true },
+        privacy: { show_leaderboard: true, show_stats: true },
+        responsible: { daily_limit: 0, session_reminder: 'off' },
+      }));
   }, []);
 
   const patch = async (section, key, value) => {

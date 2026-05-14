@@ -96,8 +96,12 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
     if (switching) return;
     const idx = CLASS_KEYS.indexOf(selectedClass);
     const next = CLASS_KEYS[(idx + dir + CLASS_KEYS.length) % CLASS_KEYS.length];
+    const prevSelected = selectedClass;
+    if (next === (user?.class_name || '').toLowerCase()) {
+      setSelectedClass(next);
+      return;
+    }
     setSelectedClass(next);
-    if (next === (user?.class_name || '').toLowerCase()) return;
     setSwitching(true);
     try {
       await apiClient.post('/me/class', { class_name: next });
@@ -110,7 +114,7 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
       setSwitchFeedback(true);
       setTimeout(() => { if (mountedRef.current) setSwitchFeedback(false); }, 1800);
     } catch {
-      if (mountedRef.current) setSelectedClass((user?.class_name || 'warrior').toLowerCase());
+      if (mountedRef.current) setSelectedClass(prevSelected);
     } finally {
       if (mountedRef.current) setSwitching(false);
     }
