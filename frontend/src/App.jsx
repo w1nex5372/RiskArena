@@ -2822,6 +2822,15 @@ function App() {
               <InventoryScreen
                 user={user}
                 onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
+                onUserUpdate={(fields) => {
+                  setUser((prev) => {
+                    if (!prev) return prev;
+                    const next = { ...prev, ...fields };
+                    saveUserSession(next);
+                    return next;
+                  });
+                  setTopBarVersion((v) => v + 1);
+                }}
               />
             )}
 

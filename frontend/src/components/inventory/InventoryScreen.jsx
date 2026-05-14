@@ -577,7 +577,7 @@ function UpgradeItemRow({ item, selected, onSelect }) {
   );
 }
 
-export default function InventoryScreen({ user, onClassChange }) {
+export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
   const [hubTab, setHubTab] = useState('loadout');
   const [activeTab, setActiveTab] = useState('Weapon');
   const inventoryListRef = useRef(null);
@@ -600,6 +600,7 @@ export default function InventoryScreen({ user, onClassChange }) {
   const [selling, setSelling] = useState(null);
   const [retryKey, setRetryKey] = useState(0);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [filterSlot, setFilterSlot] = useState('all');
 
   useEffect(() => {
     setDisplayBalance(user?.token_balance || 0);
@@ -711,7 +712,11 @@ export default function InventoryScreen({ user, onClassChange }) {
     setSelling(String(item.inventory_id));
     try {
       const res = await apiClient.post('/me/sell', { inventory_id: item.inventory_id });
-      if (res.data?.new_balance != null) setDisplayBalance(res.data.new_balance);
+      const newBalance = res.data?.new_balance;
+      if (newBalance != null) {
+        setDisplayBalance(newBalance);
+        onUserUpdate?.({ token_balance: newBalance });
+      }
       toast.success(`Sold ${item.name} for ${res.data.sell_price} coins`);
       setSelectedItem(null);
       await refreshItems();
@@ -820,6 +825,10 @@ export default function InventoryScreen({ user, onClassChange }) {
       return new Date(b.acquired_at || 0).getTime() - new Date(a.acquired_at || 0).getTime();
     });
   }, [inventory]);
+
+  const displayedItems = filterSlot === 'all'
+    ? allItemsSorted
+    : allItemsSorted.filter((item) => getSlotKey(item) === filterSlot);
 
   const selectedUpgradeItem = useMemo(
     () => upgradeItems.find((item) => item.inventory_id === selectedUpgradeId) || null,
@@ -1019,13 +1028,16 @@ export default function InventoryScreen({ user, onClassChange }) {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          background: 'rgba(255,255,255,0.03)',
-                          border: '1px dashed rgba(148,163,184,0.18)',
+                          background: 'rgba(255,255,255,0.02)',
+                          border: '1px dashed rgba(148,163,184,0.12)',
                         }}>
-                          <slot.Icon style={{ width: 22, height: 22, color: '#334155' }} />
+                          <slot.Icon style={{ width: 20, height: 20, color: '#2d3f55' }} />
                         </div>
-                        <p style={{ color: '#475569', fontSize: 10, fontWeight: 700, margin: '6px 0 0' }}>
-                          Empty
+                        <p style={{ color: '#475569', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '6px 0 0' }}>
+                          {slot.label}
+                        </p>
+                        <p style={{ color: '#2d3f55', fontSize: 8, fontWeight: 600, margin: '2px 0 0' }}>
+                          Tap to equip
                         </p>
                       </>
                     )}
@@ -1050,9 +1062,43 @@ export default function InventoryScreen({ user, onClassChange }) {
                   borderRadius: 999,
                   padding: '2px 7px',
                 }}>
-                  {allItemsSorted.length}
+                  {filterSlot === 'all' ? allItemsSorted.length : `${displayedItems.length}/${allItemsSorted.length}`}
                 </span>
               )}
+            </div>
+            <div style={{ display: 'flex', gap: 5, marginBottom: 10 }}>
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'weapon', label: '⚔️ Weapon' },
+                { key: 'armor', label: '🛡️ Armor' },
+                { key: 'ability', label: '✨ Ability' },
+              ].map(({ key, label }) => {
+                const active = filterSlot === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setFilterSlot(key)}
+                    style={{
+                      flex: 1,
+                      padding: '6px 4px',
+                      borderRadius: 10,
+                      fontSize: 10,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      border: active ? '1px solid rgba(201,168,76,0.45)' : '1px solid rgba(255,255,255,0.07)',
+                      background: active ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.03)',
+                      color: active ? '#c9a84c' : '#64748b',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
             {inventory === null ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
@@ -1069,7 +1115,7 @@ export default function InventoryScreen({ user, onClassChange }) {
                   />
                 ))}
               </div>
-            ) : allItemsSorted.length === 0 ? (
+            ) : displayedItems.length === 0 ? (
               <div style={{
                 borderRadius: 22,
                 padding: '32px 16px',
@@ -1081,7 +1127,7 @@ export default function InventoryScreen({ user, onClassChange }) {
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                {allItemsSorted.map((item) => {
+                {displayedItems.map((item) => {
                   const theme = getTierTheme(item);
                   const isEquipped = equippedInventoryIds.has(item.inventory_id) || Boolean(item.equipped);
                   const enchantLevel = Number(item.enchant_level || 0);
@@ -1160,6 +1206,25 @@ export default function InventoryScreen({ user, onClassChange }) {
                             +{enchantLevel}
                           </div>
                         )}
+                        <div style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          background: 'linear-gradient(transparent, rgba(0,0,0,0.82))',
+                          padding: '10px 3px 3px',
+                          fontSize: 8,
+                          fontWeight: 700,
+                          color: '#cbd5e1',
+                          textAlign: 'center',
+                          lineHeight: 1.2,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          pointerEvents: 'none',
+                        }}>
+                          {item.name}
+                        </div>
                       </div>
                     </div>
                   );
@@ -1174,6 +1239,7 @@ export default function InventoryScreen({ user, onClassChange }) {
               item={selectedItem}
               userClass={userClass}
               equippedInventoryIds={equippedInventoryIds}
+              equippedBySlot={equippedBySlot}
               equipping={equipping}
               unequipping={unequipping}
               onEquip={async (item) => { await handleEquip(item); setSelectedItem(null); }}
