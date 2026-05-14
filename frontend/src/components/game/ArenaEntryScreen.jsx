@@ -1,8 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
 import apiClient from '../../api/client';
-import { CLASS_INFO, getCharacterImage } from '../../utils/characters';
+import { CLASS_MODIFIERS, CLASS_INFO, getCharacterImage } from '../../utils/characters';
 import { getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
+
+function SlotImage({ item, size = 44 }) {
+  const [failed, setFailed] = useState(false);
+  if (!item) return null;
+
+  const src = item.image_path || (() => {
+    const cls = (item.class_name || '').toLowerCase();
+    const slot = (item.slot || item.type || item.category || '').toLowerCase();
+    const weaponMap = { warrior: 'warrior_sword', mage: 'mage_staff', rogue: 'rogue_dagger' };
+    if (slot === 'weapon') return `/items/${weaponMap[cls] || 'warrior_sword'}.png`;
+    return `/items/${cls}_${slot}.png`;
+  })();
+
+  if (failed) return null;
+  return (
+    <img
+      src={src}
+      alt={item.name}
+      onError={() => setFailed(true)}
+      style={{
+        width: size, height: size,
+        objectFit: 'contain',
+        borderRadius: 10,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
 
 const BET_PRESETS = [200, 250, 300, 350, 400, 450];
 const CLASS_KEYS = ['warrior', 'mage', 'rogue'];
@@ -25,10 +53,11 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
   const [selectedClass, setSelectedClass] = useState(
     () => (user?.class_name || 'warrior').toLowerCase()
   );
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
   const classInfo = CLASS_INFO[selectedClass] || CLASS_INFO.warrior;
   const charImg = getCharacterImage(selectedClass);
-  const isActiveClass = selectedClass === (user?.class_name || '').toLowerCase();
 
   useEffect(() => {
     apiClient
@@ -63,27 +92,28 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
     };
   }, [user?.class_name, user?.id]);
 
-  const cycleClass = (dir) => {
+  const cycleClass = async (dir) => {
+    if (switching) return;
     const idx = CLASS_KEYS.indexOf(selectedClass);
-    const next = (idx + dir + CLASS_KEYS.length) % CLASS_KEYS.length;
-    setSelectedClass(CLASS_KEYS[next]);
-  };
-
-  const handleSwitchClass = async () => {
-    if (switching || isActiveClass) return;
+    const next = CLASS_KEYS[(idx + dir + CLASS_KEYS.length) % CLASS_KEYS.length];
+    setSelectedClass(next);
+    if (next === (user?.class_name || '').toLowerCase()) return;
     setSwitching(true);
     try {
-      await apiClient.post('/me/class', { class_name: selectedClass });
-      onClassChange?.(selectedClass);
+      await apiClient.post('/me/class', { class_name: next });
+      onClassChange?.(next);
+      setEquipped({ weapon: null, armor: null, ability: null });
+      setLoadoutEffectiveStats({});
       const equippedResponse = await apiClient.get('/me/equipped');
       setEquipped(equippedResponse.data?.equipped || { weapon: null, armor: null, ability: null });
       setLoadoutEffectiveStats(equippedResponse.data?.loadout_effective_stats || {});
       setSwitchFeedback(true);
-      setTimeout(() => setSwitchFeedback(false), 1800);
+      setTimeout(() => { if (mountedRef.current) setSwitchFeedback(false); }, 1800);
     } catch {
-      // silently ignore — backend validation may reject
+      if (mountedRef.current) setSelectedClass((user?.class_name || 'warrior').toLowerCase());
+    } finally {
+      if (mountedRef.current) setSwitching(false);
     }
-    setSwitching(false);
   };
 
   const bronzeGames = (history || []).filter(
@@ -137,8 +167,16 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
   };
 
   const getEquipped = (slotKey) => equipped?.[slotKey] || null;
-  const equippedBonusChips = LOADOUT_SLOTS.flatMap(({ key }) => getItemStatRows(getEquipped(key))).slice(0, 5);
-  const aggregateBonusChips = equippedBonusChips.length ? equippedBonusChips : getStatEntries(loadoutEffectiveStats);
+  // Merge class base modifiers + equipped item modifiers for total stat display
+  const activeClass = (user?.class_name || '').trim().toLowerCase();
+  const classMods = CLASS_MODIFIERS[activeClass] || {};
+  const totalCombatStats = {};
+  [classMods, loadoutEffectiveStats].forEach((mods) => {
+    Object.entries(mods || {}).forEach(([k, v]) => {
+      totalCombatStats[k] = (totalCombatStats[k] || 0) + Number(v || 0);
+    });
+  });
+  const totalStatChips = getStatEntries(totalCombatStats);
 
   return (
     <div style={{ background: '#1a1a2e', minHeight: '100%', paddingBottom: 100, color: '#e8e0d0' }}>
@@ -177,12 +215,9 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
               <p style={{ color: classInfo.color, fontSize: 12, fontWeight: 700, margin: '0 0 4px' }}>
                 {classInfo.title}
               </p>
-              <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, fontWeight: 500, margin: 0 }}>
-                {classInfo.bonus}
-              </p>
-              {aggregateBonusChips.length > 0 ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
-                  {aggregateBonusChips.slice(0, 5).map((chip) => (
+              {totalStatChips.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+                  {totalStatChips.slice(0, 6).map((chip) => (
                     <span
                       key={`${chip.key}-${chip.label}`}
                       style={{
@@ -201,8 +236,8 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
                   ))}
                 </div>
               ) : (
-                <p style={{ color: '#64748b', fontSize: 10, fontWeight: 700, margin: '9px 0 0' }}>
-                  No equipped item bonuses yet.
+                <p style={{ color: '#64748b', fontSize: 10, fontWeight: 700, margin: '8px 0 0' }}>
+                  {classInfo.bonus}
                 </p>
               )}
             </div>
@@ -271,31 +306,20 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
           </div>
         </div>
 
-        {/* SWITCH / ACTIVE pill row */}
+        {/* Status pill */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, zIndex: 1, position: 'relative' }}>
           {switchFeedback ? (
             <span style={{ padding: '4px 14px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#22c55e', fontSize: 11, fontWeight: 800 }}>
               Class changed!
             </span>
-          ) : isActiveClass ? (
+          ) : switching ? (
+            <span style={{ padding: '4px 14px', borderRadius: 20, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#64748b', fontSize: 11, fontWeight: 800 }}>
+              ...
+            </span>
+          ) : (
             <span style={{ padding: '4px 14px', borderRadius: 20, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.35)', color: '#c9a84c', fontSize: 11, fontWeight: 800 }}>
               ACTIVE
             </span>
-          ) : (
-            <button
-              onClick={handleSwitchClass}
-              disabled={switching}
-              style={{
-                padding: '4px 14px', borderRadius: 20,
-                background: switching ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #8b0000, #c0392b)',
-                border: '1px solid rgba(201,168,76,0.3)',
-                color: switching ? '#475569' : '#f5e6c0',
-                fontSize: 11, fontWeight: 800,
-                cursor: switching ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {switching ? '...' : `SWITCH TO ${classInfo.name.toUpperCase()}`}
-            </button>
           )}
         </div>
       </div>
@@ -329,7 +353,10 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
                   transition: 'all 0.15s ease',
                 }}
               >
-                <Icon style={{ width: 22, height: 22, color: item ? rarityColor : '#334155', opacity: item ? 1 : 0.35 }} />
+                {item
+                  ? <SlotImage item={item} size={40} />
+                  : <Icon style={{ width: 22, height: 22, color: '#334155', opacity: 0.35 }} />
+                }
                 <p style={{ color: '#475569', fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', margin: 0 }}>{label}</p>
                 {item && (
                   <>

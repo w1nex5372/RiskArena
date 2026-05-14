@@ -507,7 +507,7 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
         }}
       >
         <div style={{ fontSize: 42, marginBottom: 12 }}>\u2694\uFE0F</div>
-        <h2 style={{ fontSize: 22, fontWeight: 900, color: '#c9a84c', margin: '0 0 8px' }}>Bronze Arena</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 900, color: '#c9a84c', margin: '0 0 8px' }}>Dueling Pit</h2>
         <p style={{ fontSize: 14, color: '#94a3b8', margin: 0 }}>
           Join the Bronze room from the Arena tab to enter a 1v1 duel.
         </p>
@@ -762,7 +762,7 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
       >
         <div>
           <div style={{ fontSize: 11, color: '#c9a84c', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-            Bronze Arena
+            Dueling Pit
           </div>
           <div style={{ fontSize: 13, color: '#f8fafc', fontWeight: 800, marginTop: 4 }}>
             Round {match.round_number} / {MAX_ROUNDS}

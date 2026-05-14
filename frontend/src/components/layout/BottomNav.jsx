@@ -1,7 +1,8 @@
-import { Backpack, Crown, Medal, Swords, UserCircle, Users, Zap } from 'lucide-react';
+import { Backpack, Crown, Medal, Swords, Users, Zap } from 'lucide-react';
 
 function NavBtn({ tab, activeTab, onClick, icon: Icon, label }) {
-  const isActive = activeTab === tab;
+  const effectiveActiveTab = activeTab === 'dailyChest' ? 'rooms' : activeTab;
+  const isActive = effectiveActiveTab === tab;
   return (
     <button
       onClick={onClick}
@@ -54,7 +55,6 @@ export default function BottomNav({ activeTab, setActiveTab, user }) {
       <NavBtn tab="boss"       activeTab={activeTab} onClick={() => setActiveTab('boss')}       icon={Zap}        label="Raid"    />
       <NavBtn tab="leaderboard" activeTab={activeTab} onClick={() => setActiveTab('leaderboard')} icon={Medal}  label="Ranks"   />
       <NavBtn tab="inventory"  activeTab={activeTab} onClick={() => setActiveTab('inventory')}  icon={Backpack}   label="Items"   />
-      <NavBtn tab="profile"    activeTab={activeTab} onClick={() => setActiveTab('profile')}    icon={UserCircle} label="Profile" />
       {(user?.is_admin === true || user?.is_owner === true) && (
         <NavBtn tab="admin" activeTab={activeTab} onClick={() => setActiveTab('admin')} icon={Crown} label="Admin" />
       )}

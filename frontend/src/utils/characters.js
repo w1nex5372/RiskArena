@@ -50,3 +50,9 @@ export function getCharacterImage(className, fallbackClass = 'warrior') {
   if (normalized) return CHARACTER_IMAGES[normalized];
   return fallbackClass ? CHARACTER_IMAGES[fallbackClass] || null : null;
 }
+
+export const CLASS_MODIFIERS = {
+  warrior: { attack_bonus: 3, hp_bonus: 15 },
+  mage: { ability_bonus: 8, hp_bonus: -10 },
+  rogue: { risk_win_chance: 0.15 },
+};

@@ -110,6 +110,15 @@ BASE_STAT_KEYS = (
 )
 
 
+_WEAPON_ASSET = {"warrior": "warrior_sword", "mage": "mage_staff", "rogue": "rogue_dagger"}
+
+
+def _weapon_image(class_name: str, slot: str) -> str:
+    if slot == "weapon":
+        return f"/items/{_WEAPON_ASSET.get(class_name, class_name + '_weapon')}.png"
+    return f"/items/{class_name}_{slot}.png"
+
+
 def _item(
     class_name: str,
     slot: str,
@@ -140,7 +149,7 @@ def _item(
         "risk_win_chance": risk_win_chance,
         "passive_type": passive_type,
         "passive_value": passive_value,
-        "image_path": image_path or f"/items/{class_name}_{slot}.png",
+        "image_path": image_path or _weapon_image(class_name, slot),
     }
 
 
@@ -409,7 +418,7 @@ def stat_summary_for_item(item: Dict[str, Any]) -> List[Dict[str, Any]]:
         summary.append({
             "stat": key,
             "value": value,
-            "label": f"{_format_stat_value(key, value)} {slot} {stat_label}".strip(),
+            "label": f"{_format_stat_value(key, value)} {stat_label}".strip(),
         })
     return summary
 

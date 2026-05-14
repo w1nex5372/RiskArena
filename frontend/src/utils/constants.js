@@ -30,8 +30,8 @@ const PRIZE_LINKS = {
 
 const ROOM_CONFIGS = {
   free: {
-    name: 'Free Room',
-    icon: '🆓',
+    name: 'Training Grounds',
+    icon: '🏹',
     min: 0,
     max: 0,
     maxPlayers: 3,
@@ -39,9 +39,9 @@ const ROOM_CONFIGS = {
     gradient: 'from-emerald-500 to-teal-700'
   },
   bronze: {
-    name: 'THE ARENA',
-    label: 'Bronze 1v1',
-    icon: '🥉',
+    name: 'Dueling Pit',
+    label: 'Combat 1v1',
+    icon: '⚔️',
     min: 200,
     max: 450,
     min_bet: 200,
@@ -52,7 +52,7 @@ const ROOM_CONFIGS = {
     gradient: 'from-amber-600 to-amber-800'
   },
   silver: {
-    name: 'Silver Room',
+    name: 'Silver Arena',
     icon: '🥈',
     min: 350,
     max: 800,
@@ -60,7 +60,7 @@ const ROOM_CONFIGS = {
     gradient: 'from-slate-400 to-slate-600'
   },
   gold: {
-    name: 'Gold Room',
+    name: 'Golden Arena',
     icon: '🥇',
     min: 650,
     max: 1200,
@@ -68,8 +68,8 @@ const ROOM_CONFIGS = {
     gradient: 'from-yellow-400 to-yellow-600'
   },
   freeroll: {
-    name: 'Free Roll',
-    icon: '🎟️',
+    name: 'Grand Arena',
+    icon: '🏟️',
     min: 0,
     max: 0,
     maxPlayers: 30,
@@ -77,7 +77,13 @@ const ROOM_CONFIGS = {
   },
 };
 
-const ROOM_LABELS = { bronze: '🥉 Bronze', silver: '🥈 Silver', gold: '🥇 Gold' };
+const ROOM_LABELS = {
+  bronze: '⚔️ Dueling Pit',
+  silver: '🥈 Silver Arena',
+  gold: '🥇 Golden Arena',
+  free: '🏹 Training Grounds',
+  freeroll: '🏟️ Grand Arena',
+};
 
 const normalizeRoomType = (rt) => {
   if (!rt) return '';

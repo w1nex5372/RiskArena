@@ -84,3 +84,58 @@ code {
     @apply bg-background text-foreground;
     }
 }
+
+/* ── Rarity glow keyframes ────────────────────────────────────── */
+@keyframes glow-uncommon {
+  0%, 100% { box-shadow: 0 0 8px rgba(34,197,94,0.25), 0 0 0 1px rgba(34,197,94,0.2); }
+  50%       { box-shadow: 0 0 22px rgba(34,197,94,0.55), 0 0 0 1px rgba(34,197,94,0.4); }
+}
+@keyframes glow-rare {
+  0%, 100% { box-shadow: 0 0 10px rgba(59,130,246,0.3), 0 0 0 1px rgba(59,130,246,0.22); }
+  50%       { box-shadow: 0 0 26px rgba(59,130,246,0.6), 0 0 0 1px rgba(59,130,246,0.45); }
+}
+@keyframes glow-epic {
+  0%, 100% { box-shadow: 0 0 14px rgba(168,85,247,0.35), 0 0 0 1.5px rgba(168,85,247,0.28); }
+  50%       { box-shadow: 0 0 32px rgba(168,85,247,0.72), 0 0 0 1.5px rgba(168,85,247,0.55); }
+}
+@keyframes glow-legendary {
+  0%, 100% { box-shadow: 0 0 18px rgba(201,168,76,0.45), 0 0 0 1.5px rgba(201,168,76,0.35); }
+  50%       { box-shadow: 0 0 42px rgba(201,168,76,0.85), 0 0 0 1.5px rgba(201,168,76,0.7); }
+}
+@keyframes legendary-border-spin {
+  0%   { border-color: rgba(201,168,76,0.8); }
+  25%  { border-color: rgba(255,220,100,1); }
+  50%  { border-color: rgba(201,168,76,0.8); }
+  75%  { border-color: rgba(255,200,60,0.9); }
+  100% { border-color: rgba(201,168,76,0.8); }
+}
+@keyframes legendary-card-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Image ring glow */
+.rarity-ring-uncommon  { border: 1.5px solid rgba(34,197,94,0.45)  !important; animation: glow-uncommon  3.2s ease-in-out infinite; }
+.rarity-ring-rare      { border: 1.5px solid rgba(59,130,246,0.5)  !important; animation: glow-rare       2.6s ease-in-out infinite; }
+.rarity-ring-epic      { border: 2px    solid rgba(168,85,247,0.55) !important; animation: glow-epic       2.1s ease-in-out infinite; }
+.rarity-ring-legendary { border: 2px    solid rgba(201,168,76,0.7)  !important; animation: glow-legendary  1.7s ease-in-out infinite, legendary-border-spin 2.4s ease-in-out infinite; }
+
+/* Card outline glow (applied to article/div wrapper) */
+.rarity-card-uncommon  { animation: glow-uncommon  3.2s ease-in-out infinite; }
+.rarity-card-rare      { animation: glow-rare       2.6s ease-in-out infinite; }
+.rarity-card-epic      { animation: glow-epic       2.1s ease-in-out infinite; }
+.rarity-card-legendary {
+  animation: glow-legendary 1.7s ease-in-out infinite;
+  background: linear-gradient(135deg, rgba(42,28,4,0.98), rgba(26,20,4,0.98), rgba(50,34,4,0.98)) !important;
+  background-size: 200% 200% !important;
+}
+
+/* Legendary shimmer text sweep (apply to item name) */
+.rarity-name-legendary {
+  background: linear-gradient(90deg, #c9a84c 0%, #ffe680 40%, #c9a84c 60%, #a07830 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: legendary-card-shimmer 2.4s linear infinite;
+}

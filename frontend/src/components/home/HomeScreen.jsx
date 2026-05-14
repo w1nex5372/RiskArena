@@ -1,4 +1,6 @@
-import { ChevronRight, Swords, Trophy, Zap } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronRight, ClipboardList, Clock3, Gift, RefreshCw, Swords, Trophy, Zap } from 'lucide-react';
+import apiClient from '../../api/client';
 
 const GAME_MODES = [
   {
@@ -43,6 +45,19 @@ const SectionLabel = ({ children }) => (
   </p>
 );
 
+function formatCountdown(targetAt) {
+  if (!targetAt) return '--:--:--';
+  const targetTime = new Date(targetAt).getTime();
+  if (Number.isNaN(targetTime)) return '--:--:--';
+
+  const diff = Math.max(0, targetTime - Date.now());
+  const hours = Math.floor(diff / 3600000);
+  const minutes = Math.floor((diff % 3600000) / 60000);
+  const seconds = Math.floor((diff % 60000) / 1000);
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 export default function HomeScreen({
   isMobile,
   user,
@@ -53,6 +68,104 @@ export default function HomeScreen({
   const rank = user?.rank || null;
   const streak = user?.streak || 0;
   const arenaOnline = (rooms || []).reduce((sum, r) => sum + (r.players_count || 0), 0);
+  const [chest, setChest] = useState(null);
+  const [chestLoading, setChestLoading] = useState(true);
+  const [chestError, setChestError] = useState(false);
+  const [chestCountdown, setChestCountdown] = useState('--:--:--');
+  const lastResetRefreshAtRef = useRef(0);
+
+  const fetchChest = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/daily-chest');
+      setChest(res.data || null);
+      setChestError(false);
+    } catch (_) {
+      setChest(null);
+      setChestError(true);
+    } finally {
+      setChestLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchChest();
+    window.addEventListener('focus', fetchChest);
+    return () => {
+      window.removeEventListener('focus', fetchChest);
+    };
+  }, [fetchChest]);
+
+  useEffect(() => {
+    const targetAt = chest?.next_available_at || chest?.reset_at;
+    const tick = () => {
+      setChestCountdown(formatCountdown(targetAt));
+      const targetTime = targetAt ? new Date(targetAt).getTime() : NaN;
+      if (
+        targetAt &&
+        !Number.isNaN(targetTime) &&
+        Date.now() >= targetTime &&
+        chest &&
+        !chest.available &&
+        Date.now() - lastResetRefreshAtRef.current > 5000
+      ) {
+        lastResetRefreshAtRef.current = Date.now();
+        fetchChest();
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [chest, chest?.next_available_at, chest?.reset_at, fetchChest]);
+
+  const chestCopy = useMemo(() => {
+    if (chestLoading) {
+      return {
+        badge: 'Checking',
+        title: 'Free chest status loading',
+        sub: 'Coins, XP, and rare item drops.',
+        cta: 'Open',
+        ready: false,
+      };
+    }
+
+    if (chestError) {
+      return {
+        badge: 'Offline',
+        title: 'Chest status unavailable',
+        sub: 'Open the chest screen to retry.',
+        cta: 'Open',
+        ready: false,
+      };
+    }
+
+    if (chest?.available) {
+      return {
+        badge: 'Ready',
+        title: 'Free Daily Chest ready',
+        sub: 'Open now for coins, XP, and item drops.',
+        cta: 'Open',
+        ready: true,
+      };
+    }
+
+    if (chest?.claimed_today) {
+      return {
+        badge: 'Claimed',
+        title: `Next free chest in ${chestCountdown}`,
+        sub: 'Come back after reset for another roll.',
+        cta: 'View',
+        ready: false,
+      };
+    }
+
+    return {
+      badge: 'Daily',
+      title: `Available in ${chestCountdown}`,
+      sub: 'Coins, XP, and rare item drops.',
+      cta: 'View',
+      ready: false,
+    };
+  }, [chest?.available, chest?.claimed_today, chestCountdown, chestError, chestLoading]);
 
   return (
     <div style={{ background: '#1a1a2e', minHeight: '100%', paddingBottom: 100 }}>
@@ -111,27 +224,158 @@ export default function HomeScreen({
 
       {/* ── DAILY QUESTS CARD ───────────────────────────────── */}
       <div style={{ margin: '16px 16px 0' }}>
-        <div onClick={() => setActiveTab?.('quests')} style={{
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div role="button" tabIndex={0} onClick={() => setActiveTab?.('quests')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab?.('quests'); }} aria-label="Open daily quests" style={{
+          width: '100%',
           margin: '0 0 0px',
-          padding: '14px 16px',
-          borderRadius: 14,
-          background: 'linear-gradient(135deg, rgba(201,168,76,0.12), rgba(15,23,42,0.8))',
-          border: '1px solid rgba(201,168,76,0.28)',
+          padding: '14px 14px',
+          borderRadius: 16,
+          background: 'linear-gradient(135deg, rgba(42,31,9,0.92), rgba(15,23,42,0.9) 58%, rgba(34,197,94,0.12))',
+          border: '1px solid rgba(201,168,76,0.42)',
+          boxShadow: '0 10px 28px rgba(201,168,76,0.1)',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
+          textAlign: 'left',
         }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#c9a84c', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-              Daily Quests
+          <div style={{
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            background: 'rgba(201,168,76,0.12)',
+            border: '1px solid rgba(201,168,76,0.28)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            color: '#c9a84c',
+          }}>
+            <ClipboardList size={22} strokeWidth={2.4} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
+              <span style={{ fontSize: 11, fontWeight: 900, color: '#c9a84c', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                Daily Quests
+              </span>
+              <span style={{
+                background: 'rgba(34,197,94,0.14)',
+                border: '1px solid rgba(34,197,94,0.22)',
+                color: '#86efac',
+                fontSize: 9,
+                fontWeight: 900,
+                padding: '2px 6px',
+                borderRadius: 999,
+                textTransform: 'uppercase',
+              }}>
+                Active
+              </span>
             </div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#f8fafc', marginTop: 3 }}>
-              Complete tasks, earn rewards
+            <div style={{ color: '#f8fafc', fontSize: 14, fontWeight: 850, lineHeight: 1.15 }}>
+              Tasks ready to complete
+            </div>
+            <div style={{ color: 'rgba(203,213,225,0.64)', fontSize: 11, fontWeight: 650, marginTop: 4 }}>
+              Claim coins and XP before reset.
             </div>
           </div>
-          <div style={{ fontSize: 22 }}>📋</div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            flexShrink: 0,
+            color: '#111827',
+            background: 'linear-gradient(135deg, #facc15, #c9a84c)',
+            borderRadius: 999,
+            padding: '8px 10px',
+            fontSize: 11,
+            fontWeight: 950,
+            boxShadow: '0 8px 18px rgba(201,168,76,0.18)',
+          }}>
+            Open
+            <ChevronRight size={14} strokeWidth={3} />
+          </div>
+        </div>
+        <div role="button" tabIndex={0} onClick={() => setActiveTab?.('dailyChest')} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab?.('dailyChest'); }} aria-label="Open free daily chest" style={{
+          width: '100%',
+          padding: '14px 14px',
+          borderRadius: 16,
+          background: chestCopy.ready
+            ? 'linear-gradient(135deg, rgba(42,31,9,0.98), rgba(15,23,42,0.92) 48%, rgba(250,204,21,0.2))'
+            : 'linear-gradient(135deg, rgba(15,23,42,0.92), rgba(42,31,9,0.78))',
+          border: `1px solid ${chestCopy.ready ? 'rgba(250,204,21,0.54)' : 'rgba(201,168,76,0.28)'}`,
+          boxShadow: chestCopy.ready ? '0 12px 30px rgba(201,168,76,0.15)' : '0 8px 22px rgba(0,0,0,0.18)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          textAlign: 'left',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          {chestCopy.ready && (
+            <div style={{ position: 'absolute', right: -30, top: -42, width: 130, height: 130, background: 'radial-gradient(circle, rgba(250,204,21,0.2), transparent 68%)', pointerEvents: 'none' }} />
+          )}
+          <div style={{
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            background: chestCopy.ready ? 'linear-gradient(135deg, #facc15, #c9a84c)' : 'rgba(201,168,76,0.12)',
+            border: '1px solid rgba(201,168,76,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            color: chestCopy.ready ? '#111827' : '#c9a84c',
+            position: 'relative',
+          }}>
+            {chestLoading ? <RefreshCw size={21} strokeWidth={2.4} /> : <Gift size={22} strokeWidth={2.4} />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
+              <span style={{ fontSize: 11, fontWeight: 900, color: '#c9a84c', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                Free Daily Chest
+              </span>
+              <span style={{
+                background: chestCopy.ready ? 'rgba(34,197,94,0.14)' : 'rgba(201,168,76,0.12)',
+                border: `1px solid ${chestCopy.ready ? 'rgba(34,197,94,0.22)' : 'rgba(201,168,76,0.2)'}`,
+                color: chestCopy.ready ? '#86efac' : '#c9a84c',
+                fontSize: 9,
+                fontWeight: 900,
+                padding: '2px 6px',
+                borderRadius: 999,
+                textTransform: 'uppercase',
+              }}>
+                {chestCopy.badge}
+              </span>
+            </div>
+            <div style={{ color: '#f8fafc', fontSize: 14, fontWeight: 850, lineHeight: 1.15 }}>
+              {chestCopy.title}
+            </div>
+            <div style={{ color: 'rgba(203,213,225,0.64)', fontSize: 11, fontWeight: 650, marginTop: 4 }}>
+              {chestCopy.sub}
+            </div>
+          </div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            flexShrink: 0,
+            color: '#111827',
+            background: chestCopy.ready ? 'linear-gradient(135deg, #facc15, #c9a84c)' : 'rgba(201,168,76,0.82)',
+            borderRadius: 999,
+            padding: '8px 10px',
+            fontSize: 11,
+            fontWeight: 950,
+            boxShadow: chestCopy.ready ? '0 8px 18px rgba(201,168,76,0.2)' : 'none',
+            position: 'relative',
+          }}>
+            {chest?.claimed_today ? <Clock3 size={13} strokeWidth={3} /> : null}
+            {chestCopy.cta}
+            <ChevronRight size={14} strokeWidth={3} />
+          </div>
+        </div>
         </div>
       </div>
 
@@ -204,7 +448,7 @@ export default function HomeScreen({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[
             { icon: '📅', label: 'DAILY QUESTS', value: 'View Quests', muted: false, onClick: () => setActiveTab?.('quests') },
-            { icon: '🎁', label: 'FREE CHEST',   value: 'Coming soon', muted: true },
+            { icon: '🎁', label: 'FREE CHEST', value: chestError ? 'Unavailable' : chest?.available ? 'Ready to open' : chest?.claimed_today ? chestCountdown : 'View Chest', muted: false, onClick: () => setActiveTab?.('dailyChest') },
             {
               icon: '🏆',
               label: 'SEASON 1',

@@ -45,6 +45,7 @@ import socket_rooms
 import arena_repo
 import progression as _progression
 import daily_quests as _daily_quests
+import daily_chest as _daily_chest
 from auth import SESSION_COOKIE, create_session_token, get_authenticated_user_id
 from itemization import (
     SCROLL_SHOP,
@@ -2761,45 +2762,37 @@ async def get_leaderboard(tab: str = "coins"):
 @api_router.get("/daily-quests")
 async def get_daily_quests(http_request: Request):
     user_id = get_authenticated_user_id(http_request)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
     quests = await _daily_quests.get_quests_for_user(user_id)
-    return {"quests": quests}
+    return {"quests": quests, **_daily_quests.quest_timing()}
 
 
 @api_router.post("/daily-quests/{quest_key}/claim")
 async def claim_daily_quest(quest_key: str, http_request: Request):
     user_id = get_authenticated_user_id(http_request)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        coins, xp = await _daily_quests.claim_quest(user_id, quest_key)
+        async with get_pool().acquire() as conn:
+            async with conn.transaction():
+                return await _daily_quests.claim_quest_in_transaction(conn, user_id, quest_key)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    # Award coins and XP
-    updated_user = None
+
+
+@api_router.get("/daily-chest")
+async def get_daily_chest(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
     async with get_pool().acquire() as conn:
-        if coins > 0:
-            updated_user = await conn.fetchrow(
-                "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1 RETURNING token_balance, xp, level",
-                user_id, coins
-            )
-        if xp > 0:
-            cur_row = await conn.fetchrow("SELECT xp FROM users WHERE id = $1", user_id)
-            cur_xp = int(cur_row["xp"] or 0)
-            xp_res = _progression.award_xp_result(cur_xp, xp)
-            updated_user = await conn.fetchrow(
-                "UPDATE users SET xp = $2, level = $3 WHERE id = $1 RETURNING token_balance, xp, level",
-                user_id, xp_res["new_xp"], xp_res["new_level"]
-            )
-    return {
-        "success": True,
-        "reward_coins": coins,
-        "reward_xp": xp,
-        "new_balance": int(updated_user["token_balance"]) if updated_user else None,
-        "new_xp": int(updated_user["xp"]) if updated_user else None,
-        "new_level": int(updated_user["level"]) if updated_user else None,
-    }
+        return await _daily_chest.get_daily_chest_state(conn, user_id)
+
+
+@api_router.post("/daily-chest/claim")
+async def claim_daily_chest(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    try:
+        async with get_pool().acquire() as conn:
+            async with conn.transaction():
+                return await _daily_chest.claim_daily_chest_in_transaction(conn, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @api_router.get("/game-history")
@@ -3215,6 +3208,7 @@ async def get_my_equipped(http_request: Request):
                    COALESCE(inv.enchant_level, 0) AS enchant_level, i.*
             FROM equipped_items ei
             JOIN items i ON i.id = ei.item_id
+            JOIN users u ON u.id = ei.user_id AND i.class_name = u.class_name
             LEFT JOIN LATERAL (
                 SELECT id, enchant_level
                 FROM inventory
@@ -3429,6 +3423,19 @@ class UnequipBody(BaseModel):
     slot: str
 
 
+SELL_PRICES = {
+    "common": 5,
+    "uncommon": 100,
+    "rare": 300,
+    "epic": 500,
+    "legendary": 1200,
+}
+
+
+class SellBody(BaseModel):
+    inventory_id: str
+
+
 @api_router.post("/me/unequip")
 async def unequip_item(body: UnequipBody, http_request: Request):
     if body.slot not in ("weapon", "armor", "ability"):
@@ -3440,6 +3447,53 @@ async def unequip_item(body: UnequipBody, http_request: Request):
             user_id, body.slot,
         )
     return {"success": True}
+
+
+@api_router.post("/me/sell")
+async def sell_item(body: SellBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            # 1. Fetch inventory row (lock for update)
+            row = await conn.fetchrow(
+                """
+                SELECT inv.id AS inventory_id, inv.user_id, inv.item_id,
+                       i.name AS item_name, i.tier
+                FROM inventory inv
+                JOIN items i ON i.id = inv.item_id
+                WHERE inv.user_id = $1 AND inv.id = $2
+                FOR UPDATE OF inv
+                """,
+                user_id, body.inventory_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Item not in your inventory")
+
+            # 2. Check not equipped
+            equipped = await conn.fetchval(
+                "SELECT 1 FROM equipped_items WHERE user_id = $1 AND inventory_id = $2",
+                user_id, body.inventory_id,
+            )
+            if equipped:
+                raise HTTPException(status_code=400, detail="Cannot sell an equipped item — unequip it first")
+
+            # 3. Sell price
+            tier = (row["tier"] or "common").lower()
+            sell_price = SELL_PRICES.get(tier, 5)
+
+            # 4. Credit tokens
+            new_balance = await conn.fetchval(
+                "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1 RETURNING token_balance",
+                user_id, sell_price,
+            )
+
+            # 5. Delete from inventory
+            await conn.execute(
+                "DELETE FROM inventory WHERE user_id = $1 AND id = $2",
+                user_id, body.inventory_id,
+            )
+
+            return {"new_balance": int(new_balance or 0), "sell_price": sell_price, "item_name": row["item_name"]}
 
 
 # ─────────────────────────────────────────────────────────────────

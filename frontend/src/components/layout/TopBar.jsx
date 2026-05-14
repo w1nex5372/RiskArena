@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Coins, Plus } from 'lucide-react';
 import apiClient from '../../api/client';
+import { CLASS_INFO } from '../../utils/characters';
 
 const PROGRESS_TTL = 60_000;
 
@@ -32,11 +33,12 @@ export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyT
     }).catch(() => {});
   }, []);
 
-  const level = progress?.level || user?.level || 1;
-  const xp = progress?.xp || 0;
-  const xpToNext = progress?.xp_to_next_level || 100;
+  const level = progress?.level ?? user?.level ?? 1;
+  const xp = progress?.xp ?? user?.xp ?? 0;
+  const xpToNext = progress?.xp_to_next_level ?? user?.xp_to_next_level ?? 100;
   const xpPct = Math.min(100, Math.round((xp / (xp + xpToNext)) * 100));
   const initials = (user?.first_name || user?.telegram_username || '?').charAt(0).toUpperCase();
+  const classInfo = user?.class_name ? CLASS_INFO[user.class_name] : null;
 
   return (
     <header style={{
@@ -51,16 +53,16 @@ export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyT
       boxSizing: 'border-box',
     }}>
 
-      {/* ROW 1 — Avatar + Username | Coins + Buy */}
+      {/* ROW 1 — Avatar + Username + Class | Coins + Buy */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 10 }}>
 
-        {/* Left: avatar + username */}
+        {/* Left: avatar + username + class badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
           <div style={{
             width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
             overflow: 'hidden',
-            border: '2px solid rgba(201,168,76,0.6)',
-            boxShadow: '0 0 12px rgba(201,168,76,0.25)',
+            border: `2px solid ${classInfo ? classInfo.color : 'rgba(201,168,76,0.6)'}`,
+            boxShadow: classInfo ? `0 0 10px ${classInfo.glow}` : '0 0 12px rgba(201,168,76,0.25)',
           }}>
             {user?.photo_url ? (
               <img src={user.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -75,12 +77,16 @@ export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyT
               </div>
             )}
           </div>
-          <span style={{
-            color: 'white', fontWeight: 700, fontSize: 16,
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>
-            {user?.first_name || user?.telegram_username || 'Player'}
-          </span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: 'white', fontWeight: 700, fontSize: 16, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {user?.first_name || user?.telegram_username || 'Player'}
+            </div>
+            {classInfo && (
+              <div style={{ fontSize: 11, fontWeight: 700, color: classInfo.color, marginTop: 1 }}>
+                {classInfo.icon} {classInfo.name}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right: coins + buy button */}

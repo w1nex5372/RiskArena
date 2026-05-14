@@ -770,6 +770,32 @@ async def get_user_stats(user_id: str) -> Dict:
                 "won_at": r["won_at"].isoformat() if r["won_at"] else None,
             })
 
+        # Recent games (last 10, wins + losses)
+        recent_game_rows = await conn.fetch("""
+            SELECT room_type, prize_pool, (winner->>'user_id') AS winner_id, players, finished_at
+            FROM completed_games
+            WHERE players @> $1::jsonb
+            ORDER BY finished_at DESC LIMIT 10
+        """, json.dumps([{"user_id": user_id}]))
+        recent_games = []
+        for r in recent_game_rows:
+            won = r["winner_id"] == user_id
+            players_list = r["players"]
+            if isinstance(players_list, str):
+                players_list = json.loads(players_list)
+            bet_amount = 0
+            for p in (players_list or []):
+                if p.get("user_id") == user_id:
+                    bet_amount = int(p.get("bet_amount", 0))
+                    break
+            recent_games.append({
+                "room_type": r["room_type"],
+                "prize_pool": int(r["prize_pool"]),
+                "bet_amount": bet_amount,
+                "won": won,
+                "finished_at": r["finished_at"].isoformat() if r["finished_at"] else None,
+            })
+
         # Win streak — compute from chronological game history
         game_rows = await conn.fetch("""
             SELECT (winner->>'user_id') AS winner_id
@@ -806,6 +832,7 @@ async def get_user_stats(user_id: str) -> Dict:
             "current_win_streak": current_streak,
             "favorite_room": favorite_room,
             "recent_wins": recent_wins,
+            "recent_games": recent_games,
         }
 
 

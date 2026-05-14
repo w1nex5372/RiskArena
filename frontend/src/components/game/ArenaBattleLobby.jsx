@@ -247,7 +247,7 @@ export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmL
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 800, color: '#c9a84c', textTransform: 'uppercase', letterSpacing: '0.16em' }}>
-              Bronze Arena
+              Dueling Pit
             </div>
             <div style={{ fontSize: 20, fontWeight: 900, color: '#f8fafc', marginTop: 4 }}>
               Pre-fight lobby

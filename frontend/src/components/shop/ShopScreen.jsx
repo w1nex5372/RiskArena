@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Filter, Shield, ShoppingBag, Sparkles, Sword } from 'lucide-react';
+import { Filter, Shield, Sparkles, Sword } from 'lucide-react';
 import { toast } from 'sonner';
 import apiClient from '../../api/client';
 import {
@@ -18,112 +18,64 @@ import {
 
 const SHOP_TIERS = ['common', 'uncommon', 'rare'];
 const SHOP_CLASSES = ['all', 'warrior', 'mage', 'rogue'];
+const CLASS_ICON = { all: '✦', warrior: '⚔️', mage: '🔮', rogue: '🗡️' };
 
-const SLOT_ICON = {
-  weapon: Sword,
-  armor: Shield,
-  ability: Sparkles,
-};
+const SLOT_ICON = { weapon: Sword, armor: Shield, ability: Sparkles };
+
+function rarityRingClass(item) {
+  const tier = getTierKey(item);
+  if (tier === 'legendary') return 'rarity-ring-legendary';
+  if (tier === 'epic') return 'rarity-ring-epic';
+  if (tier === 'rare') return 'rarity-ring-rare';
+  if (tier === 'uncommon') return 'rarity-ring-uncommon';
+  return '';
+}
+
+function rarityCardClass(item) {
+  const tier = getTierKey(item);
+  if (tier === 'legendary') return 'rarity-card-legendary';
+  if (tier === 'epic') return 'rarity-card-epic';
+  if (tier === 'rare') return 'rarity-card-rare';
+  if (tier === 'uncommon') return 'rarity-card-uncommon';
+  return '';
+}
 
 function ItemImage({ item, size = 54 }) {
   const [failed, setFailed] = useState(false);
   const theme = getTierTheme(item);
   const src = getItemImageSrc(item);
   const Icon = SLOT_ICON[getSlotKey(item)] || Sword;
+  const ringClass = rarityRingClass(item);
 
-  useEffect(() => {
-    setFailed(false);
-  }, [src]);
+  useEffect(() => { setFailed(false); }, [src]);
 
   if (failed) {
     return (
-      <div
-        style={{
-          width: size,
-          height: size,
-          borderRadius: 16,
-          flexShrink: 0,
-          background: `linear-gradient(135deg, ${theme.soft}, rgba(255,255,255,0.025))`,
-          border: `1px solid ${theme.border}`,
-          boxShadow: `0 0 14px ${theme.glow}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
+      <div className={ringClass} style={{
+        width: size, height: size, borderRadius: 14, flexShrink: 0,
+        background: `linear-gradient(135deg, ${theme.soft}, rgba(255,255,255,0.02))`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
         <Icon style={{ width: size * 0.42, height: size * 0.42, color: theme.color }} />
       </div>
     );
   }
 
   return (
-    <img
-      src={src}
-      alt={item.name}
-      style={{
-        width: size,
-        height: size,
-        borderRadius: 16,
-        objectFit: 'cover',
-        border: `1px solid ${theme.border}`,
-        boxShadow: `0 0 14px ${theme.glow}`,
-        flexShrink: 0,
-      }}
-      onError={() => setFailed(true)}
-    />
+    <img src={src} alt={item.name} className={ringClass} style={{
+      width: size, height: size, borderRadius: 14, objectFit: 'cover', flexShrink: 0,
+    }} onError={() => setFailed(true)} />
   );
 }
 
 function MetaChip({ children, style }) {
   return (
-    <span
-      style={{
-        fontSize: 10,
-        fontWeight: 850,
-        padding: '3px 7px',
-        borderRadius: 999,
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
-        ...style,
-      }}
-    >
+    <span style={{
+      fontSize: 10, fontWeight: 800, padding: '2px 6px',
+      borderRadius: 999, letterSpacing: '0.04em', textTransform: 'uppercase', ...style,
+    }}>
       {children}
     </span>
-  );
-}
-
-function StatChip({ label, color }) {
-  return (
-    <span
-      style={{
-        fontSize: 10,
-        fontWeight: 800,
-        color,
-        padding: '4px 8px',
-        borderRadius: 999,
-        background: 'rgba(255,255,255,0.045)',
-        border: '1px solid rgba(255,255,255,0.07)',
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-function StatGroup({ title, rows, color }) {
-  const visibleRows = (rows || []).filter(Boolean).slice(0, 4);
-  if (!visibleRows.length) return null;
-  return (
-    <div style={{ borderRadius: 12, padding: '8px 9px', background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <p style={{ color: '#64748b', fontSize: 9, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
-        {title}
-      </p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
-        {visibleRows.map((row) => (
-          <StatChip key={`${title}-${row.key || row.stat || row.label}`} label={row.label} color={color} />
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -135,36 +87,28 @@ export default function ShopScreen({ user, onInventoryChanged }) {
   const [tierFilter, setTierFilter] = useState('common');
   const [classFilter, setClassFilter] = useState('all');
 
-  useEffect(() => {
-    setBalance(user?.token_balance || 0);
-  }, [user?.token_balance]);
+  useEffect(() => { setBalance(user?.token_balance || 0); }, [user?.token_balance]);
 
   useEffect(() => {
     apiClient.get('/shop/items')
-      .then((response) => setItems(response.data?.items || response.data || []))
+      .then((r) => setItems(r.data?.items || r.data || []))
       .catch(() => setItems([]));
 
     apiClient.get('/me/inventory')
-      .then((response) => {
-        const inventory = response.data?.items || (Array.isArray(response.data) ? response.data : []);
+      .then((r) => {
+        const inv = r.data?.items || (Array.isArray(r.data) ? r.data : []);
         const counts = {};
-        inventory.forEach((item) => {
-          const key = item.item_id;
-          if (!key) return;
-          counts[key] = (counts[key] || 0) + 1;
-        });
+        inv.forEach((item) => { if (item.item_id) counts[item.item_id] = (counts[item.item_id] || 0) + 1; });
         setOwnedCounts(counts);
       })
       .catch(() => {});
   }, []);
 
-  const visibleItems = useMemo(() => {
-    return (items || []).filter((item) => {
-      const tierMatches = getTierKey(item) === tierFilter;
-      const classMatches = classFilter === 'all' || getClassKey(item) === classFilter;
-      return tierMatches && classMatches;
-    });
-  }, [items, tierFilter, classFilter]);
+  const visibleItems = useMemo(() => (items || []).filter((item) => {
+    const catalogId = item.item_id || item.id;
+    if (ownedCounts[catalogId] > 0) return false;
+    return getTierKey(item) === tierFilter && (classFilter === 'all' || getClassKey(item) === classFilter);
+  }), [items, tierFilter, classFilter, ownedCounts]);
 
   const userClass = String(user?.class_name || '').trim().toLowerCase();
 
@@ -186,223 +130,216 @@ export default function ShopScreen({ user, onInventoryChanged }) {
 
   return (
     <div style={{ color: '#e8e0d0' }}>
-      <section
-        className="rounded-[22px] p-4"
-        style={{
-          background: 'linear-gradient(135deg, rgba(13,13,26,0.96), rgba(42,30,8,0.72))',
-          border: '1px solid rgba(201,168,76,0.24)',
-          boxShadow: '0 12px 28px rgba(0,0,0,0.28)',
-        }}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p style={{ color: '#c9a84c', fontSize: 11, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', margin: 0 }}>
-              Armory
-            </p>
-            <h3 style={{ color: '#fff', fontSize: 20, fontWeight: 950, margin: '4px 0 0' }}>
-              Buy class gear
-            </h3>
-            <p style={{ color: '#94a3b8', fontSize: 12, fontWeight: 650, margin: '5px 0 0' }}>
-              Browse all class gear. Purchase requires your active class to match.
-            </p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <ShoppingBag style={{ width: 22, height: 22, color: '#c9a84c', marginLeft: 'auto' }} />
-            <p style={{ color: '#64748b', fontSize: 10, fontWeight: 850, margin: '6px 0 0', textTransform: 'uppercase' }}>
-              Coins
-            </p>
-            <p style={{ color: '#c9a84c', fontWeight: 950, fontSize: 16, margin: 0 }}>
-              {balance.toLocaleString()}
-            </p>
+
+      {/* ── Filter strip ──────────────────────────────────────── */}
+      <div style={{
+        borderRadius: 18, padding: '12px 14px', marginBottom: 12,
+        background: 'rgba(10,10,22,0.97)',
+        border: '1px solid rgba(201,168,76,0.2)',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+      }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <p style={{ color: '#c9a84c', fontSize: 10, fontWeight: 900, letterSpacing: '0.14em', textTransform: 'uppercase', margin: 0 }}>
+            Armory
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ color: '#475569', fontSize: 10, fontWeight: 700 }}>Balance</span>
+            <span style={{ color: '#c9a84c', fontSize: 13, fontWeight: 900 }}>{balance.toLocaleString()}</span>
           </div>
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <div className="grid grid-cols-3 gap-2">
-            {SHOP_TIERS.map((tier) => {
-              const active = tierFilter === tier;
-              const theme = getTierTheme({ tier });
-              return (
-                <button
-                  key={tier}
-                  type="button"
-                  onClick={() => setTierFilter(tier)}
-                  style={{
-                    borderRadius: 13,
-                    padding: '9px 6px',
-                    border: active ? `1px solid ${theme.border}` : '1px solid rgba(255,255,255,0.07)',
-                    background: active ? theme.soft : 'rgba(255,255,255,0.035)',
-                    color: active ? theme.color : '#94a3b8',
-                    fontSize: 11,
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                  }}
-                >
+        {/* Tier row */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          {SHOP_TIERS.map((tier) => {
+            const active = tierFilter === tier;
+            const theme = getTierTheme({ tier });
+            return (
+              <button key={tier} type="button" onClick={() => setTierFilter(tier)} style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                borderRadius: 10, padding: '7px 4px',
+                border: active ? `1px solid ${theme.border}` : '1px solid rgba(255,255,255,0.06)',
+                background: active ? theme.soft : 'rgba(255,255,255,0.03)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+              }}>
+                <div style={{
+                  width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                  background: active ? theme.color : '#334155',
+                  boxShadow: active ? `0 0 7px ${theme.color}` : 'none',
+                }} />
+                <span style={{ fontSize: 11, fontWeight: 900, color: active ? theme.color : '#475569' }}>
                   {TIER_LABEL[tier]}
-                </button>
-              );
-            })}
-          </div>
-
-          <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingTop: 9 }}>
-            {SHOP_CLASSES.map((className) => {
-              const active = classFilter === className;
-              const theme = CLASS_THEME[className] || { bg: 'rgba(255,255,255,0.06)', color: '#cbd5e1' };
-              return (
-                <button
-                  key={className}
-                  type="button"
-                  onClick={() => setClassFilter(className)}
-                  style={{
-                    flexShrink: 0,
-                    borderRadius: 999,
-                    padding: '7px 11px',
-                    border: active ? '1px solid rgba(201,168,76,0.3)' : '1px solid rgba(255,255,255,0.07)',
-                    background: active ? theme.bg : 'rgba(255,255,255,0.035)',
-                    color: active ? theme.color : '#94a3b8',
-                    fontSize: 11,
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {className === 'all' ? 'All classes' : formatClassLabel(className)}
-                  {className !== 'all' && className === userClass ? ' (you)' : ''}
-                </button>
-              );
-            })}
-          </div>
+                </span>
+              </button>
+            );
+          })}
         </div>
-      </section>
 
+        {/* Class row */}
+        <div style={{ display: 'flex', gap: 5 }}>
+          {SHOP_CLASSES.map((cls) => {
+            const active = classFilter === cls;
+            const isYou = cls !== 'all' && cls === userClass;
+            const theme = CLASS_THEME[cls] || { bg: 'rgba(255,255,255,0.06)', color: '#cbd5e1' };
+            return (
+              <button key={cls} type="button" onClick={() => setClassFilter(cls)} style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                borderRadius: 10, padding: '7px 4px',
+                border: active
+                  ? `1px solid ${isYou ? 'rgba(201,168,76,0.55)' : theme.color + '66'}`
+                  : '1px solid rgba(255,255,255,0.06)',
+                background: active
+                  ? (isYou ? 'rgba(201,168,76,0.12)' : theme.bg)
+                  : 'rgba(255,255,255,0.03)',
+                cursor: 'pointer', transition: 'all 0.15s ease',
+              }}>
+                <span style={{ fontSize: 14, lineHeight: 1 }}>{CLASS_ICON[cls]}</span>
+                <span style={{
+                  fontSize: 9, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase',
+                  color: active ? (isYou ? '#c9a84c' : theme.color) : '#475569',
+                }}>
+                  {cls === 'all' ? 'All' : formatClassLabel(cls)}{isYou ? ' ✓' : ''}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Item list ─────────────────────────────────────────── */}
       {items === null ? (
-        <div className="grid gap-3 mt-3">
-          {[1, 2, 3].map((index) => (
-            <div key={index} className="animate-pulse" style={{ height: 96, borderRadius: 18, background: 'rgba(26,26,46,0.55)', border: '1px solid rgba(201,168,76,0.08)' }} />
+        <div style={{ display: 'grid', gap: 10 }}>
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="animate-pulse" style={{ height: 110, borderRadius: 16, background: 'rgba(26,26,46,0.55)', border: '1px solid rgba(201,168,76,0.08)' }} />
           ))}
         </div>
-      ) : null}
+      ) : visibleItems.length === 0 ? (
+        <div style={{ borderRadius: 18, padding: '28px 16px', textAlign: 'center', background: 'rgba(26,26,46,0.72)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          <Filter style={{ width: 26, height: 26, color: '#334155', margin: '0 auto 10px' }} />
+          <p style={{ color: '#94a3b8', fontWeight: 900, fontSize: 13, margin: 0 }}>No gear in this filter</p>
+          <p style={{ color: '#475569', fontSize: 11, margin: '4px 0 0' }}>Try another tier or class.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {visibleItems.map((item) => {
+            const theme = getTierTheme(item);
+            const statRows = getItemStatRows(item);
+            const passiveText = getPassiveText(item);
+            const itemClass = getClassKey(item);
+            const slot = getSlotKey(item);
+            const classTheme = CLASS_THEME[itemClass] || { bg: 'rgba(255,255,255,0.06)', color: '#94a3b8' };
+            const ownedCount = ownedCounts[item.item_id] || 0;
+            const price = Number(item.price || 0);
+            const canAfford = balance >= price;
+            const isBuying = buying === item.id;
+            const classMismatch = Boolean(userClass && itemClass && userClass !== itemClass);
 
-      {items !== null ? (
-        <section className="grid gap-3 mt-3">
-          {visibleItems.length === 0 ? (
-            <div className="rounded-[22px] p-7 text-center" style={{ background: 'rgba(26,26,46,0.72)', border: '1px solid rgba(255,255,255,0.07)' }}>
-              <Filter className="w-7 h-7 mx-auto mb-3" style={{ color: '#475569' }} />
-              <p style={{ color: '#94a3b8', fontWeight: 900, fontSize: 13, margin: 0 }}>No gear in this filter</p>
-              <p style={{ color: '#475569', fontSize: 11, margin: '4px 0 0' }}>Try another tier or class.</p>
-            </div>
-          ) : (
-            visibleItems.map((item) => {
-              const theme = getTierTheme(item);
-              const baseRows = getItemStatRows(item, { source: 'base_stats' });
-              const effectiveRows = getItemStatRows(item, { source: 'effective_stats' });
-              const passiveText = getPassiveText(item);
-              const itemClass = getClassKey(item);
-              const slot = getSlotKey(item);
-              const classTheme = CLASS_THEME[itemClass] || { bg: 'rgba(255,255,255,0.06)', color: '#94a3b8' };
-              const ownedCount = ownedCounts[item.item_id] || 0;
-              const price = Number(item.price || 0);
-              const canAfford = balance >= price;
-              const isBuying = buying === item.id;
-              const classMismatch = Boolean(userClass && itemClass && userClass !== itemClass);
+            return (
+              <article key={item.id} className={rarityCardClass(item)} style={{
+                borderRadius: 16,
+                background: 'linear-gradient(135deg, rgba(12,16,32,0.98), rgba(22,26,46,0.96))',
+                border: `1px solid ${theme.border}`,
+                overflow: 'hidden',
+              }}>
+                {/* Thin tier accent bar */}
+                <div style={{ height: 3, background: `linear-gradient(90deg, ${theme.color}, transparent)` }} />
 
-              return (
-                <article
-                  key={item.id}
-                  className="rounded-[20px] p-3"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(15,23,42,0.92), rgba(26,26,46,0.9))',
-                    border: `1px solid ${theme.border}`,
-                    boxShadow: `0 0 18px ${theme.glow}`,
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <ItemImage item={item} />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ color: '#f8fafc', fontWeight: 950, fontSize: 14, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {item.name}
-                          </p>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
-                            <MetaChip style={{ color: theme.color, background: theme.soft, border: `1px solid ${theme.border}` }}>
-                              {TIER_LABEL[getTierKey(item)]}
-                            </MetaChip>
-                            <MetaChip style={{ color: '#cbd5e1', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                              {formatSlotLabel(slot)}
-                            </MetaChip>
-                            <MetaChip style={{ color: classTheme.color, background: classTheme.bg, border: '1px solid transparent' }}>
-                              {formatClassLabel(itemClass)}
-                            </MetaChip>
-                            <MetaChip style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.18)' }}>
-                              +{Number(item.enchant_level || 0)}
-                            </MetaChip>
-                          </div>
-                        </div>
+                <div style={{ padding: '12px 12px 10px' }}>
+                  {/* Top row: image + info */}
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    <ItemImage item={item} size={52} />
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Name + price */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                        <p className={getTierKey(item) === 'legendary' ? 'rarity-name-legendary' : ''} style={{ color: '#f1f5f9', fontWeight: 900, fontSize: 15, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.name}
+                        </p>
                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <p style={{ color: '#c9a84c', fontSize: 16, fontWeight: 950, margin: 0 }}>{price.toLocaleString()}</p>
-                          <p style={{ color: '#64748b', fontSize: 10, fontWeight: 800, margin: '1px 0 0' }}>coins</p>
+                          <p style={{ color: '#c9a84c', fontSize: 15, fontWeight: 900, margin: 0 }}>{price.toLocaleString()}</p>
+                          <p style={{ color: '#475569', fontSize: 9, fontWeight: 800, margin: 0, textTransform: 'uppercase', letterSpacing: '0.06em' }}>coins</p>
                         </div>
                       </div>
 
-                      <div style={{ display: 'grid', gap: 7, marginTop: 9 }}>
-                        <StatGroup title="Base" rows={baseRows} color={theme.color} />
-                        <StatGroup title="Total" rows={effectiveRows} color="#e8e0d0" />
+                      {/* Tags */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+                        <MetaChip style={{ color: theme.color, background: theme.soft, border: `1px solid ${theme.border}` }}>
+                          {TIER_LABEL[getTierKey(item)]}
+                        </MetaChip>
+                        <MetaChip style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                          {formatSlotLabel(slot)}
+                        </MetaChip>
+                        <MetaChip style={{ color: classTheme.color, background: classTheme.bg, border: '1px solid transparent' }}>
+                          {formatClassLabel(itemClass)}
+                        </MetaChip>
+                        {ownedCount > 0 && (
+                          <MetaChip style={{ color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                            Owned
+                          </MetaChip>
+                        )}
                       </div>
 
-                      {passiveText ? (
-                        <p style={{ color: theme.color, fontSize: 11, fontWeight: 750, margin: '8px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          Passive: {passiveText}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
+                      {/* Stat chips */}
+                      {statRows.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7 }}>
+                          {statRows.slice(0, 4).map((row) => (
+                            <span key={row.key} style={{
+                              fontSize: 11, fontWeight: 800, color: theme.color,
+                              background: theme.soft, border: `1px solid ${theme.border}`,
+                              borderRadius: 999, padding: '3px 8px',
+                            }}>
+                              {row.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 11 }}>
-                    <div style={{ minWidth: 0 }}>
-                      {classMismatch ? (
-                        <p style={{ color: '#94a3b8', fontSize: 11, fontWeight: 700, margin: 0 }}>
-                          For {formatClassLabel(itemClass)}. Switch class to buy and equip.
-                        </p>
-                      ) : ownedCount > 0 ? (
-                        <p style={{ color: '#c9a84c', fontSize: 11, fontWeight: 800, margin: 0 }}>
-                          Owned copies: {ownedCount}
-                        </p>
-                      ) : (
-                        <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, margin: 0 }}>
-                          Fits your current class.
-                        </p>
+                      {/* Passive */}
+                      {passiveText && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                          <Sparkles style={{ width: 10, height: 10, color: '#c9a84c', flexShrink: 0 }} />
+                          <span style={{ color: '#c9a84c', fontSize: 10, fontWeight: 800 }}>{passiveText}</span>
+                        </div>
                       )}
                     </div>
-                    <button
-                      onClick={() => handleBuy(item)}
-                      disabled={classMismatch || !canAfford || isBuying}
-                      style={{
-                        flexShrink: 0,
-                        minWidth: 92,
-                        padding: '9px 13px',
-                        borderRadius: 13,
-                        background: classMismatch || !canAfford
-                          ? 'rgba(255,255,255,0.045)'
-                          : 'linear-gradient(135deg, #8b6914, #c9a84c)',
-                        border: classMismatch || !canAfford
-                          ? '1px solid rgba(255,255,255,0.07)'
-                          : '1px solid rgba(201,168,76,0.5)',
-                        color: classMismatch || !canAfford ? '#64748b' : '#0a0a0a',
-                        fontWeight: 950,
-                        fontSize: 12,
-                        cursor: classMismatch || !canAfford || isBuying ? 'not-allowed' : 'pointer',
-                        opacity: isBuying ? 0.75 : 1,
-                      }}
-                    >
-                      {classMismatch ? 'Class only' : isBuying ? 'Buying...' : ownedCount > 0 ? 'Buy copy' : 'Buy'}
-                    </button>
                   </div>
-                </article>
-              );
-            })
-          )}
-        </section>
-      ) : null}
+
+                  {/* Buy button */}
+                  <button
+                    onClick={() => handleBuy(item)}
+                    disabled={classMismatch || !canAfford || isBuying || ownedCount > 0}
+                    style={{
+                      width: '100%', marginTop: 10, padding: '10px 12px', borderRadius: 12,
+                      background: classMismatch || !canAfford || ownedCount > 0
+                        ? 'rgba(255,255,255,0.04)'
+                        : isBuying
+                        ? 'rgba(201,168,76,0.3)'
+                        : 'linear-gradient(135deg, #7a5a10, #c9a84c)',
+                      border: classMismatch || !canAfford || ownedCount > 0
+                        ? '1px solid rgba(255,255,255,0.07)'
+                        : '1px solid rgba(201,168,76,0.4)',
+                      color: classMismatch || !canAfford || ownedCount > 0 ? '#475569' : '#0a0a0a',
+                      fontWeight: 900, fontSize: 13,
+                      cursor: classMismatch || !canAfford || isBuying || ownedCount > 0 ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {ownedCount > 0
+                      ? 'Already owned'
+                      : classMismatch
+                      ? `${formatClassLabel(itemClass)} class only`
+                      : isBuying
+                      ? 'Buying...'
+                      : !canAfford
+                      ? `Need ${(price - balance).toLocaleString()} more coins`
+                      : `Buy — ${price.toLocaleString()} coins`}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

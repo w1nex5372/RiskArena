@@ -331,6 +331,22 @@ CREATE TABLE IF NOT EXISTS daily_quest_progress (
 );
 CREATE INDEX IF NOT EXISTS idx_dqp_user_date ON daily_quest_progress(user_id, quest_date);
 
+CREATE TABLE IF NOT EXISTS daily_chest_claims (
+    user_id      VARCHAR(36) NOT NULL REFERENCES users(id),
+    claim_date   DATE NOT NULL,
+    claimed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reward_coins INTEGER NOT NULL DEFAULT 0,
+    reward_xp    INTEGER NOT NULL DEFAULT 0,
+    item_tier    TEXT,
+    item_id      INTEGER REFERENCES items(id),
+    inventory_id VARCHAR(36) REFERENCES inventory(id) ON DELETE SET NULL,
+    PRIMARY KEY (user_id, claim_date),
+    CHECK (reward_coins >= 0),
+    CHECK (reward_xp >= 0),
+    CHECK (item_tier IS NULL OR item_tier IN ('common', 'uncommon', 'rare', 'epic', 'legendary'))
+);
+CREATE INDEX IF NOT EXISTS idx_daily_chest_claims_user_date ON daily_chest_claims(user_id, claim_date DESC);
+
 """
 
 
@@ -378,6 +394,30 @@ async def init():
             END;
             $$;
         """)
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'daily_chest_claims_inventory_id_fkey'
+                      AND conrelid = 'daily_chest_claims'::regclass
+                      AND confdeltype <> 'n'
+                ) THEN
+                    ALTER TABLE daily_chest_claims
+                        DROP CONSTRAINT daily_chest_claims_inventory_id_fkey;
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'daily_chest_claims_inventory_id_fkey'
+                      AND conrelid = 'daily_chest_claims'::regclass
+                ) THEN
+                    ALTER TABLE daily_chest_claims
+                        ADD CONSTRAINT daily_chest_claims_inventory_id_fkey
+                        FOREIGN KEY (inventory_id) REFERENCES inventory(id) ON DELETE SET NULL;
+                END IF;
+            END;
+            $$;
+        """)
         # Migration: add FK on inventory.item_id if not already present
         await conn.execute("""
             DO $$
@@ -399,13 +439,13 @@ async def init():
                  attack_bonus, ability_bonus, defend_reduction, hp_bonus, risk_win_chance, image_path)
             VALUES
             -- COMMON starter items (price = 0)
-            ('Iron Sword',       'Starter warrior weapon',  'warrior', 'weapon',  'common',    0,    3,  0, 0,  5, 0.00, '/items/warrior_weapon.png'),
+            ('Iron Sword',       'Starter warrior weapon',  'warrior', 'weapon',  'common',    0,    3,  0, 0,  5, 0.00, '/items/warrior_sword.png'),
             ('Bronze Plate',     'Starter warrior armor',   'warrior', 'armor',   'common',    0,    0,  0, 1, 10, 0.00, '/items/warrior_armor.png'),
             ('War Horn',         'Starter warrior ability', 'warrior', 'ability', 'common',    0,    0,  3, 0,  0, 0.00, '/items/warrior_ability.png'),
-            ('Apprentice Staff', 'Starter mage weapon',     'mage',    'weapon',  'common',    0,    2,  3, 0,  0, 0.00, '/items/mage_weapon.png'),
+            ('Apprentice Staff', 'Starter mage weapon',     'mage',    'weapon',  'common',    0,    2,  3, 0,  0, 0.00, '/items/mage_staff.png'),
             ('Cloth Robes',      'Starter mage armor',      'mage',    'armor',   'common',    0,    0,  0, 0,  8, 0.00, '/items/mage_armor.png'),
             ('Spell Scroll',     'Starter mage ability',    'mage',    'ability', 'common',    0,    0,  4, 0,  0, 0.03, '/items/mage_ability.png'),
-            ('Short Dagger',     'Starter rogue weapon',    'rogue',   'weapon',  'common',    0,    4,  0, 0,  0, 0.05, '/items/rogue_weapon.png'),
+            ('Short Dagger',     'Starter rogue weapon',    'rogue',   'weapon',  'common',    0,    4,  0, 0,  0, 0.05, '/items/rogue_dagger.png'),
             ('Leather Vest',     'Starter rogue armor',     'rogue',   'armor',   'common',    0,    0,  0, 2,  6, 0.00, '/items/rogue_armor.png'),
             ('Poison Vial',      'Starter rogue ability',   'rogue',   'ability', 'common',    0,    0,  3, 0,  0, 0.05, '/items/rogue_ability.png'),
             -- UNCOMMON shop items (price = 500)
@@ -561,6 +601,14 @@ async def init():
             """,
             seed_rows(),
         )
+        await conn.execute("""
+            UPDATE items SET image_path = '/items/warrior_sword.png'
+            WHERE class_name = 'warrior' AND slot = 'weapon' AND image_path = '/items/warrior_weapon.png';
+            UPDATE items SET image_path = '/items/mage_staff.png'
+            WHERE class_name = 'mage' AND slot = 'weapon' AND image_path = '/items/mage_weapon.png';
+            UPDATE items SET image_path = '/items/rogue_dagger.png'
+            WHERE class_name = 'rogue' AND slot = 'weapon' AND image_path = '/items/rogue_weapon.png';
+        """)
         await conn.execute("""
             UPDATE equipped_items ei
             SET inventory_id = (

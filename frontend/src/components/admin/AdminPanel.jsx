@@ -37,11 +37,11 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const [freerollSaving, setFreerollSaving] = React.useState(false);
 
   const ROOM_DEFAULTS = {
-    free:     { name: 'Free Room',   min_bet: 0,   max_bet: 0,    max_players: 3, min_players: 2 },
-    bronze:   { name: 'Bronze Room', min_bet: 200, max_bet: 450,  max_players: 3, min_players: 2 },
-    silver:   { name: 'Silver Room', min_bet: 350, max_bet: 800,  max_players: 3, min_players: 2 },
-    gold:     { name: 'Gold Room',   min_bet: 650, max_bet: 1200, max_players: 3, min_players: 2 },
-    freeroll: { name: 'Free Roll',   min_bet: 0,   max_bet: 0,    max_players: 30, min_players: 2 },
+    free:     { name: 'Training Grounds', min_bet: 0,   max_bet: 0,    max_players: 3, min_players: 2 },
+    bronze:   { name: 'Dueling Pit',      min_bet: 200, max_bet: 450,  max_players: 3, min_players: 2 },
+    silver:   { name: 'Silver Arena',     min_bet: 350, max_bet: 800,  max_players: 3, min_players: 2 },
+    gold:     { name: 'Golden Arena',     min_bet: 650, max_bet: 1200, max_players: 3, min_players: 2 },
+    freeroll: { name: 'Grand Arena',      min_bet: 0,   max_bet: 0,    max_players: 30, min_players: 2 },
   };
   const [roomConfigs, setRoomConfigs] = React.useState(
     Object.entries(ROOM_DEFAULTS).map(([rt, d]) => ({ room_type: rt, ...d }))
@@ -94,7 +94,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     try {
       const r = await axios.post(`${API}/admin/freeroll-config?admin_key=${ADMIN_KEY}&prize=${freerollPrize}&max_players=${freerollMaxPlayers}&is_locked=${freerollConfig.is_locked}`);
       setFreerollConfig(r.data);
-      toast.success('✅ Free Roll config saved');
+      toast.success('✅ Grand Arena config saved');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Failed to save');
     } finally {
@@ -107,7 +107,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     try {
       const r = await axios.post(`${API}/admin/freeroll-config?admin_key=${ADMIN_KEY}&is_locked=${newLocked}`);
       setFreerollConfig(r.data);
-      toast.success(newLocked ? '🔒 Free Roll locked' : '🔓 Free Roll unlocked');
+      toast.success(newLocked ? '🔒 Grand Arena locked' : '🔓 Grand Arena unlocked');
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Failed');
     }
@@ -558,7 +558,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
 {/* Free Roll Settings */}
       <div className={card}>
-        <h3 className="text-red-400 font-bold text-sm flex items-center gap-2"><span>🎟️</span> Free Roll Settings</h3>
+        <h3 className="text-red-400 font-bold text-sm flex items-center gap-2"><span>🏟️</span> Grand Arena Settings</h3>
         <div className="flex items-center justify-between bg-slate-700/40 rounded-lg px-3 py-2">
           <div>
             <div className="text-white text-xs font-semibold">Room Status</div>
@@ -600,7 +600,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
           disabled={freerollSaving}
           className="w-full bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm py-2 rounded-lg font-semibold transition-all"
         >
-          {freerollSaving ? 'Saving...' : '💾 Save Free Roll Config'}
+          {freerollSaving ? 'Saving...' : '💾 Save Grand Arena Config'}
         </button>
       </div>
 

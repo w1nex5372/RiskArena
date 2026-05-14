@@ -90,6 +90,7 @@ async def _fetch_player_modifiers(conn, player_id: str) -> ItemModifiers:
                COALESCE(inv.enchant_level, 0) AS enchant_level
         FROM equipped_items ei
         JOIN items i ON i.id = ei.item_id
+        JOIN users u ON u.id = ei.user_id AND i.class_name = u.class_name
         LEFT JOIN LATERAL (
             SELECT enchant_level
             FROM inventory
@@ -115,6 +116,7 @@ async def _get_player_modifiers_tx(conn, user_id: str) -> dict:
                COALESCE(inv.enchant_level, 0) AS enchant_level
         FROM equipped_items ei
         JOIN items i ON i.id = ei.item_id
+        JOIN users u ON u.id = ei.user_id AND i.class_name = u.class_name
         LEFT JOIN LATERAL (
             SELECT enchant_level
             FROM inventory

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Backpack, BatteryCharging, Gem, Shield, ShoppingBag, Sparkles, Sword } from 'lucide-react';
+import ItemDetailModal from './ItemDetailModal';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import ShopScreen from '../shop/ShopScreen';
 import apiClient from '../../api/client';
+import { CLASS_INFO, getCharacterImage } from '../../utils/characters';
 import {
   CLASS_THEME,
   TIER_ORDER,
@@ -21,7 +23,7 @@ import {
 } from '../../utils/itemPresentation';
 
 const HUB_TABS = [
-  { key: 'loadout', label: 'Loadout', helper: 'Equip one item per slot', cta: 'Manage', Icon: Backpack },
+  { key: 'loadout', label: 'Inventory', helper: 'Your collected gear', cta: 'Manage', Icon: Backpack },
   { key: 'shop', label: 'Shop', helper: 'Browse all class gear', cta: 'Browse', Icon: ShoppingBag },
   { key: 'upgrade', label: 'Upgrade', helper: 'Enchant owned copies', cta: 'Enchant', Icon: Gem },
 ];
@@ -63,12 +65,31 @@ const SCROLL_OPTIONS = [
   },
 ];
 
+function rarityRingClass(item) {
+  const tier = getTierKey(item);
+  if (tier === 'legendary') return 'rarity-ring-legendary';
+  if (tier === 'epic') return 'rarity-ring-epic';
+  if (tier === 'rare') return 'rarity-ring-rare';
+  if (tier === 'uncommon') return 'rarity-ring-uncommon';
+  return '';
+}
+
+function rarityCardClass(item) {
+  const tier = getTierKey(item);
+  if (tier === 'legendary') return 'rarity-card-legendary';
+  if (tier === 'epic') return 'rarity-card-epic';
+  if (tier === 'rare') return 'rarity-card-rare';
+  if (tier === 'uncommon') return 'rarity-card-uncommon';
+  return '';
+}
+
 function ItemImage({ item, size = 52 }) {
   const [failed, setFailed] = useState(false);
   const theme = getTierTheme(item);
   const src = getItemImageSrc(item);
   const slot = getSlotKey(item);
   const Icon = TAB_ICON[formatSlotLabel(slot)] || Sword;
+  const ringClass = rarityRingClass(item);
 
   useEffect(() => {
     setFailed(false);
@@ -77,17 +98,11 @@ function ItemImage({ item, size = 52 }) {
   if (failed) {
     return (
       <div
+        className={ringClass}
         style={{
-          width: size,
-          height: size,
-          borderRadius: 14,
-          flexShrink: 0,
-          background: 'rgba(255,255,255,0.04)',
-          border: `1px solid ${theme.border}`,
-          boxShadow: `0 0 14px ${theme.glow}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          width: size, height: size, borderRadius: 14, flexShrink: 0,
+          background: `linear-gradient(135deg, ${theme.soft}, rgba(255,255,255,0.02))`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}
       >
         <Icon style={{ width: size * 0.42, height: size * 0.42, color: theme.color }} />
@@ -99,14 +114,10 @@ function ItemImage({ item, size = 52 }) {
     <img
       src={src}
       alt={item?.name || 'Item'}
+      className={ringClass}
       style={{
-        width: size,
-        height: size,
-        borderRadius: 14,
-        objectFit: 'cover',
-        border: `1px solid ${theme.border}`,
-        boxShadow: `0 0 14px ${theme.glow}`,
-        flexShrink: 0,
+        width: size, height: size, borderRadius: 14,
+        objectFit: 'cover', flexShrink: 0,
       }}
       onError={() => setFailed(true)}
     />
@@ -179,11 +190,10 @@ function StatGroup({ title, rows, color, emptyText = null, limit = 4 }) {
 
 function EnchantBadge({ item }) {
   const level = Number(item?.enchant_level || 0);
-  const slot = getSlotKey(item);
-  if (!['weapon', 'armor'].includes(slot) && level <= 0) return null;
+  if (level <= 0) return null;
   return (
     <MetaChip style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.14)', border: '1px solid rgba(201,168,76,0.24)' }}>
-      +{level} enchant
+      +{level}
     </MetaChip>
   );
 }
@@ -191,7 +201,7 @@ function EnchantBadge({ item }) {
 function LoadoutCard({ slot, item, onTabJump }) {
   const theme = item ? getTierTheme(item) : null;
   const passiveText = getPassiveText(item);
-  const statChips = item ? getItemStatRows(item).slice(0, 3) : [];
+  const statChips = item ? getItemStatRows(item).slice(0, 4) : [];
   const enchantRows = item ? getItemStatRows(item, { source: 'enchant_stats' }) : [];
 
   if (!item) {
@@ -200,47 +210,28 @@ function LoadoutCard({ slot, item, onTabJump }) {
         type="button"
         onClick={() => onTabJump(slot.label)}
         style={{
-          borderRadius: 18,
-          padding: 12,
-          textAlign: 'left',
-          border: '1px dashed rgba(148,163,184,0.34)',
-          background: 'rgba(15,23,42,0.22)',
-          boxShadow: 'none',
-          cursor: 'pointer',
+          width: '100%', textAlign: 'left', cursor: 'pointer',
+          borderRadius: 14, padding: '12px 14px',
+          border: '1px dashed rgba(148,163,184,0.18)',
+          background: 'rgba(255,255,255,0.02)',
+          display: 'flex', alignItems: 'center', gap: 12,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div
-            style={{
-              width: 46,
-              height: 46,
-              borderRadius: 12,
-              flexShrink: 0,
-              background: 'rgba(2,6,23,0.32)',
-              border: '1px dashed rgba(148,163,184,0.32)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <span style={{ color: '#64748b', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              None
-            </span>
-          </div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <p style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', margin: 0 }}>
-              {slot.label}
-            </p>
-            <p style={{ color: '#94a3b8', fontWeight: 900, fontSize: 13, margin: '4px 0 0' }}>
-              Empty slot
-            </p>
-            <p style={{ color: '#475569', fontSize: 11, fontWeight: 700, margin: '4px 0 0' }}>
-              Tap to show {slot.label.toLowerCase()} inventory.
-            </p>
-          </div>
-          <MetaChip style={{ color: '#64748b', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-            Empty
-          </MetaChip>
+        <div style={{
+          width: 48, height: 48, borderRadius: 12, flexShrink: 0,
+          border: '1px dashed rgba(148,163,184,0.18)',
+          background: 'rgba(255,255,255,0.02)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <slot.Icon style={{ width: 20, height: 20, color: '#334155' }} />
+        </div>
+        <div>
+          <p style={{ fontSize: 9, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#475569', margin: 0 }}>
+            {slot.label}
+          </p>
+          <p style={{ color: '#64748b', fontWeight: 700, fontSize: 13, margin: '3px 0 0' }}>
+            Empty — tap to equip
+          </p>
         </div>
       </button>
     );
@@ -251,62 +242,250 @@ function LoadoutCard({ slot, item, onTabJump }) {
       type="button"
       onClick={() => onTabJump(slot.label)}
       style={{
-        borderRadius: 18,
-        padding: 12,
-        textAlign: 'left',
+        width: '100%', textAlign: 'left', cursor: 'pointer',
+        borderRadius: 14, overflow: 'hidden', padding: 0,
         border: `1px solid ${theme.border}`,
-        background: `linear-gradient(135deg, rgba(15,23,42,0.92) 0%, ${theme.soft} 100%)`,
-        boxShadow: `0 0 18px ${theme.glow}`,
-        cursor: 'pointer',
+        background: `linear-gradient(135deg, rgba(8,12,24,0.97) 0%, ${theme.soft} 100%)`,
+        boxShadow: `0 4px 20px ${theme.glow}`,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <ItemImage item={item} size={46} />
+      <div style={{ height: 2, background: `linear-gradient(90deg, ${theme.color}, transparent)` }} />
+      <div style={{ padding: '12px 14px', display: 'flex', gap: 12, alignItems: 'center' }}>
+        <ItemImage item={item} size={52} />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.color, margin: 0 }}>
+          <p style={{ fontSize: 9, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: theme.color, margin: 0 }}>
             {slot.label}
           </p>
-          <p
-            style={{
-              color: '#e8e0d0',
-              fontWeight: 800,
-              fontSize: 13,
-              margin: '4px 0 0',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <p style={{ color: '#f1f5f9', fontWeight: 900, fontSize: 15, margin: '3px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {item.name}
           </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+            <MetaChip style={{ color: theme.color, background: theme.soft, border: `1px solid ${theme.border}` }}>
+              {getTierLabel(item)}
+            </MetaChip>
+            <MetaChip style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              {formatClassLabel(getClassKey(item))}
+            </MetaChip>
+            <EnchantBadge item={item} />
+          </div>
+          {statChips.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7 }}>
+              {statChips.map((chip) => (
+                <span key={chip.key} style={{
+                  fontSize: 11, fontWeight: 800, color: theme.color,
+                  background: theme.soft, border: `1px solid ${theme.border}`,
+                  borderRadius: 999, padding: '3px 8px',
+                }}>
+                  {chip.label}
+                </span>
+              ))}
+            </div>
+          )}
+          {enchantRows.length > 0 && (
+            <p style={{ color: '#c9a84c', fontSize: 10, fontWeight: 800, margin: '6px 0 0' }}>
+              ✦ Enchant: {enchantRows.map((r) => r.label).join(', ')}
+            </p>
+          )}
+          {passiveText && (
+            <p style={{ color: theme.color, fontSize: 10, fontWeight: 800, margin: '5px 0 0' }}>
+              ✦ {passiveText}
+            </p>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+const CLASS_KEYS = ['warrior', 'mage', 'rogue'];
+
+function ClassHeroCard({ user, loadoutPowerSummary, onClassChange }) {
+  const activeKey = (user?.class_name || '').toLowerCase() || null;
+  const [viewedIdx, setViewedIdx] = useState(() => {
+    const idx = CLASS_KEYS.indexOf(activeKey);
+    return idx >= 0 ? idx : 0;
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const idx = CLASS_KEYS.indexOf((user?.class_name || '').toLowerCase());
+    if (idx >= 0) setViewedIdx(idx);
+  }, [user?.class_name]);
+
+  const viewedKey = CLASS_KEYS[viewedIdx];
+  const info = CLASS_INFO[viewedKey];
+  const imgSrc = getCharacterImage(viewedKey);
+  const isActive = activeKey === viewedKey;
+
+  const prev = () => setViewedIdx((i) => (i - 1 + CLASS_KEYS.length) % CLASS_KEYS.length);
+  const next = () => setViewedIdx((i) => (i + 1) % CLASS_KEYS.length);
+
+  const select = async () => {
+    if (saving || isActive) return;
+    setSaving(true);
+    try {
+      await apiClient.post('/me/class', { class_name: viewedKey });
+      onClassChange?.(viewedKey);
+    } catch {
+      // silently ignore
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const navBtnStyle = {
+    width: 30, height: 30, borderRadius: 8,
+    border: '1px solid rgba(255,255,255,0.1)',
+    background: 'rgba(255,255,255,0.05)',
+    color: '#94a3b8', fontWeight: 900, fontSize: 18,
+    cursor: 'pointer', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', lineHeight: 1, padding: 0,
+    flexShrink: 0,
+  };
+
+  return (
+    <div style={{
+      borderRadius: 20,
+      overflow: 'hidden',
+      border: `1px solid ${info.color}55`,
+      background: 'linear-gradient(160deg, rgba(8,12,24,0.99) 0%, rgba(18,18,36,0.99) 100%)',
+    }}>
+      <div style={{ height: 3, background: `linear-gradient(90deg, ${info.color}, transparent)` }} />
+
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 0' }}>
+        <p style={{ fontSize: 10, fontWeight: 900, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#c9a84c', margin: 0 }}>
+          Your Class
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button type="button" onClick={prev} style={navBtnStyle}>‹</button>
+          <span style={{ fontSize: 11, fontWeight: 800, color: info.color, minWidth: 54, textAlign: 'center' }}>
+            {info.name}
+          </span>
+          <button type="button" onClick={next} style={navBtnStyle}>›</button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 10 }}>
-        <MetaChip style={{ color: theme.color, background: theme.soft, border: `1px solid ${theme.border}` }}>
-          {getTierLabel(item)}
-        </MetaChip>
-        <MetaChip style={{ color: '#cbd5e1', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-          {formatClassLabel(getClassKey(item))}
-        </MetaChip>
-        <EnchantBadge item={item} />
+      {/* Hero body */}
+      <div style={{ display: 'flex', gap: 14, padding: '14px 14px 0', alignItems: 'flex-start' }}>
+        {/* Character image */}
+        <div style={{
+          width: 100, height: 132,
+          borderRadius: 14, flexShrink: 0, overflow: 'hidden',
+          background: `radial-gradient(circle at 50% 30%, ${info.color}22 0%, rgba(15,23,42,0.1) 65%, transparent 100%)`,
+          border: `1px solid ${info.color}33`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {imgSrc ? (
+            <img
+              src={imgSrc}
+              alt={info.name}
+              style={{
+                width: '100%', height: '100%', objectFit: 'contain',
+                filter: `drop-shadow(0 0 14px ${info.glow})`,
+                opacity: isActive ? 1 : 0.65,
+                transition: 'opacity 0.2s ease',
+              }}
+            />
+          ) : (
+            <div style={{ width: 60, height: 90, borderRadius: 10, background: 'rgba(51,65,85,0.8)' }} />
+          )}
+        </div>
+
+        {/* Class info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 21, fontWeight: 900, color: info.color, lineHeight: 1 }}>
+              {info.icon} {info.name}
+            </span>
+            {isActive && (
+              <span style={{
+                fontSize: 9, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em',
+                color: '#22c55e', background: 'rgba(34,197,94,0.12)',
+                border: '1px solid rgba(34,197,94,0.28)', borderRadius: 999, padding: '3px 7px',
+                whiteSpace: 'nowrap',
+              }}>
+                ACTIVE ✓
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic', marginTop: 3 }}>
+            {info.title}
+          </div>
+
+          {/* Class bonuses */}
+          <div style={{ marginTop: 10 }}>
+            <p style={{ fontSize: 9, color: '#64748b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 5px' }}>
+              Class Bonuses
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {info.bonuses.map((b, i) => (
+                <span key={i} style={{
+                  fontSize: 10, fontWeight: 700, color: info.color,
+                  background: `${info.color}18`, border: `1px solid ${info.color}40`,
+                  borderRadius: 999, padding: '3px 8px', whiteSpace: 'nowrap',
+                }}>
+                  {b}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Equipped stats — only when viewing active class */}
+          {isActive && loadoutPowerSummary.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <p style={{ fontSize: 9, color: '#64748b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 5px' }}>
+                Equipped Stats
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {loadoutPowerSummary.slice(0, 8).map((row) => (
+                  <span key={row.key} style={{
+                    fontSize: 10, fontWeight: 700, color: '#c9a84c',
+                    background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.22)',
+                    borderRadius: 999, padding: '3px 8px', whiteSpace: 'nowrap',
+                  }}>
+                    {row.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-        {statChips.map((chip) => (
-          <StatChip key={chip.key} label={chip.label} color={theme.color} />
-        ))}
+
+      {/* Footer */}
+      <div style={{ padding: '12px 14px 14px' }}>
+        {!isActive ? (
+          <>
+            {!activeKey && (
+              <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginBottom: 8, padding: '6px 10px', background: 'rgba(245,158,11,0.1)', borderRadius: 8, border: '1px solid rgba(245,158,11,0.25)' }}>
+                Choose a class to enter the Arena
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={select}
+              disabled={saving}
+              style={{
+                width: '100%', height: 42, borderRadius: 12, fontWeight: 800, fontSize: 13,
+                cursor: saving ? 'not-allowed' : 'pointer',
+                background: `linear-gradient(135deg, ${info.color}cc, ${info.color}66)`,
+                color: '#fff', border: `1px solid ${info.color}55`,
+                opacity: saving ? 0.6 : 1, transition: 'opacity 0.15s',
+              }}
+            >
+              {saving ? 'Switching...' : `Select ${info.name}`}
+            </button>
+          </>
+        ) : (
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#475569', padding: '2px 0' }}>
+            {loadoutPowerSummary.length === 0
+              ? 'Equip items to see your loadout stats'
+              : `${loadoutPowerSummary.length} stat${loadoutPowerSummary.length !== 1 ? 's' : ''} from equipped gear`}
+          </div>
+        )}
       </div>
-      {enchantRows.length ? (
-        <p style={{ color: '#c9a84c', fontSize: 11, fontWeight: 800, margin: '8px 0 0' }}>
-          Enchant bonus: {enchantRows.map((row) => row.label).join(', ')}
-        </p>
-      ) : null}
-      {passiveText ? (
-        <p style={{ color: theme.color, fontSize: 11, fontWeight: 700, margin: '10px 0 0' }}>
-          Passive: {passiveText}
-        </p>
-      ) : null}
-    </button>
+    </div>
   );
 }
 
@@ -398,7 +577,7 @@ function UpgradeItemRow({ item, selected, onSelect }) {
   );
 }
 
-export default function InventoryScreen({ user }) {
+export default function InventoryScreen({ user, onClassChange }) {
   const [hubTab, setHubTab] = useState('loadout');
   const [activeTab, setActiveTab] = useState('Weapon');
   const inventoryListRef = useRef(null);
@@ -417,7 +596,10 @@ export default function InventoryScreen({ user }) {
   const [enchantResult, setEnchantResult] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const [equipping, setEquipping] = useState(null);
+  const [unequipping, setUnequipping] = useState(null);
+  const [selling, setSelling] = useState(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [selectedItem, setSelectedItem] = useState(null);
 
   useEffect(() => {
     setDisplayBalance(user?.token_balance || 0);
@@ -491,6 +673,10 @@ export default function InventoryScreen({ user }) {
     };
   }, [refreshItems]);
 
+  useEffect(() => {
+    if (user?.class_name) refreshItems().catch(() => {});
+  }, [user?.class_name, user?.id]); // eslint-disable-line
+
   const handleEquip = async (item) => {
     if (equipping) return;
     setEquipping(item.inventory_id);
@@ -502,6 +688,37 @@ export default function InventoryScreen({ user }) {
       toast.error(error.response?.data?.detail || 'Failed to equip item');
     } finally {
       setEquipping(null);
+    }
+  };
+
+  const handleUnequip = async (item) => {
+    const slot = getSlotKey(item);
+    if (unequipping || !slot) return;
+    setUnequipping(item.inventory_id);
+    try {
+      await apiClient.post('/me/unequip', { slot });
+      toast.success(`${item.name} unequipped`);
+      await refreshItems();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to unequip item');
+    } finally {
+      setUnequipping(null);
+    }
+  };
+
+  const handleSell = async (item) => {
+    if (selling) return;
+    setSelling(String(item.inventory_id));
+    try {
+      const res = await apiClient.post('/me/sell', { inventory_id: item.inventory_id });
+      if (res.data?.new_balance != null) setDisplayBalance(res.data.new_balance);
+      toast.success(`Sold ${item.name} for ${res.data.sell_price} coins`);
+      setSelectedItem(null);
+      await refreshItems();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to sell item');
+    } finally {
+      setSelling(null);
     }
   };
 
@@ -596,6 +813,14 @@ export default function InventoryScreen({ user }) {
     });
   }, [inventory, activeTab]);
 
+  const allItemsSorted = useMemo(() => {
+    return [...(inventory || [])].sort((a, b) => {
+      const tierDelta = TIER_ORDER.indexOf(getTierKey(b)) - TIER_ORDER.indexOf(getTierKey(a));
+      if (tierDelta !== 0) return tierDelta;
+      return new Date(b.acquired_at || 0).getTime() - new Date(a.acquired_at || 0).getTime();
+    });
+  }, [inventory]);
+
   const selectedUpgradeItem = useMemo(
     () => upgradeItems.find((item) => item.inventory_id === selectedUpgradeId) || null,
     [upgradeItems, selectedUpgradeId],
@@ -662,90 +887,39 @@ export default function InventoryScreen({ user }) {
             </p>
           </div>
         </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr',
-            gap: 8,
-          }}
-        >
-          {HUB_TABS.map(({ key, label, helper, cta, Icon }) => {
+        <div style={{ display: 'flex', gap: 4 }}>
+          {HUB_TABS.map(({ key, label, Icon }) => {
             const active = hubTab === key;
             return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setHubTab(key)}
-              style={{
-                minHeight: 58,
-                borderRadius: 14,
-                padding: '9px 11px',
-                fontSize: 12,
-                fontWeight: 900,
-                border: active ? '1px solid rgba(201,168,76,0.48)' : '1px solid rgba(255,255,255,0.08)',
-                cursor: 'pointer',
-                background: active
-                  ? 'linear-gradient(135deg,#8b0000 0%, #c0392b 100%)'
-                  : 'rgba(255,255,255,0.035)',
-                color: active ? 'white' : '#cbd5e1',
-                boxShadow: active ? '0 8px 18px rgba(139,0,0,0.35)' : 'none',
-                transition: 'all 0.15s ease',
-                display: 'flex',
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 10,
-                textAlign: 'left',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                <span
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 11,
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: active ? 'rgba(255,255,255,0.15)' : 'rgba(201,168,76,0.08)',
-                    border: active ? '1px solid rgba(255,255,255,0.18)' : '1px solid rgba(201,168,76,0.12)',
-                  }}
-                >
-                  <Icon className="w-4 h-4" />
-                </span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', lineHeight: 1.1 }}>{label}</span>
-                  <span style={{ display: 'block', color: active ? 'rgba(255,255,255,0.72)' : '#64748b', fontSize: 10, fontWeight: 800, marginTop: 2 }}>
-                    {helper}
-                  </span>
-                </span>
-              </span>
-              <span style={{ flexShrink: 0, color: active ? '#0a0a0a' : '#c9a84c', background: active ? '#c9a84c' : 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.24)', borderRadius: 999, padding: '5px 8px', fontSize: 10, fontWeight: 950, textTransform: 'uppercase' }}>
-                {active ? 'Active' : cta}
-              </span>
-            </button>
-          );
+              <button
+                key={key}
+                type="button"
+                onClick={() => setHubTab(key)}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '10px 6px',
+                  borderRadius: 12,
+                  border: active ? '1px solid rgba(201,168,76,0.45)' : '1px solid rgba(255,255,255,0.07)',
+                  background: active
+                    ? 'linear-gradient(135deg, rgba(139,0,0,0.7) 0%, rgba(192,57,43,0.7) 100%)'
+                    : 'rgba(255,255,255,0.035)',
+                  color: active ? 'white' : '#64748b',
+                  fontWeight: 800,
+                  fontSize: 11,
+                  cursor: 'pointer',
+                  boxShadow: active ? '0 4px 14px rgba(139,0,0,0.3)' : 'none',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Icon style={{ width: 16, height: 16, color: active ? '#c9a84c' : '#475569' }} />
+                <span>{label}</span>
+              </button>
+            );
           })}
-        </div>
-      </section>
-
-      <section className="rounded-[20px] p-3" style={{ background: 'rgba(13,13,26,0.72)', border: '1px solid rgba(255,255,255,0.07)' }}>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#c9a84c' }}>
-              {hubTab === 'loadout' ? 'Loadout' : hubTab === 'shop' ? 'Shop' : 'Upgrade'}
-            </p>
-            <p className="text-sm font-bold mt-1" style={{ color: '#e8e0d0' }}>
-              {hubTab === 'loadout' ? 'Equipped gear and owned inventory' : hubTab === 'shop' ? 'Purchasable class gear' : 'Enchant weapon and armor copies'}
-            </p>
-            <p className="text-xs mt-1" style={{ color: '#64748b' }}>
-              {hubTab === 'shop' ? 'Filter by tier and class. Other class gear is shown as future class options.' : hubTab === 'upgrade' ? 'Only weapon and armor copies can be enchanted.' : 'Tap a slot to show matching owned items.'}
-            </p>
-          </div>
-          <MetaChip style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-            Lv {user?.level || 1}
-          </MetaChip>
         </div>
       </section>
 
@@ -763,238 +937,253 @@ export default function InventoryScreen({ user }) {
 
       {hubTab === 'loadout' ? (
         <>
-          <section className="rounded-[24px] p-4" style={{ background: 'rgba(13,13,26,0.96)', border: '1px solid rgba(201,168,76,0.16)' }}>
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#c9a84c' }}>Active Loadout</p>
-                <p className="text-xs font-medium mt-1" style={{ color: '#64748b' }}>One equipped copy per slot. Combat values come from backend item stats.</p>
-              </div>
-              <MetaChip style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.22)' }}>
-                {loadoutPowerSummary.length} bonuses
-              </MetaChip>
-            </div>
+          <ClassHeroCard user={user} loadoutPowerSummary={loadoutPowerSummary} onClassChange={onClassChange} />
 
-            <div className="grid gap-3">
-              {LOADOUT_SLOTS.map((slot) => (
-                <LoadoutCard
-                  key={slot.key}
-                  slot={slot}
-                  item={equippedBySlot[slot.key]}
-                  onTabJump={jumpToInventorySlot}
-                />
-              ))}
-            </div>
-
-            {loadoutPowerSummary.length ? (
-              <div className="mt-3">
-                <StatGroup title="Equipped total" rows={loadoutPowerSummary} color="#c9a84c" limit={6} />
-              </div>
-            ) : null}
-          </section>
-
-          <section ref={inventoryListRef} className="rounded-[24px] p-3 scroll-mt-3" style={{ background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.15)' }}>
-            <div className="grid grid-cols-4 gap-1 rounded-2xl p-1" style={{ background: 'rgba(255,255,255,0.04)' }}>
-              {TABS.map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    borderRadius: 10,
-                    padding: '6px 4px',
-                    fontSize: 11,
-                    fontWeight: 800,
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: activeTab === tab ? 'linear-gradient(135deg,#8b0000,#c0392b)' : 'transparent',
-                    color: activeTab === tab ? 'white' : '#475569',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            {inventory === null ? (
-              [1, 2, 3].map((index) => (
-                <div key={index} className="rounded-[22px] p-4 h-32 animate-pulse" style={{ background: 'rgba(26,26,46,0.6)', border: '1px solid rgba(201,168,76,0.1)' }} />
-              ))
-            ) : sortedTabItems.length === 0 ? (
-              <div className="rounded-[22px] p-8 text-center" style={{ background: 'rgba(26,26,46,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(255,255,255,0.05)' }}>
-                  <ActiveIcon className="w-7 h-7" style={{ color: '#334155' }} />
-                </div>
-                <p className="text-sm font-bold" style={{ color: '#64748b' }}>No {activeTab.toLowerCase()} items</p>
-                <p className="text-xs mt-1" style={{ color: '#475569' }}>Win drops or visit the shop to expand this slot.</p>
-              </div>
-            ) : (
-              sortedTabItems.map((item) => {
-                const theme = getTierTheme(item);
-                const tierLabel = getTierLabel(item);
-                const slot = getSlotKey(item);
-                const classKey = getClassKey(item);
-                const classTheme = CLASS_THEME[classKey] || { bg: 'rgba(255,255,255,0.06)', color: '#94a3b8' };
-                const passiveText = getPassiveText(item);
-                const baseRows = getItemStatRows(item, { source: 'base_stats' });
-                const enchantRows = getItemStatRows(item, { source: 'enchant_stats' });
-                const effectiveRows = getItemStatRows(item, { source: 'effective_stats' });
-                const isEquipped = equippedInventoryIds.has(item.inventory_id) || Boolean(item.equipped);
-                const isEquipping = equipping === item.inventory_id;
-                const wrongClass = Boolean(userClass && classKey && userClass !== classKey);
-                const duplicateMeta = duplicateIndexByInventoryId.get(item.inventory_id);
-
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c9a84c', margin: '0 0 8px' }}>
+              EQUIPPED
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'row', gap: 8 }}>
+              {LOADOUT_SLOTS.map((slot) => {
+                const item = equippedBySlot[slot.key];
+                const theme = item ? getTierTheme(item) : null;
+                const tierKey = item ? getTierKey(item) : null;
+                const tierColors = {
+                  legendary: '#c9a84c',
+                  epic: '#a855f7',
+                  rare: '#3b82f6',
+                  uncommon: '#22c55e',
+                  common: '#94a3b8',
+                };
+                const tierDot = tierKey ? (tierColors[tierKey] || '#94a3b8') : null;
                 return (
                   <div
-                    key={item.inventory_id}
-                    className="rounded-[22px] p-4"
+                    key={slot.key}
+                    onClick={() => {
+                      if (item) {
+                        setSelectedItem(item);
+                      } else {
+                        toast.info('No item equipped');
+                      }
+                    }}
                     style={{
-                      background: isEquipped
-                        ? `linear-gradient(135deg, rgba(15,23,42,0.95) 0%, ${theme.soft} 100%)`
-                        : tierLabel === 'Legendary'
-                          ? 'linear-gradient(135deg, rgba(42,30,8,0.92) 0%, rgba(26,26,46,0.92) 100%)'
-                          : tierLabel === 'Epic'
-                            ? 'linear-gradient(135deg, rgba(36,16,52,0.92) 0%, rgba(26,26,46,0.92) 100%)'
-                            : 'rgba(26,26,46,0.84)',
-                      border: `1px solid ${isEquipped ? 'rgba(201,168,76,0.4)' : theme.border}`,
-                      boxShadow: isEquipped ? '0 0 18px rgba(201,168,76,0.16)' : `0 0 16px ${theme.glow}`,
+                      flex: 1,
+                      minWidth: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      padding: '10px 8px',
+                      borderRadius: 16,
+                      cursor: 'pointer',
+                      border: item
+                        ? `1px solid ${theme.border}`
+                        : '1px solid rgba(255,255,255,0.06)',
+                      background: item
+                        ? `linear-gradient(135deg, rgba(8,12,24,0.97), ${theme.soft})`
+                        : 'rgba(255,255,255,0.02)',
                     }}
                   >
-                    <div className="flex items-start gap-3">
-                      <ItemImage item={item} size={56} />
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h3
-                                className="font-extrabold"
-                                style={{
-                                  color: '#e8e0d0',
-                                  fontSize: 15,
-                                  margin: 0,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {item.name}
-                              </h3>
-                              {isEquipped ? (
-                                <MetaChip style={{ background: 'rgba(201,168,76,0.2)', color: '#c9a84c', border: '1px solid rgba(201,168,76,0.24)' }}>
-                                  Equipped
-                                </MetaChip>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          {duplicateMeta?.total > 1 ? (
-                            <MetaChip style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                              Copy {duplicateMeta.index}/{duplicateMeta.total}
-                            </MetaChip>
-                          ) : null}
-                        </div>
-
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
-                          <MetaChip style={{ color: theme.color, background: theme.soft, border: `1px solid ${theme.border}` }}>
-                            {tierLabel}
-                          </MetaChip>
-                          {slot ? (
-                            <MetaChip style={{ color: '#cbd5e1', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                              {formatSlotLabel(slot)}
-                            </MetaChip>
-                          ) : null}
-                          {classKey ? (
-                            <MetaChip style={{ color: classTheme.color, background: classTheme.bg, border: '1px solid transparent' }}>
-                              {formatClassLabel(classKey)}
-                            </MetaChip>
-                          ) : null}
-                          <EnchantBadge item={item} />
-                          {item.source ? (
-                            <MetaChip style={{ color: '#94a3b8', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                              {item.source}
-                            </MetaChip>
-                          ) : null}
-                        </div>
-
-                        <div style={{ display: 'grid', gap: 7, marginTop: 10 }}>
-                          <StatGroup title="Base" rows={baseRows} color={theme.color} emptyText="No base stats" />
-                          {enchantRows.length ? (
-                            <StatGroup title="Enchant bonus" rows={enchantRows} color="#c9a84c" />
-                          ) : null}
-                          {effectiveRows.length ? (
-                            <StatGroup title="Total" rows={effectiveRows} color="#e8e0d0" />
-                          ) : null}
-                        </div>
-
-                        {passiveText ? (
-                          <div
-                            style={{
-                              marginTop: 10,
-                              borderRadius: 12,
-                              padding: '8px 10px',
-                              background: tierLabel === 'Legendary'
-                                ? 'rgba(201,168,76,0.14)'
-                                : tierLabel === 'Epic'
-                                  ? 'rgba(168,85,247,0.12)'
-                                  : 'rgba(255,255,255,0.04)',
-                              border: `1px solid ${theme.border}`,
-                            }}
-                          >
-                            <p style={{ color: theme.color, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
-                              Passive
-                            </p>
-                            <p style={{ color: '#e2e8f0', fontSize: 12, fontWeight: 600, margin: '3px 0 0' }}>
-                              {passiveText}
-                            </p>
-                          </div>
-                        ) : null}
-
-                        {item.description ? (
-                          <p style={{ color: '#64748b', fontSize: 11, margin: '10px 0 0', fontWeight: 500 }}>
-                            {item.description}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 12 }}>
-                      <div style={{ fontSize: 11, color: '#475569', fontWeight: 700 }}>
-                        {item.inventory_id ? `Owned copy ID: ${String(item.inventory_id).slice(0, 8)}` : 'Owned copy'}
-                      </div>
-
-                      {isEquipped ? null : wrongClass ? (
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textAlign: 'right' }}>
-                          Switch to {formatClassLabel(classKey)} to equip
-                        </span>
-                      ) : (
-                        <Button
-                          onClick={() => handleEquip(item)}
-                          disabled={isEquipping}
-                          style={{
+                    {item ? (
+                      <>
+                        <ItemImage item={item} size={52} />
+                        <p style={{
+                          color: '#e8e0d0',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          margin: '6px 0 0',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          width: '100%',
+                          textAlign: 'center',
+                        }}>
+                          {item.name}
+                        </p>
+                        {tierDot && (
+                          <div style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: tierDot,
+                            marginTop: 4,
                             flexShrink: 0,
-                            height: 36,
-                            padding: '0 14px',
-                            borderRadius: 12,
-                            fontWeight: 800,
-                            fontSize: 12,
-                            background: isEquipping ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg,#8b0000,#c0392b)',
-                            color: isEquipping ? '#475569' : 'white',
-                            border: '1px solid rgba(201,168,76,0.25)',
-                            cursor: isEquipping ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          {isEquipping ? '...' : 'Equip copy'}
-                        </Button>
-                      )}
-                    </div>
+                          }} />
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div style={{
+                          width: 52,
+                          height: 52,
+                          borderRadius: 14,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px dashed rgba(148,163,184,0.18)',
+                        }}>
+                          <slot.Icon style={{ width: 22, height: 22, color: '#334155' }} />
+                        </div>
+                        <p style={{ color: '#475569', fontSize: 10, fontWeight: 700, margin: '6px 0 0' }}>
+                          Empty
+                        </p>
+                      </>
+                    )}
                   </div>
                 );
-              })
+              })}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16 }} ref={inventoryListRef}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <p style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c9a84c', margin: 0 }}>
+                INVENTORY
+              </p>
+              {inventory !== null && (
+                <span style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: '#94a3b8',
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: 999,
+                  padding: '2px 7px',
+                }}>
+                  {allItemsSorted.length}
+                </span>
+              )}
+            </div>
+            {inventory === null ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((index) => (
+                  <div
+                    key={index}
+                    style={{
+                      borderRadius: 14,
+                      paddingTop: '100%',
+                      background: 'rgba(26,26,46,0.6)',
+                      border: '1px solid rgba(201,168,76,0.1)',
+                      animation: 'pulse 1.5s ease-in-out infinite',
+                    }}
+                  />
+                ))}
+              </div>
+            ) : allItemsSorted.length === 0 ? (
+              <div style={{
+                borderRadius: 22,
+                padding: '32px 16px',
+                textAlign: 'center',
+                background: 'rgba(26,26,46,0.7)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}>
+                <p style={{ color: '#64748b', fontSize: 13, fontWeight: 700, margin: 0 }}>No items yet</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {allItemsSorted.map((item) => {
+                  const theme = getTierTheme(item);
+                  const isEquipped = equippedInventoryIds.has(item.inventory_id) || Boolean(item.equipped);
+                  const enchantLevel = Number(item.enchant_level || 0);
+                  const slot = getSlotKey(item);
+                  const FallbackIcon = TAB_ICON[formatSlotLabel(slot)] || Sword;
+                  const src = getItemImageSrc(item);
+                  return (
+                    <div
+                      key={item.inventory_id}
+                      onClick={() => setSelectedItem(item)}
+                      className={isEquipped ? '' : rarityCardClass(item)}
+                      style={{
+                        position: 'relative',
+                        borderRadius: 14,
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        border: isEquipped ? '2px solid rgba(201,168,76,0.7)' : `1.5px solid ${theme.border}`,
+                        boxShadow: isEquipped ? '0 0 16px rgba(201,168,76,0.45)' : `0 0 10px ${theme.glow}`,
+                      }}
+                    >
+                      <div style={{ width: '100%', paddingTop: '100%', position: 'relative' }}>
+                        <div style={{
+                          position: 'absolute',
+                          inset: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: 'rgba(13,13,26,0.85)',
+                        }}>
+                          {src ? (
+                            <img
+                              src={src}
+                              alt={item.name}
+                              className={rarityRingClass(item)}
+                              style={{
+                                width: '80%',
+                                height: '80%',
+                                objectFit: 'cover',
+                                borderRadius: 10,
+                              }}
+                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                          ) : (
+                            <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />
+                          )}
+                        </div>
+                        {isEquipped && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 3,
+                            left: 3,
+                            fontSize: 9,
+                            fontWeight: 900,
+                            color: '#c9a84c',
+                            background: 'rgba(0,0,0,0.75)',
+                            borderRadius: 4,
+                            padding: '1px 3px',
+                            lineHeight: 1,
+                          }}>
+                            E
+                          </div>
+                        )}
+                        {enchantLevel > 0 && (
+                          <div style={{
+                            position: 'absolute',
+                            top: 3,
+                            right: 3,
+                            fontSize: 9,
+                            fontWeight: 900,
+                            color: '#c9a84c',
+                            background: 'rgba(0,0,0,0.7)',
+                            borderRadius: 4,
+                            padding: '1px 3px',
+                            lineHeight: 1,
+                          }}>
+                            +{enchantLevel}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-          </section>
+          </div>
+
+
+          {selectedItem && (
+            <ItemDetailModal
+              item={selectedItem}
+              userClass={userClass}
+              equippedInventoryIds={equippedInventoryIds}
+              equipping={equipping}
+              unequipping={unequipping}
+              onEquip={async (item) => { await handleEquip(item); setSelectedItem(null); }}
+              onUnequip={async (item) => { await handleUnequip(item); setSelectedItem(null); }}
+              onClose={() => setSelectedItem(null)}
+              onGoToUpgrade={() => { setSelectedItem(null); setHubTab('upgrade'); }}
+              selling={selling}
+              onSell={async (item) => { await handleSell(item); }}
+            />
+          )}
         </>
       ) : null}
 
@@ -1015,65 +1204,59 @@ export default function InventoryScreen({ user }) {
             </div>
           </section>
 
-          <section className="grid grid-cols-2 gap-3">
-            {SCROLL_OPTIONS.map((scroll) => {
-              const selected = selectedScroll === scroll.key;
-              const count = Number(scrolls[scroll.key] || 0);
-              const shopItem = scrollShop.find((shopScroll) => shopScroll.scroll_type === scroll.key);
-              return (
-                <button
-                  key={scroll.key}
-                  type="button"
-                  onClick={() => setSelectedScroll(scroll.key)}
-                  style={{
-                    textAlign: 'left',
-                    borderRadius: 18,
-                    padding: 12,
-                    border: selected ? '1px solid rgba(201,168,76,0.5)' : '1px solid rgba(255,255,255,0.08)',
-                    background: selected ? 'linear-gradient(135deg, rgba(42,30,8,0.9), rgba(26,26,46,0.9))' : 'rgba(26,26,46,0.75)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-                    <ScrollImage scroll={scroll} selected={selected} />
-                    <div style={{ minWidth: 0 }}>
-                      <p style={{ color: selected ? '#c9a84c' : '#e8e0d0', fontSize: 13, fontWeight: 900, margin: 0 }}>{scroll.label}</p>
-                      <p style={{ color: '#64748b', fontSize: 11, fontWeight: 700, margin: '4px 0 0' }}>
-                        Owned: {count}{shopItem ? ` | ${Number(shopItem.price || 0).toLocaleString()} coins` : ''}
-                      </p>
+          <section>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+              {SCROLL_OPTIONS.map((scroll) => {
+                const selected = selectedScroll === scroll.key;
+                const count = Number(scrolls[scroll.key] || 0);
+                return (
+                  <button
+                    key={scroll.key}
+                    type="button"
+                    onClick={() => setSelectedScroll(scroll.key)}
+                    style={{
+                      borderRadius: 12, padding: '10px 12px', textAlign: 'left',
+                      border: selected ? '1px solid rgba(201,168,76,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                      background: selected ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.03)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 800, color: selected ? '#c9a84c' : '#94a3b8' }}>
+                      {scroll.shortLabel}
                     </div>
-                  </div>
-                  <p style={{ color: '#94a3b8', fontSize: 11, margin: '8px 0 0' }}>{scroll.note}</p>
-                </button>
-              );
-            })}
+                    <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{scroll.note}</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: count > 0 ? '#f8fafc' : '#475569', marginTop: 4 }}>
+                      {count}x owned
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </section>
 
           {enchantResult ? (
-            <section
-              className="rounded-[22px] p-4"
-              style={{
+            <section>
+              <div style={{
+                borderRadius: 14, padding: '12px 14px', marginTop: 12,
                 background: enchantResult.destroyed
-                  ? 'rgba(127,29,29,0.18)'
+                  ? 'rgba(239,68,68,0.1)'
                   : enchantResult.success
-                    ? 'rgba(34,197,94,0.12)'
-                    : 'rgba(201,168,76,0.1)',
-                border: enchantResult.destroyed
-                  ? '1px solid rgba(248,113,113,0.26)'
-                  : enchantResult.success
-                    ? '1px solid rgba(34,197,94,0.25)'
-                    : '1px solid rgba(201,168,76,0.22)',
-              }}
-            >
-              <p style={{ color: enchantResult.destroyed ? '#f87171' : enchantResult.success ? '#22c55e' : '#c9a84c', fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
-                {enchantResult.destroyed ? 'Destroyed' : enchantResult.success ? 'Success' : 'Failed'}
-              </p>
-              <p style={{ color: '#e8e0d0', fontSize: 13, fontWeight: 700, margin: '6px 0 0' }}>
-                {enchantResult.item_name}: +{enchantResult.previous_enchant_level} to +{enchantResult.new_enchant_level}
-              </p>
-              <p style={{ color: '#64748b', fontSize: 11, margin: '4px 0 0' }}>
-                Chance {chancePercent(enchantResult.success_chance)}. Roll {Number(enchantResult.roll || 0).toFixed(3)}. Remaining {enchantResult.scroll_type}: {enchantResult.remaining_scrolls}.
-              </p>
+                  ? 'rgba(34,197,94,0.1)'
+                  : 'rgba(148,163,184,0.08)',
+                border: `1px solid ${enchantResult.destroyed ? 'rgba(239,68,68,0.3)' : enchantResult.success ? 'rgba(34,197,94,0.3)' : 'rgba(148,163,184,0.2)'}`,
+                textAlign: 'center',
+              }}>
+                <div style={{ fontSize: 22, marginBottom: 4 }}>
+                  {enchantResult.destroyed ? '💥' : enchantResult.success ? '✨' : '❌'}
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: enchantResult.destroyed ? '#f87171' : enchantResult.success ? '#4ade80' : '#94a3b8' }}>
+                  {enchantResult.destroyed
+                    ? `${enchantResult.item_name} was destroyed`
+                    : enchantResult.success
+                    ? `${enchantResult.item_name} → +${enchantResult.new_enchant_level}`
+                    : `Enchant failed — ${enchantResult.item_name} unchanged`}
+                </div>
+              </div>
             </section>
           ) : null}
 
@@ -1174,39 +1357,39 @@ export default function InventoryScreen({ user }) {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-3 mt-4">
-                <div>
-                  <p style={{ color: '#64748b', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', margin: 0 }}>
-                    Selected scroll
+              <div className="mt-4">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <ScrollImage scroll={SCROLL_OPTIONS.find((scroll) => scroll.key === selectedScroll) || SCROLL_OPTIONS[0]} selected />
+                  <p style={{ color: '#e8e0d0', fontSize: 13, fontWeight: 800, margin: 0 }}>
+                    {SCROLL_OPTIONS.find((scroll) => scroll.key === selectedScroll)?.shortLabel} x{selectedScrollCount}
+                    {selectedScrollShopItem ? ` | ${Number(selectedScrollShopItem.price || 0).toLocaleString()} coins` : ''}
                   </p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
-                    <ScrollImage scroll={SCROLL_OPTIONS.find((scroll) => scroll.key === selectedScroll) || SCROLL_OPTIONS[0]} selected />
-                    <p style={{ color: '#e8e0d0', fontSize: 13, fontWeight: 800, margin: 0 }}>
-                      {SCROLL_OPTIONS.find((scroll) => scroll.key === selectedScroll)?.shortLabel} x{selectedScrollCount}
-                      {selectedScrollShopItem ? ` | ${Number(selectedScrollShopItem.price || 0).toLocaleString()} coins` : ''}
-                    </p>
-                  </div>
                 </div>
-                <Button
+                <button
+                  type="button"
                   onClick={handleEnchant}
-                  disabled={!selectedUpgradeItem || isAtMax || selectedScrollCount <= 0 || enchanting}
+                  disabled={enchanting || !selectedUpgradeItem || selectedScrollCount === 0 || isAtMax}
                   style={{
-                    height: 42,
-                    padding: '0 18px',
+                    width: '100%',
+                    padding: '13px',
                     borderRadius: 14,
-                    fontWeight: 900,
-                    background: !selectedUpgradeItem || isAtMax || selectedScrollCount <= 0 || enchanting
-                      ? 'rgba(255,255,255,0.05)'
-                      : normalDestroyRisk
-                        ? 'linear-gradient(135deg,#7f1d1d,#c0392b)'
-                        : 'linear-gradient(135deg,#8b6914,#c9a84c)',
-                    color: !selectedUpgradeItem || isAtMax || selectedScrollCount <= 0 || enchanting ? '#475569' : normalDestroyRisk ? 'white' : '#0a0a0a',
-                    border: normalDestroyRisk ? '1px solid rgba(248,113,113,0.25)' : '1px solid rgba(201,168,76,0.35)',
-                    cursor: !selectedUpgradeItem || isAtMax || selectedScrollCount <= 0 || enchanting ? 'not-allowed' : 'pointer',
+                    border: isAtMax ? '1px solid rgba(148,163,184,0.2)' : '1px solid rgba(201,168,76,0.4)',
+                    background: isAtMax
+                      ? 'rgba(255,255,255,0.03)'
+                      : enchanting
+                      ? 'rgba(201,168,76,0.3)'
+                      : 'linear-gradient(135deg, rgba(139,0,0,0.8), rgba(201,168,76,0.5))',
+                    color: isAtMax ? '#475569' : '#f5e6c0',
+                    fontWeight: 900, fontSize: 14, cursor: enchanting || isAtMax || selectedScrollCount === 0 ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {enchanting ? 'Enchanting...' : isAtMax ? 'Maxed' : 'Enchant'}
-                </Button>
+                  {isAtMax ? 'Max level reached' : enchanting ? 'Enchanting...' : selectedScrollCount === 0 ? 'No scrolls' : `Enchant  ${selectedChance != null ? `— ${Math.round(Number(selectedChance) * 100)}%` : ''}`}
+                </button>
+                {normalDestroyRisk && (
+                  <p style={{ color: '#f87171', fontSize: 11, fontWeight: 700, margin: '6px 0 0', textAlign: 'center' }}>
+                    ⚠️ Normal scroll above safe range — item may be destroyed
+                  </p>
+                )}
               </div>
 
               {selectedScrollCount <= 0 && selectedScrollShopItem ? (

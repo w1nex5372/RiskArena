@@ -130,8 +130,12 @@ const PERCENT_STATS = new Set([
 export function formatStatValue(stat, value) {
   const number = Number(value || 0);
   if (!number) return '';
-  if (PERCENT_STATS.has(stat)) return `+${Math.round(number * 100)}%`;
-  return `+${Math.round(number)}`;
+  if (PERCENT_STATS.has(stat)) {
+    const pct = Math.round(number * 100);
+    return pct < 0 ? `${pct}%` : `+${pct}%`;
+  }
+  const int = Math.round(number);
+  return int < 0 ? `${int}` : `+${int}`;
 }
 
 export function formatStatLabel(stat, value, { slotLabel = '' } = {}) {

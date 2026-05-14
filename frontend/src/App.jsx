@@ -8,7 +8,7 @@ import { Progress } from './components/ui/progress';
 import { Separator } from './components/ui/separator';
 import { toast } from 'sonner';
 import { Toaster } from './components/ui/sonner';
-import { Crown, Coins, Users, Trophy, Zap, Wallet, Play, Timer, TrendingUp, TrendingDown } from 'lucide-react';
+import { Crown, Coins, Users, Trophy, Zap, Wallet, Play, Timer, TrendingUp, TrendingDown, Gift } from 'lucide-react';
 import PaymentModal from './components/PaymentModal';
 import LevelUpModal from './components/profile/LevelUpModal';
 import RouletteWheel from './components/game/RouletteWheel';
@@ -28,6 +28,7 @@ import TournamentScreen from './components/game/TournamentScreen';
 import LeaderboardScreen from './components/leaderboard/LeaderboardScreen';
 import InventoryScreen from './components/inventory/InventoryScreen';
 import DailyQuestsScreen from './components/game/DailyQuestsScreen';
+import DailyChestScreen from './components/game/DailyChestScreen';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import './App.css';
@@ -172,6 +173,7 @@ function App() {
 
   // Level-up modal state
   const [levelUpData, setLevelUpData] = useState(null);
+  const [topBarVersion, setTopBarVersion] = useState(0);
 
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -1864,8 +1866,8 @@ function App() {
     if (!user) { toast.error('Please authenticate first'); return; }
     if (userActiveRooms[roomType]) { joinRoom(roomType, false); return; } // return-to-room, skip modal
     if (roomType === 'bronze' && !user?.class_name) {
-      toast.error('Select a class in your Profile first!');
-      setActiveTab('profile');
+      toast.error('Select a class in Items → Loadout first!');
+      setActiveTab('inventory');
       return;
     }
     const parsedBetAmount = parseInt(betAmount);
@@ -2277,6 +2279,7 @@ function App() {
       )}
       
       <TopBar
+        key={topBarVersion}
         isMobile={isMobile}
         user={user}
         isConnected={isConnected}
@@ -2348,6 +2351,18 @@ function App() {
               >
                 <Wallet className="w-5 h-5" />
                 <span>Items</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('dailyChest')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+                  activeTab === 'dailyChest'
+                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-700 text-slate-950 font-semibold'
+                    : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                }`}
+              >
+                <Gift className="w-5 h-5" />
+                <span>Daily Chest</span>
               </button>
               
               <button
@@ -2800,11 +2815,48 @@ function App() {
             )}
 
             {activeTab === 'inventory' && !inLobby && !showWinnerScreen && !gameInProgress && (
-              <InventoryScreen user={user} />
+              <InventoryScreen
+                user={user}
+                onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
+              />
             )}
 
             {activeTab === 'quests' && !inLobby && !showWinnerScreen && !gameInProgress && (
-              <DailyQuestsScreen user={user} onBack={() => setActiveTab('rooms')} />
+              <DailyQuestsScreen
+                user={user}
+                onBack={() => setActiveTab('rooms')}
+                onUserUpdate={(fields) => {
+                  setUser((prev) => {
+                    if (!prev) return prev;
+                    const nextUser = { ...prev, ...fields };
+                    saveUserSession(nextUser);
+                    return nextUser;
+                  });
+                  setTopBarVersion((version) => version + 1);
+                }}
+              />
+            )}
+
+            {activeTab === 'dailyChest' && !inLobby && !showWinnerScreen && !gameInProgress && (
+              <DailyChestScreen
+                user={user}
+                onBack={() => setActiveTab('rooms')}
+                onUserUpdate={(fields) => {
+                  setUser((prev) => {
+                    if (!prev) return prev;
+                    const nextUser = { ...prev, ...fields };
+                    saveUserSession(nextUser);
+                    if (
+                      fields.level !== undefined &&
+                      Number(fields.level || 0) > Number(prev.level || 0)
+                    ) {
+                      setLevelUpData({ new_level: fields.level });
+                    }
+                    return nextUser;
+                  });
+                  setTopBarVersion((version) => version + 1);
+                }}
+              />
             )}
 
             {/* Token Purchase Tab */}
