@@ -2,33 +2,36 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
 import apiClient from '../../api/client';
 import { CLASS_MODIFIERS, CLASS_INFO } from '../../utils/characters';
-import { getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
+import { getItemImageSrc, getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
 import CharPreview from '../arena/CharPreview';
 
-function SlotImage({ item, size = 44 }) {
+function SlotImage({ item, FallbackIcon, size = 44 }) {
   const [failed, setFailed] = useState(false);
   if (!item) return null;
 
-  const src = item.image_path || (() => {
-    const cls = (item.class_name || '').toLowerCase();
-    const slot = (item.slot || item.type || item.category || '').toLowerCase();
-    const weaponMap = { warrior: 'warrior_sword', mage: 'mage_staff', rogue: 'rogue_dagger' };
-    if (slot === 'weapon') return `/items/${weaponMap[cls] || 'warrior_sword'}.png`;
-    return `/items/${cls}_${slot}.png`;
-  })();
+  const src = getItemImageSrc(item);
+  const theme = getTierTheme(item);
 
-  if (failed) return null;
+  if (!src || failed) {
+    const Icon = FallbackIcon || Sword;
+    return (
+      <div style={{
+        width: size, height: size, borderRadius: 10, flexShrink: 0,
+        background: `linear-gradient(135deg, ${theme.soft}, rgba(255,255,255,0.02))`,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: `1px solid ${theme.border}`,
+      }}>
+        <Icon style={{ width: size * 0.45, height: size * 0.45, color: theme.color }} />
+      </div>
+    );
+  }
+
   return (
     <img
       src={src}
       alt={item.name}
       onError={() => setFailed(true)}
-      style={{
-        width: size, height: size,
-        objectFit: 'contain',
-        borderRadius: 10,
-        flexShrink: 0,
-      }}
+      style={{ width: size, height: size, objectFit: 'contain', borderRadius: 10, flexShrink: 0 }}
     />
   );
 }
@@ -42,20 +45,37 @@ const LOADOUT_SLOTS = [
   { key: 'ability',   label: 'ABILITY', Icon: Sparkles },
 ];
 
-export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRealTime, onClassChange, onNavigateInventory }) {
+export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
   const [selectedBet, setSelectedBet] = useState(200);
   const [history, setHistory] = useState(null);
   const [entering, setEntering] = useState(false);
+  const [enteringRealTime, setEnteringRealTime] = useState(false);
+  const [energyError, setEnergyError] = useState('');
   const [switching, setSwitching] = useState(false);
   const [switchFeedback, setSwitchFeedback] = useState(false);
   const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
   const [loadoutEffectiveStats, setLoadoutEffectiveStats] = useState({});
+  const [timeToNext, setTimeToNext] = useState('');
 
   const [selectedClass, setSelectedClass] = useState(
     () => (user?.class_name || 'warrior').toLowerCase()
   );
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
+  useEffect(() => {
+    if (!user?.next_energy_at) { setTimeToNext(''); return; }
+    const update = () => {
+      const diff = new Date(user.next_energy_at) - Date.now();
+      if (diff <= 0) { setTimeToNext(''); return; }
+      const m = Math.floor(diff / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeToNext(`${m}m ${s}s`);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [user?.next_energy_at]);
 
   const classInfo = CLASS_INFO[selectedClass] || CLASS_INFO.warrior;
 
@@ -331,6 +351,46 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
         </div>
       </div>
 
+      {/* ── Energy ──────────────────────────────────────────────── */}
+      {user?.energy !== undefined && (
+        <div style={{ margin: '10px 16px 0', borderRadius: 16, background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.12)', padding: '12px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase' }}>
+              Energy
+            </span>
+            <span style={{
+              fontSize: 13,
+              fontWeight: 800,
+              color: user.energy === user.max_energy
+                ? '#22c55e'
+                : user.energy <= 3
+                ? '#ef4444'
+                : '#f59e0b',
+            }}>
+              ⚡ {user.energy} / {user.max_energy}
+            </span>
+          </div>
+          <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%',
+              width: `${Math.min(100, Math.round((user.energy / (user.max_energy || 10)) * 100))}%`,
+              background: user.energy === user.max_energy
+                ? '#22c55e'
+                : user.energy <= 3
+                ? '#ef4444'
+                : '#f59e0b',
+              borderRadius: 999,
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+          {timeToNext && (
+            <p style={{ color: '#64748b', fontSize: 11, fontWeight: 600, margin: '6px 0 0', textAlign: 'right' }}>
+              Next in {timeToNext}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* ── Loadout ─────────────────────────────────────────────── */}
       <div style={{ margin: '12px 16px 0', borderRadius: 18, background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.12)', padding: '14px 14px 16px' }}>
         <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase', margin: '0 0 10px' }}>
@@ -361,7 +421,7 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
                 }}
               >
                 {item
-                  ? <SlotImage item={item} size={40} />
+                  ? <SlotImage item={item} size={40} FallbackIcon={Icon} />
                   : <Icon style={{ width: 22, height: 22, color: '#334155', opacity: 0.35 }} />
                 }
                 <p style={{ color: '#475569', fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', margin: 0 }}>{label}</p>
@@ -452,27 +512,67 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
       {onEnterRealTime && (
         <div style={{ margin: '14px 16px 0' }}>
           <button
-            onClick={onEnterRealTime}
+            disabled={enteringRealTime || (user?.energy !== undefined && user.energy < 1)}
+            onClick={async () => {
+              if (enteringRealTime) return;
+              setEnergyError('');
+              setEnteringRealTime(true);
+              try {
+                const res = await apiClient.post('/arena/energy/spend');
+                onEnergySpent?.({ energy: res.data.energy, max_energy: res.data.max_energy, next_energy_at: res.data.next_energy_at });
+                onEnterRealTime();
+              } catch (err) {
+                const msg = err?.response?.data?.detail?.message || err?.response?.data?.detail || 'No energy — wait for regen';
+                setEnergyError(typeof msg === 'string' ? msg : 'No energy — wait for regen');
+              } finally {
+                if (mountedRef.current) setEnteringRealTime(false);
+              }
+            }}
             style={{
               width: '100%', height: 60, borderRadius: 16,
-              border: '1px solid rgba(34,197,94,0.5)',
-              cursor: 'pointer',
-              background: 'linear-gradient(135deg, #064e3b 0%, #065f46 50%, #064e3b 100%)',
-              color: '#6ee7b7',
+              border: (user?.energy !== undefined && user.energy < 1)
+                ? '1px solid rgba(100,116,139,0.3)'
+                : '1px solid rgba(34,197,94,0.5)',
+              cursor: (enteringRealTime || (user?.energy !== undefined && user.energy < 1)) ? 'not-allowed' : 'pointer',
+              background: (user?.energy !== undefined && user.energy < 1)
+                ? 'rgba(255,255,255,0.04)'
+                : 'linear-gradient(135deg, #064e3b 0%, #065f46 50%, #064e3b 100%)',
+              color: (user?.energy !== undefined && user.energy < 1) ? '#475569' : '#6ee7b7',
               fontWeight: 900, fontSize: 16, letterSpacing: '0.08em',
-              boxShadow: '0 6px 24px rgba(34,197,94,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
+              boxShadow: (user?.energy !== undefined && user.energy < 1)
+                ? 'none'
+                : '0 6px 24px rgba(34,197,94,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              opacity: enteringRealTime ? 0.7 : 1,
+              transition: 'all 0.2s ease',
             }}
           >
             <Swords style={{ width: 20, height: 20 }} />
-            ⚡ REAL-TIME BATTLE
-            <span style={{
-              fontSize: 9, fontWeight: 800, padding: '2px 6px',
-              borderRadius: 999, background: 'rgba(34,197,94,0.2)',
-              border: '1px solid rgba(34,197,94,0.3)', color: '#86efac',
-              letterSpacing: '0.1em',
-            }}>BETA</span>
+            {enteringRealTime ? 'Entering…' : '⚡ REAL-TIME BATTLE'}
+            {!enteringRealTime && (
+              <>
+                <span style={{
+                  fontSize: 9, fontWeight: 800, padding: '2px 6px',
+                  borderRadius: 999, background: 'rgba(34,197,94,0.2)',
+                  border: '1px solid rgba(34,197,94,0.3)', color: '#86efac',
+                  letterSpacing: '0.1em',
+                }}>BETA</span>
+                <span style={{
+                  fontSize: 9, fontWeight: 800, padding: '2px 6px',
+                  borderRadius: 999,
+                  background: (user?.energy !== undefined && user.energy < 1) ? 'rgba(100,116,139,0.15)' : 'rgba(245,158,11,0.18)',
+                  border: `1px solid ${(user?.energy !== undefined && user.energy < 1) ? 'rgba(100,116,139,0.3)' : 'rgba(245,158,11,0.35)'}`,
+                  color: (user?.energy !== undefined && user.energy < 1) ? '#475569' : '#fbbf24',
+                  letterSpacing: '0.08em',
+                }}>1 energy</span>
+              </>
+            )}
           </button>
+          {energyError && (
+            <p style={{ color: '#f87171', fontSize: 11, fontWeight: 700, textAlign: 'center', margin: '8px 0 0' }}>
+              {energyError}
+            </p>
+          )}
         </div>
       )}
 

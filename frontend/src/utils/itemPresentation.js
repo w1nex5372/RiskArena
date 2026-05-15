@@ -86,25 +86,20 @@ const IMAGE_PATH_REMAP = {
 };
 
 export function getItemImageSrc(item) {
-  const explicitPath = item?.image_path || item?.image || item?.icon_path;
-  if (explicitPath) return IMAGE_PATH_REMAP[explicitPath] || explicitPath;
-
+  // Scrolls first — they have no slot field
   const scrollType = String(item?.scroll_type || item?.type || item?.item_id || item?.id || '').trim().toLowerCase();
   if (scrollType === 'normal_scroll') return '/items/normal_scroll.png';
   if (scrollType === 'blessed_scroll') return '/items/blessed_scroll.png';
 
+  const slot = getSlotKey(item);
+
+  // Weapon PNGs in /items/ are LPC battle spritesheets, not item icons — use fallback icon
+  if (!slot || slot === 'weapon') return null;
+
+  const explicitPath = item?.image_path || item?.image || item?.icon_path;
+  if (explicitPath) return IMAGE_PATH_REMAP[explicitPath] || explicitPath;
+
   const className = getClassKey(item) || 'warrior';
-  const slot = getSlotKey(item) || 'weapon';
-  const weaponAssetByClass = {
-    warrior: 'warrior_katana',
-    mage: 'mage_staff',
-    rogue: 'rogue_scimitar',
-  };
-
-  if (slot === 'weapon') {
-    return `/items/${weaponAssetByClass[className] || 'warrior_katana'}.png`;
-  }
-
   return `/items/${className}_${slot}.png`;
 }
 
