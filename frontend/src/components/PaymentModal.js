@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Copy, Check, Loader2, QrCode } from 'lucide-react';
 import { toast } from 'sonner';
-import axios from 'axios';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import apiClient from '../api/client';
 
 export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: initialTokenAmount, initialEurAmount, onConfirm }) {
   // step: 'configure' = user sets amount | 'invoice' = wallet created, waiting for payment
@@ -63,7 +60,7 @@ export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: ini
     const fetchPrice = async () => {
       setPriceLoading(true);
       try {
-        const res = await axios.get(`${API}/sol-eur-price`);
+        const res = await apiClient.get('/sol-eur-price');
         if (!cancelled && res.data?.sol_eur_price) {
           setSolPrice(res.data.sol_eur_price);
           localStorage.setItem('casino_last_sol_eur_price', res.data.sol_eur_price.toString());
@@ -106,7 +103,7 @@ export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: ini
       if (checkingRef.current) return;
       checkingRef.current = true;
       try {
-        const res = await axios.get(`${API}/purchase-status/${userId}/${paymentData.wallet_address}`);
+        const res = await apiClient.get(`/purchase-status/${userId}/${paymentData.wallet_address}`);
         const status = res.data.purchase_status;
         if (status.tokens_credited) {
           setPaymentStatus('completed');
@@ -186,7 +183,7 @@ export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: ini
     setGeneratingWallet(true);
     try {
       const tokenAmount = Math.floor(eurAmount * 100);
-      const res = await axios.post(`${API}/purchase-tokens`, { user_id: userId, token_amount: tokenAmount });
+      const res = await apiClient.post('/purchase-tokens', { token_amount: tokenAmount });
       if (res.data.status === 'success') {
         setPaymentData(res.data.payment_info);
         setTimeLeft(1200);

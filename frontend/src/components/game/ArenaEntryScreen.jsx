@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
 import apiClient from '../../api/client';
-import { CLASS_MODIFIERS, CLASS_INFO, getCharacterImage } from '../../utils/characters';
+import { CLASS_MODIFIERS, CLASS_INFO } from '../../utils/characters';
 import { getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
+import CharPreview from '../arena/CharPreview';
 
 function SlotImage({ item, size = 44 }) {
   const [failed, setFailed] = useState(false);
@@ -41,7 +42,7 @@ const LOADOUT_SLOTS = [
   { key: 'ability',   label: 'ABILITY', Icon: Sparkles },
 ];
 
-export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassChange, onNavigateInventory }) {
+export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRealTime, onClassChange, onNavigateInventory }) {
   const [selectedBet, setSelectedBet] = useState(200);
   const [history, setHistory] = useState(null);
   const [entering, setEntering] = useState(false);
@@ -57,7 +58,6 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
   const classInfo = CLASS_INFO[selectedClass] || CLASS_INFO.warrior;
-  const charImg = getCharacterImage(selectedClass);
 
   useEffect(() => {
     apiClient
@@ -295,12 +295,7 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
             {/* Glow behind image */}
             <div style={{ position: 'absolute', bottom: -16, right: -20, width: 120, height: 120, background: `radial-gradient(circle, ${classInfo.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
 
-            <img
-              src={charImg}
-              alt={classInfo.name}
-              style={{ height: 180, width: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.7))', transition: 'opacity 0.15s ease' }}
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
+            <CharPreview cls={selectedClass} size={150} style={{ filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.7))' }} />
 
             {/* Right arrow */}
             <button
@@ -453,8 +448,36 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onClassCh
         )}
       </div>
 
-      {/* ── Enter Battle Button ─────────────────────────────────── */}
-      <div style={{ margin: '14px 16px 0' }}>
+      {/* ── Real-Time Battle Button (Colyseus) ─────────────────── */}
+      {onEnterRealTime && (
+        <div style={{ margin: '14px 16px 0' }}>
+          <button
+            onClick={onEnterRealTime}
+            style={{
+              width: '100%', height: 60, borderRadius: 16,
+              border: '1px solid rgba(34,197,94,0.5)',
+              cursor: 'pointer',
+              background: 'linear-gradient(135deg, #064e3b 0%, #065f46 50%, #064e3b 100%)',
+              color: '#6ee7b7',
+              fontWeight: 900, fontSize: 16, letterSpacing: '0.08em',
+              boxShadow: '0 6px 24px rgba(34,197,94,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            }}
+          >
+            <Swords style={{ width: 20, height: 20 }} />
+            ⚡ REAL-TIME BATTLE
+            <span style={{
+              fontSize: 9, fontWeight: 800, padding: '2px 6px',
+              borderRadius: 999, background: 'rgba(34,197,94,0.2)',
+              border: '1px solid rgba(34,197,94,0.3)', color: '#86efac',
+              letterSpacing: '0.1em',
+            }}>BETA</span>
+          </button>
+        </div>
+      )}
+
+      {/* ── Enter Battle Button (turn-based legacy) ─────────────── */}
+      <div style={{ margin: '10px 16px 0' }}>
         <button
           onClick={handleEnter}
           disabled={!canEnter}

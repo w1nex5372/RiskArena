@@ -264,10 +264,12 @@ def resolve_round(
     )
 
 
-def calculate_payout(stake_amount: int, status: str) -> Dict[str, int]:
+def calculate_payout(stake_amount: int, status: str, pot_amount: Optional[int] = None) -> Dict[str, int]:
     if stake_amount < 0:
         raise ValueError("Stake amount cannot be negative")
-    pot = stake_amount * 2
+    pot = stake_amount * 2 if pot_amount is None else int(pot_amount)
+    if pot < 0:
+        raise ValueError("Pot amount cannot be negative")
     if status == "draw":
         return {"pot": pot, "winner_payout": 0, "burn_amount": 0, "refund_each": stake_amount}
     winner_payout = pot * WINNER_PAYOUT_BPS // 10000

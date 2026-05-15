@@ -13,6 +13,8 @@ const GAME_MODES = [
     glow: '0 4px 24px rgba(139,0,0,0.45)',
     iconColor: '#f87171',
     arrowBg: 'rgba(139,0,0,0.6)',
+    betRange: '200–450 coins',
+    badge: null,
   },
   {
     id: 'boss',
@@ -24,6 +26,8 @@ const GAME_MODES = [
     glow: '0 4px 20px rgba(74,144,217,0.35)',
     iconColor: '#93c5fd',
     arrowBg: 'rgba(74,144,217,0.3)',
+    betRange: null,
+    badge: 'SOON',
   },
   {
     id: 'tournament',
@@ -35,6 +39,8 @@ const GAME_MODES = [
     glow: '0 4px 20px rgba(201,168,76,0.35)',
     iconColor: '#fcd34d',
     arrowBg: 'rgba(201,168,76,0.3)',
+    betRange: null,
+    badge: 'SOON',
   },
 ];
 
@@ -169,6 +175,12 @@ export default function HomeScreen({
 
   return (
     <div style={{ background: '#1a1a2e', minHeight: '100%', paddingBottom: 100 }}>
+      <style>{`
+        @keyframes livePulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.6; transform: scale(1.4); }
+        }
+      `}</style>
 
       {/* ── SECTION A: Season Banner ─────────────────────────── */}
       <div style={{
@@ -383,7 +395,7 @@ export default function HomeScreen({
       <div style={{ margin: '24px 16px 0' }}>
         <SectionLabel>Game Modes</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {GAME_MODES.map(({ id, label, sub, Icon, live, bg, glow, iconColor, arrowBg }) => (
+          {GAME_MODES.map(({ id, label, sub, Icon, live, bg, glow, iconColor, arrowBg, betRange, badge }) => (
             <button
               key={id}
               onClick={() => setActiveTab?.(id)}
@@ -412,31 +424,72 @@ export default function HomeScreen({
                   <span style={{ color: 'white', fontWeight: 800, fontSize: 20, letterSpacing: '0.04em' }}>
                     {label}
                   </span>
-                  {!live && (
+                  {badge && (
                     <span style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.6)', fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 99, letterSpacing: '0.08em' }}>
-                      SOON
+                      {badge}
                     </span>
                   )}
                 </div>
                 <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 500, margin: 0 }}>
                   {sub}
                 </p>
+                {betRange && (
+                  <span style={{
+                    display: 'inline-block',
+                    marginTop: 5,
+                    background: 'rgba(201,168,76,0.1)',
+                    border: '1px solid rgba(201,168,76,0.2)',
+                    color: '#c9a84c',
+                    fontSize: 11,
+                    borderRadius: 999,
+                    padding: '2px 8px',
+                    fontWeight: 700,
+                  }}>
+                    💰 {betRange}
+                  </span>
+                )}
                 {live && arenaOnline > 0 && (
-                  <p style={{ color: '#c9a84c', fontSize: 11, fontWeight: 700, margin: '4px 0 0' }}>
-                    ⚡ {arenaOnline} online
-                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
+                    <div style={{
+                      width: 6, height: 6, borderRadius: '50%',
+                      background: '#22c55e',
+                      boxShadow: '0 0 8px rgba(34,197,94,0.8)',
+                      animation: 'livePulse 1.2s ease-in-out infinite',
+                      flexShrink: 0,
+                    }} />
+                    <span style={{ color: '#22c55e', fontSize: 11, fontWeight: 700 }}>
+                      {arenaOnline} live
+                    </span>
+                  </div>
                 )}
               </div>
 
-              {/* Arrow */}
-              <div style={{
-                width: 32, height: 32, borderRadius: '50%',
-                background: live ? arrowBg : 'rgba(255,255,255,0.06)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                opacity: live ? 1 : 0.4,
-              }}>
-                <ChevronRight style={{ width: 16, height: 16, color: 'white' }} />
-              </div>
+              {/* CTA / Arrow */}
+              {id === 'arena' ? (
+                <div style={{
+                  background: 'linear-gradient(135deg, #c0392b, #8b0000)',
+                  color: 'white',
+                  borderRadius: 999,
+                  padding: '8px 16px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  border: '1px solid rgba(201,168,76,0.3)',
+                  boxShadow: '0 4px 14px rgba(139,0,0,0.5)',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                }}>
+                  JOIN →
+                </div>
+              ) : (
+                <div style={{
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.06)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  opacity: 0.4,
+                }}>
+                  <ChevronRight style={{ width: 16, height: 16, color: 'white' }} />
+                </div>
+              )}
             </button>
           ))}
         </div>

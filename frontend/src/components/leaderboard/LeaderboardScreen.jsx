@@ -71,7 +71,6 @@ function PodiumSlot({ player, meta, tab }) {
         alignItems: 'center',
         gap: 6,
         flex: 1,
-        paddingBottom: meta.height,
       }}
     >
       <div style={{ fontSize: meta.pos === 1 ? 24 : 18 }}>{meta.crown}</div>
@@ -109,6 +108,32 @@ function PodiumSlot({ player, meta, tab }) {
         }}
       >
         {player ? formatValue(player, tab) : '—'}
+      </div>
+      {/* Platform block */}
+      <div
+        style={{
+          width: '100%',
+          borderRadius: '8px 8px 0 0',
+          background: meta.pos === 1
+            ? 'linear-gradient(180deg, rgba(201,168,76,0.3), rgba(201,168,76,0.1))'
+            : 'rgba(255,255,255,0.06)',
+          border: `1px solid ${meta.pos === 1 ? 'rgba(201,168,76,0.3)' : 'rgba(255,255,255,0.08)'}`,
+          height: meta.height,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginTop: 8,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 18,
+            fontWeight: 900,
+            color: meta.pos === 1 ? '#c9a84c' : '#475569',
+          }}
+        >
+          {meta.pos}
+        </span>
       </div>
     </div>
   );
@@ -174,19 +199,35 @@ export default function LeaderboardScreen({ user }) {
       `}</style>
 
       {/* Header */}
-      <div style={{ textAlign: 'center', marginBottom: 18 }}>
+      <div
+        style={{
+          background: 'linear-gradient(180deg, rgba(201,168,76,0.08) 0%, transparent 100%)',
+          borderRadius: 16,
+          padding: '16px 12px 12px',
+          marginBottom: 18,
+          textAlign: 'center',
+        }}
+      >
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🏆</div>
         <div
           style={{
-            fontSize: 22,
+            fontSize: 26,
             fontWeight: 900,
             color: '#c9a84c',
             textTransform: 'uppercase',
             letterSpacing: '0.16em',
           }}
         >
-          Leaderboard
+          LEADERBOARD
         </div>
-        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4, fontWeight: 600 }}>Season rankings</div>
+        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4, fontWeight: 600 }}>Season 1 Rankings</div>
+        <div
+          style={{
+            height: 1,
+            background: 'linear-gradient(90deg, transparent, rgba(201,168,76,0.4), transparent)',
+            margin: '12px 0 0',
+          }}
+        />
       </div>
 
       {/* My Rank banner */}
@@ -197,6 +238,7 @@ export default function LeaderboardScreen({ user }) {
             padding: '12px 16px',
             background: 'rgba(201,168,76,0.08)',
             border: '1px solid rgba(201,168,76,0.2)',
+            boxShadow: '0 0 20px rgba(201,168,76,0.08)',
             marginBottom: 16,
             display: 'flex',
             alignItems: 'center',
@@ -205,7 +247,7 @@ export default function LeaderboardScreen({ user }) {
             gap: 10,
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#c9a84c', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             Your rank
           </span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -223,7 +265,7 @@ export default function LeaderboardScreen({ user }) {
                   padding: '4px 10px',
                   borderRadius: 999,
                   background: 'rgba(15,23,42,0.7)',
-                  border: '1px solid rgba(201,168,76,0.2)',
+                  border: '1px solid rgba(201,168,76,0.3)',
                   fontSize: 13,
                   fontWeight: 800,
                   color: '#f8fafc',
@@ -330,6 +372,7 @@ export default function LeaderboardScreen({ user }) {
             border: '1px solid rgba(148,163,184,0.1)',
             borderRadius: 18,
             position: 'relative',
+            minHeight: 200,
           }}
         >
           {PODIUM_META.map((meta) => {
@@ -370,14 +413,15 @@ export default function LeaderboardScreen({ user }) {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
-                  padding: '9px 12px',
+                  padding: isMe ? '9px 12px 9px 9px' : '9px 12px',
                   borderRadius: 10,
                   background: isMe
-                    ? 'rgba(201,168,76,0.08)'
+                    ? 'rgba(201,168,76,0.1)'
                     : even
                     ? 'rgba(15,23,42,0.4)'
                     : 'transparent',
-                  border: isMe ? '1px solid rgba(201,168,76,0.2)' : '1px solid transparent',
+                  border: isMe ? '1px solid rgba(201,168,76,0.3)' : '1px solid transparent',
+                  borderLeft: isMe ? '3px solid #c9a84c' : '1px solid transparent',
                 }}
               >
                 {/* Rank */}
@@ -385,13 +429,34 @@ export default function LeaderboardScreen({ user }) {
                   style={{
                     width: 26,
                     textAlign: 'right',
-                    fontSize: 13,
-                    fontWeight: 800,
-                    color: '#64748b',
                     flexShrink: 0,
                   }}
                 >
-                  {rank}
+                  {rank <= 10 ? (
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        background: 'rgba(255,255,255,0.06)',
+                        color: '#94a3b8',
+                        borderRadius: 6,
+                        padding: '2px 6px',
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {rank}
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: '#64748b',
+                      }}
+                    >
+                      {rank}
+                    </span>
+                  )}
                 </div>
 
                 {/* Avatar */}

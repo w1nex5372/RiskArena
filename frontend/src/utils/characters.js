@@ -1,7 +1,7 @@
 export const CHARACTER_IMAGES = {
-  warrior: '/characters/warrior.png',
-  mage: '/characters/mage.png',
-  rogue: '/characters/rogue.png',
+  warrior: '/characters/warrior_sheet.png',
+  mage: '/characters/mage_sheet.png',
+  rogue: '/characters/rogue_sheet.png',
 };
 
 export const CLASS_INFO = {

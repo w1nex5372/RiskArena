@@ -43,12 +43,29 @@ services:
     ports:
       - "8001:8001"
 
+  gameserver:
+    build:
+      context: ./gameserver
+      dockerfile: Dockerfile
+    container_name: riskarena-gameserver
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      PORT: "2567"
+      FASTAPI_URL: http://backend:8001
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-dev-internal-secret}
+      SKIP_AUTH: "true"
+    ports:
+      - "2567:2567"
+
   frontend:
     build:
       context: ./frontend
       args:
         REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-}
         REACT_APP_ADMIN_KEY: ${ADMIN_KEY:-}
+        REACT_APP_GAME_SERVER_URL: ${REACT_APP_GAME_SERVER_URL:-}
     container_name: riskarena-frontend
     restart: unless-stopped
     depends_on:

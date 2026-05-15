@@ -143,6 +143,28 @@ function SectionLabel({ children, color }) {
   );
 }
 
+function getStatsDelta(newItem, equippedItem) {
+  if (!newItem || !equippedItem) return [];
+  const newStats = newItem?.effective_stats || {};
+  const equippedStats = equippedItem?.effective_stats || {};
+  const allKeys = new Set([...Object.keys(newStats), ...Object.keys(equippedStats)]);
+  const results = [];
+  for (const key of allKeys) {
+    const newVal = Number(newStats[key] || 0);
+    const equippedVal = Number(equippedStats[key] || 0);
+    const diff = newVal - equippedVal;
+    if (Math.abs(diff) < 0.001) continue;
+    const isPercent = ['defend_reduction', 'risk_win_chance', 'bonus_attack_percent', 'bonus_ability_percent', 'damage_reduction_percent', 'risk_success_bonus', 'boss_damage_percent', 'lifesteal_percent'].includes(key);
+    const statLabels = { attack_bonus: 'ATK', ability_bonus: 'Ability', defend_reduction: 'Defense', hp_bonus: 'HP', risk_win_chance: 'Risk', bonus_attack_percent: 'ATK', bonus_ability_percent: 'Ability', damage_reduction_percent: 'Damage Reduction', risk_success_bonus: 'Risk', boss_damage_percent: 'Boss DMG', lifesteal_percent: 'Lifesteal' };
+    const label = statLabels[key] || key;
+    const formatted = isPercent
+      ? `${diff > 0 ? '+' : ''}${Math.round(diff * 100)}% ${label}`
+      : `${diff > 0 ? '+' : ''}${Math.round(diff)} ${label}`;
+    results.push({ key, diff, label: formatted, positive: diff > 0 });
+  }
+  return results;
+}
+
 export default function ItemDetailModal({
   item,
   userClass,
@@ -155,6 +177,7 @@ export default function ItemDetailModal({
   onGoToUpgrade,
   onSell,
   selling,
+  equippedBySlot,
 }) {
   if (!item) return null;
 
@@ -186,6 +209,11 @@ export default function ItemDetailModal({
   const [confirmSell, setConfirmSell] = useState(false);
   const sellPrice = SELL_PRICES[getTierKey(item)] ?? 5;
   const isSelling = selling === String(item.inventory_id);
+
+  const equippedInSameSlot = (!isEquipped && slotKey && equippedBySlot)
+    ? (equippedBySlot[slotKey] || null)
+    : null;
+  const statsDelta = getStatsDelta(item, equippedInSameSlot);
 
   function handleBackdropClick(e) {
     if (e.target === e.currentTarget) onClose();
@@ -347,6 +375,40 @@ export default function ItemDetailModal({
             </div>
           )}
 
+          {statsDelta.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{
+                fontSize: 10,
+                fontWeight: 900,
+                textTransform: 'uppercase',
+                letterSpacing: '0.07em',
+                color: '#64748b',
+                marginBottom: 8,
+              }}>
+                ▲ vs Equipped
+              </div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {statsDelta.map((d) => (
+                  <span
+                    key={d.key}
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '4px 10px',
+                      borderRadius: 999,
+                      color: d.positive ? '#4ade80' : '#f87171',
+                      background: d.positive ? 'rgba(74,222,128,0.08)' : 'rgba(248,113,113,0.08)',
+                      border: `1px solid ${d.positive ? 'rgba(74,222,128,0.2)' : 'rgba(248,113,113,0.2)'}`,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {d.positive ? '▲' : '▼'} {d.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {passiveText ? (
             <div
               style={{
@@ -499,25 +561,27 @@ export default function ItemDetailModal({
             )}
           </div>
 
-          {/* Sell section */}
-          {!isEquipped && !confirmSell && (
+          {/* Sell section — always visible, disabled when equipped */}
+          {!confirmSell && (
             <>
               <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '12px 0 10px' }} />
               <button
-                onClick={() => setConfirmSell(true)}
+                disabled={isEquipped}
+                onClick={() => !isEquipped && setConfirmSell(true)}
                 style={{
                   width: '100%',
                   height: 40,
                   borderRadius: 12,
                   fontWeight: 700,
                   fontSize: 12,
-                  cursor: 'pointer',
-                  background: 'rgba(251,146,60,0.08)',
-                  color: '#fb923c',
-                  border: '1px solid rgba(251,146,60,0.22)',
+                  cursor: isEquipped ? 'not-allowed' : 'pointer',
+                  background: isEquipped ? 'rgba(255,255,255,0.03)' : 'rgba(251,146,60,0.08)',
+                  color: isEquipped ? '#475569' : '#fb923c',
+                  border: isEquipped ? '1px solid rgba(255,255,255,0.07)' : '1px solid rgba(251,146,60,0.22)',
+                  transition: 'all 0.15s',
                 }}
               >
-                Sell for {sellPrice} coins
+                {isEquipped ? '🔒 Unequip first to sell' : `Sell for ${sellPrice} coins`}
               </button>
             </>
           )}

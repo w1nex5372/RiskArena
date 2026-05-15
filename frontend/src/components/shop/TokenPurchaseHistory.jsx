@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import apiClient from '../../api/client';
 
 function TokenPurchaseHistory({ API, user }) {
   const [open, setOpen] = React.useState(false);
@@ -14,7 +14,7 @@ function TokenPurchaseHistory({ API, user }) {
     setLoading(true);
     try {
       const offset = (p - 1) * PER_PAGE;
-      const r = await axios.get(`${API}/purchase-history/${user.id}?limit=${PER_PAGE}&offset=${offset}`);
+      const r = await apiClient.get(`/purchase-history/${user.id}?limit=${PER_PAGE}&offset=${offset}`);
       setHistory(r.data.purchases || []);
       setTotalCount(r.data.total || r.data.purchases?.length || 0);
     } catch { setHistory([]); } finally { setLoading(false); }

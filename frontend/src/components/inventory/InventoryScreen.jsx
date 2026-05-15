@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import ShopScreen from '../shop/ShopScreen';
 import apiClient from '../../api/client';
-import { CLASS_INFO, getCharacterImage } from '../../utils/characters';
+import { CLASS_INFO, CLASS_MODIFIERS, getCharacterImage } from '../../utils/characters';
 import {
   CLASS_THEME,
   TIER_ORDER,
@@ -299,8 +299,17 @@ function LoadoutCard({ slot, item, onTabJump }) {
 
 const CLASS_KEYS = ['warrior', 'mage', 'rogue'];
 
-function ClassHeroCard({ user, loadoutPowerSummary, onClassChange }) {
-  const activeKey = (user?.class_name || '').toLowerCase() || null;
+function mergeStatTotals(...statSources) {
+  return statSources.reduce((totals, stats) => {
+    Object.entries(stats || {}).forEach(([key, value]) => {
+      totals[key] = (totals[key] || 0) + Number(value || 0);
+    });
+    return totals;
+  }, {});
+}
+
+function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, onClassChange }) {
+  const activeKey = String(user?.class_name || '').trim().toLowerCase() || null;
   const [viewedIdx, setViewedIdx] = useState(() => {
     const idx = CLASS_KEYS.indexOf(activeKey);
     return idx >= 0 ? idx : 0;
@@ -316,6 +325,11 @@ function ClassHeroCard({ user, loadoutPowerSummary, onClassChange }) {
   const info = CLASS_INFO[viewedKey];
   const imgSrc = getCharacterImage(viewedKey);
   const isActive = activeKey === viewedKey;
+  const classBonusSummary = getStatEntries(
+    isActive
+      ? mergeStatTotals(CLASS_MODIFIERS[viewedKey], loadoutEffectiveStats)
+      : CLASS_MODIFIERS[viewedKey],
+  );
 
   const prev = () => setViewedIdx((i) => (i - 1 + CLASS_KEYS.length) % CLASS_KEYS.length);
   const next = () => setViewedIdx((i) => (i + 1) % CLASS_KEYS.length);
@@ -419,37 +433,17 @@ function ClassHeroCard({ user, loadoutPowerSummary, onClassChange }) {
               Class Bonuses
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {info.bonuses.map((b, i) => (
-                <span key={i} style={{
+              {(classBonusSummary.length ? classBonusSummary : info.bonuses.map((label, index) => ({ key: `fallback-${index}`, label }))).map((row) => (
+                <span key={row.key} style={{
                   fontSize: 10, fontWeight: 700, color: info.color,
                   background: `${info.color}18`, border: `1px solid ${info.color}40`,
                   borderRadius: 999, padding: '3px 8px', whiteSpace: 'nowrap',
                 }}>
-                  {b}
+                  {row.label}
                 </span>
               ))}
             </div>
           </div>
-
-          {/* Equipped stats — only when viewing active class */}
-          {isActive && loadoutPowerSummary.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <p style={{ fontSize: 9, color: '#64748b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 5px' }}>
-                Equipped Stats
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {loadoutPowerSummary.slice(0, 8).map((row) => (
-                  <span key={row.key} style={{
-                    fontSize: 10, fontWeight: 700, color: '#c9a84c',
-                    background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.22)',
-                    borderRadius: 999, padding: '3px 8px', whiteSpace: 'nowrap',
-                  }}>
-                    {row.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -946,7 +940,12 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
 
       {hubTab === 'loadout' ? (
         <>
-          <ClassHeroCard user={user} loadoutPowerSummary={loadoutPowerSummary} onClassChange={onClassChange} />
+          <ClassHeroCard
+            user={user}
+            loadoutEffectiveStats={loadoutEffectiveStats}
+            loadoutPowerSummary={loadoutPowerSummary}
+            onClassChange={onClassChange}
+          />
 
           <div style={{ marginTop: 12 }}>
             <p style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c9a84c', margin: '0 0 8px' }}>

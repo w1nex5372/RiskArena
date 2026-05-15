@@ -242,19 +242,49 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   // ── Active raid UI ─────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 text-slate-900">
+      <style>{`
+        @keyframes phasePulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+        @keyframes attackPulse {
+          0%, 100% { box-shadow: 0 4px 20px rgba(139,0,0,0.4); }
+          50% { box-shadow: 0 4px 30px rgba(139,0,0,0.7), 0 0 40px rgba(139,0,0,0.25); }
+        }
+      `}</style>
 
       {/* Boss header */}
       <section className="rounded-[24px] p-4" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.2)', boxShadow: '0 12px 30px rgba(0,0,0,0.3)' }}>
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#c9a84c' }}>Boss Raid</p>
-            <h2 className="text-2xl font-extrabold mt-1" style={{ color: '#e8e0d0' }}>
-              {bossState.boss_name || 'Unknown Boss'}
-            </h2>
-            <p className="text-sm font-medium" style={{ color: '#64748b' }}>
-              Level {bossState.boss_level || '?'} •{' '}
-              <span className="font-extrabold" style={{ color: phase === 3 ? '#ef4444' : phase === 2 ? '#f59e0b' : '#c9a84c' }}>Phase {phase}</span>
-            </p>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            {/* Skull icon */}
+            <div
+              style={{
+                width: 60,
+                height: 60,
+                background: 'linear-gradient(135deg, #3d0000, #8b0000)',
+                borderRadius: 18,
+                border: '1px solid rgba(139,0,0,0.5)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 16px rgba(139,0,0,0.4)',
+                flexShrink: 0,
+              }}
+            >
+              <Skull className="w-8 h-8" style={{ color: '#ef4444' }} />
+            </div>
+            {/* Text content */}
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#c9a84c' }}>Boss Raid</p>
+              <h2 className="text-2xl font-extrabold mt-1" style={{ color: '#e8e0d0' }}>
+                {bossState.boss_name || 'Unknown Boss'}
+              </h2>
+              <p className="text-sm font-medium" style={{ color: '#64748b' }}>
+                Level {bossState.boss_level || '?'} •{' '}
+                <span className="font-extrabold" style={{ color: phase === 3 ? '#ef4444' : phase === 2 ? '#f59e0b' : '#c9a84c' }}>Phase {phase}</span>
+              </p>
+            </div>
           </div>
           <div className="rounded-2xl px-3 py-2 text-right shrink-0" style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
             <div className="flex items-center gap-1 font-extrabold justify-end" style={{ color: '#c9a84c' }}>
@@ -279,7 +309,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             {hpPct}%
           </span>
         </div>
-        <div className="h-3 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+        <div className="h-4 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{
@@ -289,6 +319,11 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
                 : phase === 2
                 ? 'linear-gradient(90deg, #d97706, #f59e0b)'
                 : 'linear-gradient(90deg, #8b6914, #c9a84c)',
+              boxShadow: phase === 3
+                ? '0 0 12px rgba(239,68,68,0.8)'
+                : phase === 2
+                ? '0 0 12px rgba(245,158,11,0.6)'
+                : '0 0 8px rgba(201,168,76,0.5)',
             }}
           />
         </div>
@@ -298,7 +333,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             <div
               key={p}
               className="flex-1 h-1.5 rounded-full"
-              style={{ background: p <= phase ? (p === 3 ? '#ef4444' : p === 2 ? '#f59e0b' : '#c9a84c') : 'rgba(255,255,255,0.1)' }}
+              style={{
+                background: p <= phase ? (p === 3 ? '#ef4444' : p === 2 ? '#f59e0b' : '#c9a84c') : 'rgba(255,255,255,0.1)',
+                animation: p === phase ? 'phasePulse 1.5s ease-in-out infinite' : undefined,
+              }}
             />
           ))}
         </div>
@@ -338,6 +376,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           cursor: cooldown > 0 || raidEnded ? 'not-allowed' : 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
           transition: 'all 0.2s ease',
+          animation: cooldown === 0 && !raidEnded ? 'attackPulse 2s ease-in-out infinite' : undefined,
         }}
       >
         <Swords className="w-5 h-5" />
@@ -345,9 +384,9 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       </Button>
 
       {/* My damage */}
-      <section className="rounded-[22px] p-4" style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.18)' }}>
+      <section className="rounded-[22px] p-4" style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.18)', boxShadow: '0 0 20px rgba(201,168,76,0.08)', display: 'flex', flexDirection: 'column' }}>
         <p className="text-xs font-extrabold uppercase tracking-wide mb-1" style={{ color: '#c9a84c' }}>My damage this raid</p>
-        <p className="text-3xl font-extrabold" style={{ color: '#e8e0d0' }}>{myDamage.toLocaleString()}</p>
+        <p className="text-3xl font-extrabold" style={{ color: '#e8e0d0' }}>🔥{myDamage.toLocaleString()}</p>
       </section>
 
       {/* Top 3 damage dealers */}
@@ -363,10 +402,18 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
               const isMe = String(dealer.user_id) === String(user?.id);
               const medalColor = i === 0 ? '#c9a84c' : i === 1 ? '#94a3b8' : '#cd7f32';
               return (
-                <div key={dealer.user_id || i}>
+                <div
+                  key={dealer.user_id || i}
+                  style={i === 0 ? {
+                    background: 'rgba(201,168,76,0.06)',
+                    border: '1px solid rgba(201,168,76,0.15)',
+                    borderRadius: 8,
+                    padding: '6px 8px',
+                  } : undefined}
+                >
                   <div className="flex items-center justify-between text-xs mb-1.5">
                     <span className="font-bold" style={{ color: isMe ? '#c9a84c' : '#e8e0d0' }}>
-                      {i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}{' '}
+                      <span style={{ fontSize: 14 }}>{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>{' '}
                       {isMe ? 'You' : dealer.first_name || dealer.username || 'Unknown'}
                     </span>
                     <span className="font-semibold" style={{ color: '#64748b' }}>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import apiClient from '../../api/client';
 
 function PromoCodeBox({ API, user, onTokensAdded }) {
   const [code, setCode] = React.useState('');
@@ -9,7 +9,7 @@ function PromoCodeBox({ API, user, onTokensAdded }) {
     if (!code.trim() || !user?.telegram_id) return;
     setLoading(true);
     try {
-      const r = await axios.post(`${API}/use-promo?code=${encodeURIComponent(code.trim().toUpperCase())}&telegram_id=${user.telegram_id}`);
+      const r = await apiClient.post(`/use-promo?code=${encodeURIComponent(code.trim().toUpperCase())}`);
       toast.success(`🎉 +${r.data.tokens} tokens added!`);
       onTokensAdded(r.data.tokens);
       setCode('');

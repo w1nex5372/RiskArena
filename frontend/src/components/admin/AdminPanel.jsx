@@ -162,6 +162,20 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     }
   };
 
+  const [givingItems, setGivingItems] = React.useState(false);
+  const giveAllItems = async () => {
+    if (!tgId) return toast.error('Enter Telegram ID first');
+    setGivingItems(true);
+    try {
+      const r = await axios.post(`${API}/admin/give-all-items?admin_key=${ADMIN_KEY}&telegram_id=${tgId}`);
+      toast.success(`✅ Gave ${r.data.added} items to user ${tgId}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to give items');
+    } finally {
+      setGivingItems(false);
+    }
+  };
+
   const addFakePlayer = async () => {
     if (!fakeBet) return toast.error('Enter bet amount');
     try {
@@ -467,6 +481,13 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
           <button onClick={() => banUser(false)} className="bg-green-900/60 hover:bg-green-800 border border-green-600/40 text-green-300 text-xs py-2 rounded-lg font-semibold">✅ Unban</button>
           <button onClick={() => setRole(true, false)} className="bg-blue-900/60 hover:bg-blue-800 border border-blue-600/40 text-blue-300 text-xs py-2 rounded-lg font-semibold">🛡️ Make Admin</button>
           <button onClick={() => setRole(false, false)} className="bg-slate-700 hover:bg-slate-600 border border-slate-500/40 text-slate-300 text-xs py-2 rounded-lg font-semibold">👤 Remove Role</button>
+          <button
+            onClick={giveAllItems}
+            disabled={givingItems}
+            className="col-span-2 bg-yellow-900/60 hover:bg-yellow-800 border border-yellow-500/40 text-yellow-300 text-xs py-2 rounded-lg font-semibold disabled:opacity-50"
+          >
+            {givingItems ? '⏳ Giving items...' : '🎁 Give All Items (all tiers)'}
+          </button>
         </div>
       </div>
 

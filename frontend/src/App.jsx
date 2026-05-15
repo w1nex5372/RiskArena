@@ -23,6 +23,7 @@ import HomeScreen from './components/home/HomeScreen';
 import RoomLobby from './components/rooms/RoomLobby';
 import ArenaScreen from './components/game/ArenaScreen';
 import ArenaEntryScreen from './components/game/ArenaEntryScreen';
+import RealTimeArenaScreen from './components/arena/RealTimeArenaScreen';
 import BossRaidScreen from './components/game/BossRaidScreen';
 import TournamentScreen from './components/game/TournamentScreen';
 import LeaderboardScreen from './components/leaderboard/LeaderboardScreen';
@@ -36,6 +37,21 @@ import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import './App.css';
 
+function getStoredSessionToken() {
+  try {
+    return JSON.parse(localStorage.getItem('casino_user') || '{}')?.session_token || '';
+  } catch {
+    return '';
+  }
+}
+
+function authConfig() {
+  const token = getStoredSessionToken();
+  return {
+    withCredentials: true,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  };
+}
 
 // Prize links configuration
 
@@ -119,6 +135,7 @@ function App() {
   }); // Track which game ID we've shown winner for
   const [gameInProgress, setGameInProgress] = useState(false); // Track if game is running
   const [currentGameData, setCurrentGameData] = useState(null); // Store current game info
+  const [inRealTimeArena, setInRealTimeArena] = useState(false);
   const [activeArenaMatchId, setActiveArenaMatchId] = useState(() => sessionStorage.getItem('active_arena_match') || null);
   const [activeArenaRoomContext, setActiveArenaRoomContext] = useState(() => {
     try {
@@ -507,6 +524,7 @@ function App() {
       reconnectionDelayMax: 5000,
       reconnectionAttempts: Infinity,
       forceNew: false,
+      auth: { token: getStoredSessionToken() },
       autoConnect: true
     });
     
@@ -527,7 +545,8 @@ function App() {
         console.log('📝 Registering user to socket:', storedUser.id, platform);
         newSocket.emit('register_user', {
           user_id: storedUser.id,
-          platform: platform
+          platform: platform,
+          token: getStoredSessionToken()
         });
 
         // Re-join game room if user was in one (survives reconnect AND full remount)
@@ -538,7 +557,8 @@ function App() {
           newSocket.emit('join_game_room', {
             room_id: activeGameRoom,
             user_id: storedUser.id,
-            platform: platform
+            platform: platform,
+            token: getStoredSessionToken()
           });
         }
       } else {
@@ -585,7 +605,8 @@ function App() {
         console.log('📝 Re-registering user after reconnection:', storedUser.id);
         newSocket.emit('register_user', {
           user_id: storedUser.id,
-          platform: platform
+          platform: platform,
+          token: getStoredSessionToken()
         });
 
         // Re-join game room if we were in one (socket loses room membership on reconnect)
@@ -595,7 +616,8 @@ function App() {
           newSocket.emit('join_game_room', {
             room_id: reconnectRoom,
             user_id: storedUser.id,
-            platform: platform
+            platform: platform,
+            token: getStoredSessionToken()
           });
         }
       }
@@ -922,7 +944,7 @@ function App() {
 
       // User was online and saw the result — clear pending result from DB
       if (userRef.current?.id) {
-        axios.get(`${API}/pending-result/${userRef.current.id}`).catch(() => {});
+        axios.get(`${API}/pending-result/${userRef.current.id}`, authConfig()).catch(() => {});
       }
 
       // CRITICAL: Block any future winner screens from this game
@@ -1731,7 +1753,7 @@ function App() {
     try {
       if (!user || !user.id) return;
       
-      const response = await axios.get(`${API}/user/${user.id}/derived-wallet`);
+      const response = await axios.get(`${API}/user/${user.id}/derived-wallet`, authConfig());
       setCasinoWalletAddress(response.data.derived_wallet_address);
       toast.success('Your personal wallet loaded! 🎯');
     } catch (error) {
@@ -1774,7 +1796,7 @@ function App() {
 
   const fetchMissedResults = async (userId) => {
     try {
-      const res = await axios.get(`${API}/pending-result/${userId}`);
+      const res = await axios.get(`${API}/pending-result/${userId}`, authConfig());
       const list = res.data?.results || [];
       if (list.length > 0) {
         setMissedResults(list.map(pending => ({
@@ -1801,7 +1823,7 @@ function App() {
     if (!user || !user.id) return null;
     
     try {
-      const response = await axios.get(`${API}/user-room-status/${user.id}`);
+      const response = await axios.get(`${API}/user-room-status/${user.id}`, authConfig());
       
       // Update active rooms state with ALL rooms
       if (response.data.in_room && response.data.rooms) {
@@ -1833,7 +1855,7 @@ function App() {
     
     try {
       // Get current room status
-      const response = await axios.get(`${API}/user-room-status/${user.id}`);
+      const response = await axios.get(`${API}/user-room-status/${user.id}`, authConfig());
       
       console.log('🔍 API Response for user rooms:', response.data);
       
@@ -1928,7 +1950,8 @@ function App() {
           socket.emit('join_game_room', {
             room_id: specificRoomData.room_id,
             user_id: user.id,
-            platform: platform
+            platform: platform,
+            token: getStoredSessionToken()
           });
         }
       }
@@ -1977,7 +2000,7 @@ function App() {
         user_id: user.id,
         bet_amount: parsedBetAmount,
         is_anonymous: isAnonymous
-      });
+      }, authConfig());
       console.log('✅ API Response:', response.data);
 
       if (response.data.status === 'joined') {
@@ -2009,7 +2032,8 @@ function App() {
           socket.emit('join_game_room', {
             room_id: response.data.room_id,
             user_id: user.id,
-            platform: platform
+            platform: platform,
+            token: getStoredSessionToken()
           });
         } else {
           console.error('❌❌❌ SOCKET NOT CONNECTED!');
@@ -2047,7 +2071,7 @@ function App() {
           setRoomParticipants(prev => ({ ...prev, [roomType]: roomData.players || [] }));
           currentGameRoomRef.current = roomData.room_id;
           sessionStorage.setItem('active_game_room', roomData.room_id);
-          if (socket?.connected) socket.emit('join_game_room', { room_id: roomData.room_id, user_id: user.id });
+          if (socket?.connected) socket.emit('join_game_room', { room_id: roomData.room_id, user_id: user.id, token: getStoredSessionToken() });
         }
         return;
       }
@@ -2076,7 +2100,7 @@ function App() {
         user_id: user.id,
         bet_amount: parsed,
         is_anonymous: false,
-      });
+      }, authConfig());
       setUser({ ...user, token_balance: response.data.new_balance });
       setUserActiveRooms((prev) => ({ ...prev, bronze: { roomId: response.data.room_id } }));
       currentGameRoomRef.current = response.data.room_id;
@@ -2104,7 +2128,7 @@ function App() {
           setRoomParticipants((prev) => ({ ...prev, bronze: roomData.players || [] }));
           currentGameRoomRef.current = roomData.room_id;
           sessionStorage.setItem('active_game_room', roomData.room_id);
-          if (socket?.connected) socket.emit('join_game_room', { room_id: roomData.room_id, user_id: user.id });
+          if (socket?.connected) socket.emit('join_game_room', { room_id: roomData.room_id, user_id: user.id, token: getStoredSessionToken() });
         }
         return;
       }
@@ -2777,11 +2801,19 @@ function App() {
               />
             )}
 
-            {activeTab === 'arena' && !activeArenaMatchId && !inLobby && !showWinnerScreen && !gameInProgress && (
+            {activeTab === 'arena' && inRealTimeArena && (
+              <RealTimeArenaScreen
+                user={user}
+                onLeave={() => setInRealTimeArena(false)}
+              />
+            )}
+
+            {activeTab === 'arena' && !inRealTimeArena && !activeArenaMatchId && !inLobby && !showWinnerScreen && !gameInProgress && (
               <ArenaEntryScreen
                 user={user}
                 rooms={rooms}
                 onEnterBattle={enterArenaBattle}
+                onEnterRealTime={() => setInRealTimeArena(true)}
                 onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
                 onNavigateInventory={() => setActiveTab('inventory')}
               />
@@ -3301,6 +3333,7 @@ function App() {
                     socket.emit('reveal_identity', {
                       room_id: lobbyData.room_id,
                       user_id: user.id,
+                      token: getStoredSessionToken(),
                       first_name: user.first_name,
                       last_name: user.last_name,
                       photo_url: user.photo_url,

@@ -7,6 +7,14 @@ import { ROOM_CONFIGS } from '../../utils/constants';
 import apiClient from '../../api/client';
 import ArenaBattleLobby from '../game/ArenaBattleLobby';
 
+function getStoredSessionToken() {
+  try {
+    return JSON.parse(localStorage.getItem('casino_user') || '{}')?.session_token || '';
+  } catch {
+    return '';
+  }
+}
+
 // ── Main lobby dispatcher ───────────────────────────────────────────────────
 export default function RoomLobby({
   socket,
@@ -77,10 +85,10 @@ export default function RoomLobby({
     if (!socket || !lobbyData?.room_id) return;
 
     if (socket.connected) {
-      socket.emit('join_game_room', { room_id: lobbyData.room_id, user_id: user?.id });
+      socket.emit('join_game_room', { room_id: lobbyData.room_id, user_id: user?.id, token: getStoredSessionToken() });
     } else {
       const onConnect = () => {
-        socket.emit('join_game_room', { room_id: lobbyData.room_id, user_id: user?.id });
+        socket.emit('join_game_room', { room_id: lobbyData.room_id, user_id: user?.id, token: getStoredSessionToken() });
       };
       socket.on('connect', onConnect);
       return () => socket.off('connect', onConnect);

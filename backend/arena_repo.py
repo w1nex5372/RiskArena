@@ -581,7 +581,7 @@ async def resolve_current_round_tx(conn, match_id: str, default_missing: bool) -
 
 
 async def finish_match_tx(conn, match, result) -> None:
-    payout = calculate_payout(match["stake_amount"], result.status)
+    payout = calculate_payout(match["stake_amount"], result.status, match["pot_amount"])
     now = datetime.now(timezone.utc)
     try:
         raw_meta = match["metadata"]

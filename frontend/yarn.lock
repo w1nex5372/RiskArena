@@ -1097,6 +1097,11 @@
   resolved "https://registry.yarnpkg.com/@bcoe/v8-coverage/-/v8-coverage-0.2.3.tgz#75a2e8b51cb758a7553d6804a5932d7aace75c39"
   integrity sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==
 
+"@colyseus/schema@^2.0.4":
+  version "2.0.37"
+  resolved "https://registry.yarnpkg.com/@colyseus/schema/-/schema-2.0.37.tgz#4bf1509b183133ae3a827af897974d8236874d01"
+  integrity sha512-+WXEux9DMSaTz9hZKabl6LBuzsxzt9EvOwhXJ/G4rPCaaVkJ+iLxRsq8VbL2ZCx18E/uQH6nLaNIQVqH9wEt8w==
+
 "@craco/craco@^7.1.0":
   version "7.1.0"
   resolved "https://registry.yarnpkg.com/@craco/craco/-/craco-7.1.0.tgz#12bd394c7f0334e214302e4d35a1768f68042fbb"
@@ -3991,6 +3996,16 @@ colorette@^2.0.10:
   resolved "https://registry.yarnpkg.com/colorette/-/colorette-2.0.20.tgz#9eb793e6833067f7235902fcd3b09917a000a95a"
   integrity sha512-IfEDxwoWIjkeXL1eXcDiow4UbKjhLdq6/EuSVR9GMN7KVH3r9gQ83e73hsz1Nd1T3ijd5xv1wcWRYO+D6kCI2w==
 
+colyseus.js@0.15.9:
+  version "0.15.9"
+  resolved "https://registry.yarnpkg.com/colyseus.js/-/colyseus.js-0.15.9.tgz#b908bcc3563dc2522cca6362b024d78161238de1"
+  integrity sha512-ffPBSio2xaNCvVDXQPTCK6womBRMG4aBadJzagdY+q3u1QdYsyRtr2toyIBCF76+FtY6gT0WUbQN3INEoa56lw==
+  dependencies:
+    "@colyseus/schema" "^2.0.4"
+    httpie "^2.0.0-next.13"
+    nanoevents "^5.1.12"
+    tslib "^2.1.0"
+
 combined-stream@^1.0.8:
   version "1.0.8"
   resolved "https://registry.yarnpkg.com/combined-stream/-/combined-stream-1.0.8.tgz#c3d45a8b34fd730631a110a8a2520682b31d5a7f"
@@ -5353,6 +5368,11 @@ eventemitter3@^4.0.0:
   resolved "https://registry.yarnpkg.com/eventemitter3/-/eventemitter3-4.0.7.tgz#2de9b68f6528d5644ef5c59526a1b4a07306169f"
   integrity sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==
 
+eventemitter3@^5.0.1:
+  version "5.0.4"
+  resolved "https://registry.yarnpkg.com/eventemitter3/-/eventemitter3-5.0.4.tgz#a86d66170433712dde814707ac52b5271ceb1feb"
+  integrity sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==
+
 events@^3.2.0:
   version "3.3.0"
   resolved "https://registry.yarnpkg.com/events/-/events-3.3.0.tgz#31a95ad0a924e2d2c419a813aeb2c4e878ea7400"
@@ -6096,6 +6116,11 @@ http-proxy@^1.18.1:
     eventemitter3 "^4.0.0"
     follow-redirects "^1.0.0"
     requires-port "^1.0.0"
+
+httpie@^2.0.0-next.13:
+  version "2.0.0-next.13"
+  resolved "https://registry.yarnpkg.com/httpie/-/httpie-2.0.0-next.13.tgz#1e245be61d6ca2573a2c1d690cfa5ec3bac63a0c"
+  integrity sha512-KbKOnq8wt0hVEfteYCSnEsPgzaWxcVc4qZ4OaDU9mVOYLRo3XChjWs3MiuRgFu5y+4JDo7sDKdKzkAn1ljQYFA==
 
 https-proxy-agent@^5.0.0:
   version "5.0.1"
@@ -7573,6 +7598,11 @@ mz@^2.7.0:
     object-assign "^4.0.1"
     thenify-all "^1.0.0"
 
+nanoevents@^5.1.12:
+  version "5.1.13"
+  resolved "https://registry.yarnpkg.com/nanoevents/-/nanoevents-5.1.13.tgz#0e49c30acbcf847c10f29f1d1e7147c0f88fa3d1"
+  integrity sha512-JFAeG9fp0QZnRoESHjkbVFbZ9BkOXkkagUVwZVo/pkSX+Fq1VKlY+5og/8X9CYc6C7vje/CV+bwJ5M2X0+IY9Q==
+
 nanoid@^3.3.11:
   version "3.3.11"
   resolved "https://registry.yarnpkg.com/nanoid/-/nanoid-3.3.11.tgz#4f4f112cefbe303202f2199838128936266d185b"
@@ -7972,6 +8002,13 @@ performance-now@^2.1.0:
   version "2.1.0"
   resolved "https://registry.yarnpkg.com/performance-now/-/performance-now-2.1.0.tgz#6309f4e0e5fa913ec1c69307ae364b4b377c9e7b"
   integrity sha512-7EAHlyLHI56VEIdK57uwHdHKIaAGbnXPiw0yWbarQZOKaKpvUIgW0jWRVLiatnM+XXlSwsanIBH/hzGMJulMow==
+
+phaser@^3.88.2:
+  version "3.90.0"
+  resolved "https://registry.yarnpkg.com/phaser/-/phaser-3.90.0.tgz#a281b2e5e67ec3638cbf73ea3bbfe72b52c4e7de"
+  integrity sha512-/cziz/5ZIn02uDkC9RzN8VF9x3Gs3XdFFf9nkiMEQT3p7hQlWuyjy4QWosU802qqno2YSLn2BfqwOKLv/sSVfQ==
+  dependencies:
+    eventemitter3 "^5.0.1"
 
 picocolors@^0.2.1:
   version "0.2.1"
