@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import ShopScreen from '../shop/ShopScreen';
 import apiClient from '../../api/client';
-import { CLASS_INFO, CLASS_MODIFIERS, getCharacterImage } from '../../utils/characters';
+import { CLASS_INFO, CLASS_MODIFIERS } from '../../utils/characters';
+import CharPreview from '../arena/CharPreview';
 import {
   CLASS_THEME,
   TIER_ORDER,
@@ -64,6 +65,22 @@ const SCROLL_OPTIONS = [
     note: 'Failure keeps the item copy.',
   },
 ];
+
+function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />;
+  }
+  return (
+    <img
+      src={src}
+      alt={item.name}
+      className={ringClass}
+      style={{ width: '80%', height: '80%', objectFit: 'cover', borderRadius: 10 }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 function rarityRingClass(item) {
   const tier = getTierKey(item);
@@ -323,7 +340,6 @@ function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, onCla
 
   const viewedKey = CLASS_KEYS[viewedIdx];
   const info = CLASS_INFO[viewedKey];
-  const imgSrc = getCharacterImage(viewedKey);
   const isActive = activeKey === viewedKey;
   const classBonusSummary = getStatEntries(
     isActive
@@ -385,25 +401,20 @@ function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, onCla
         {/* Character image */}
         <div style={{
           width: 100, height: 132,
-          borderRadius: 14, flexShrink: 0, overflow: 'hidden',
+          borderRadius: 14, flexShrink: 0,
           background: `radial-gradient(circle at 50% 30%, ${info.color}22 0%, rgba(15,23,42,0.1) 65%, transparent 100%)`,
           border: `1px solid ${info.color}33`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          {imgSrc ? (
-            <img
-              src={imgSrc}
-              alt={info.name}
-              style={{
-                width: '100%', height: '100%', objectFit: 'contain',
-                filter: `drop-shadow(0 0 14px ${info.glow})`,
-                opacity: isActive ? 1 : 0.65,
-                transition: 'opacity 0.2s ease',
-              }}
-            />
-          ) : (
-            <div style={{ width: 60, height: 90, borderRadius: 10, background: 'rgba(51,65,85,0.8)' }} />
-          )}
+          <CharPreview
+            cls={viewedKey}
+            size={90}
+            style={{
+              filter: `drop-shadow(0 0 14px ${info.glow})`,
+              opacity: isActive ? 1 : 0.65,
+              transition: 'opacity 0.2s ease',
+            }}
+          />
         </div>
 
         {/* Class info */}
@@ -1156,22 +1167,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                           justifyContent: 'center',
                           background: 'rgba(13,13,26,0.85)',
                         }}>
-                          {src ? (
-                            <img
-                              src={src}
-                              alt={item.name}
-                              className={rarityRingClass(item)}
-                              style={{
-                                width: '80%',
-                                height: '80%',
-                                objectFit: 'cover',
-                                borderRadius: 10,
-                              }}
-                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                            />
-                          ) : (
-                            <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />
-                          )}
+                          <GridItemImage src={src} item={item} FallbackIcon={FallbackIcon} theme={theme} ringClass={rarityRingClass(item)} />
                         </div>
                         {isEquipped && (
                           <div style={{

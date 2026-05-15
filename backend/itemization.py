@@ -110,7 +110,7 @@ BASE_STAT_KEYS = (
 )
 
 
-_WEAPON_ASSET = {"warrior": "warrior_sword", "mage": "mage_staff", "rogue": "rogue_dagger"}
+_WEAPON_ASSET = {"warrior": "warrior_katana", "mage": "mage_staff", "rogue": "rogue_scimitar"}
 
 
 def _weapon_image(class_name: str, slot: str) -> str:

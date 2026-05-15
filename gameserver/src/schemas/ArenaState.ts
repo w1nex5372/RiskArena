@@ -17,6 +17,11 @@ export class Player extends Schema {
   @type("boolean") isGrounded: boolean = true;
   @type("boolean") isStunned: boolean = false;
   @type("number")  abilityCharges: number = 1;  // 0 = cooldown, 1 = ready
+  @type("number") attackBonus:    number = 0;  // from weapon
+  @type("number") abilityBonus:   number = 0;  // from ability scroll
+  @type("number") defendReduction: number = 0; // 0.0–1.0 damage multiplier from armor
+  @type("number") hpBonus:        number = 0;  // from armor/items
+  @type("boolean") hasWeapon:     boolean = false; // true if a weapon item is equipped
 
   // Server-only — not synced to clients
   lastAttackTime: number = 0;

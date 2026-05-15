@@ -36,6 +36,8 @@ const FOOT_OFFSET    = 12;
 
 const CLASS_COLORS = { warrior: 0xe74c3c, mage: 0x9b59b6, rogue: 0x2ecc71 };
 const CLASS_HEX    = { warrior: '#e74c3c', mage: '#9b59b6', rogue: '#2ecc71' };
+const WEAPON_COLS  = 18; // weapon sheets: 1152px / 64px = 18 cols
+const CLASS_WEAPON = { warrior: 'warrior_katana', mage: 'mage_staff', rogue: 'rogue_scimitar' };
 
 // Spectator palette (pixel crowd)
 const CROWD_COLORS = [
@@ -74,6 +76,11 @@ export default class BattleScene extends Phaser.Scene {
         frameWidth: 64, frameHeight: 64,
       });
     });
+    ['warrior', 'mage', 'rogue'].forEach((cls) => {
+      this.load.spritesheet(`${cls}_weapon`, `/items/${CLASS_WEAPON[cls]}.png`, {
+        frameWidth: 64, frameHeight: 64,
+      });
+    });
   }
 
   // ── 2. Create scene ────────────────────────────────────────────────────
@@ -82,6 +89,7 @@ export default class BattleScene extends Phaser.Scene {
     this._buildArena();
     this._buildFloorFog();
     this._registerAnimations();
+    this._registerWeaponAnimations();
     this._buildOverlays();
     this._buildTopHud();
 
@@ -312,6 +320,36 @@ export default class BattleScene extends Phaser.Scene {
     });
   }
 
+  _registerWeaponAnimations() {
+    const Fw = makeF(WEAPON_COLS);
+    // Weapon overlay PNGs only have content in rows 60-69 (bottom of the sheet).
+    // Row layout (LPC order: N/W/S/E per animation type):
+    //   60-63 = Walk (East = row 63), 64-67 = Slash (East = row 67), 68 = Hurt, 69 = Death
+    const defs = {
+      idle:   { frames: [Fw(63, 0)],                                     rate: 1,  loop: -1 },
+      walk:   { frames: Array.from({ length: 9 }, (_, i) => Fw(63, i)),  rate: 9,  loop: -1 },
+      attack: { frames: Array.from({ length: 6 }, (_, i) => Fw(67, i)),  rate: 12, loop: 0  },
+      hurt:   { frames: [Fw(68, 0), Fw(68, 1), Fw(68, 2)],              rate: 8,  loop: 0  },
+      dead:   { frames: Array.from({ length: 6 }, (_, i) => Fw(69, i)),  rate: 6,  loop: 0  },
+      jump:   { frames: [Fw(63, 0)],                                     rate: 1,  loop: -1 },
+    };
+    ['warrior', 'mage', 'rogue'].forEach((cls) => {
+      const key = `${cls}_weapon`;
+      if (!this.textures.exists(key)) return;
+      Object.entries(defs).forEach(([name, def]) => {
+        const animKey = `${cls}_weapon_${name}`;
+        if (!this.anims.exists(animKey)) {
+          this.anims.create({
+            key:       animKey,
+            frames:    this.anims.generateFrameNumbers(key, { frames: def.frames }),
+            frameRate: def.rate,
+            repeat:    def.loop,
+          });
+        }
+      });
+    });
+  }
+
   // ── Overlays (countdown / result / vs) ─────────────────────────────────
   _buildOverlays() {
     this.overlayBg = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.65)
@@ -332,8 +370,8 @@ export default class BattleScene extends Phaser.Scene {
 
   // ── Top HUD (permanent HP bars) ────────────────────────────────────────
   _buildTopHud() {
-    // Dark strip background
-    this.add.rectangle(W / 2, 19, W, 36, 0x000000, 0.72).setDepth(20);
+    // Dark strip background (stored so setHudVisible can toggle it)
+    this._hudBg = this.add.rectangle(W / 2, 19, W, 36, 0x000000, 0.72).setDepth(20);
 
     // ── Player 1 (left, "YOU") ──────────────────────────────────────────
     const p1Name = this.add.text(16, 9, 'YOU', {
@@ -365,12 +403,36 @@ export default class BattleScene extends Phaser.Scene {
       fontSize: '9px', fontFamily: 'monospace', color: '#f8fafc',
     }).setOrigin(0, 0.5).setDepth(21);
 
+    // Center timer
+    const timerText = this.add.text(W / 2, 19, '0:00', {
+      fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold', color: '#c9a84c',
+    }).setOrigin(0.5).setDepth(21);
+
+    // Class badge bars — thin colored bars on left/right edges, colored when player joins
+    const p1ClassBar = this.add.rectangle(3, 19, 6, 34, 0x444444, 0.3).setOrigin(0, 0.5).setDepth(22);
+    const p2ClassBar = this.add.rectangle(W - 3, 19, 6, 34, 0x444444, 0.3).setOrigin(1, 0.5).setDepth(22);
+
     this.hud = {
       p1Name, p1HpBg, p1HpBar, p1HpText,
       p2Name, p2HpBg, p2HpBar, p2HpText,
       p1MaxHp: 100, p2MaxHp: 100,
       p1PulseTween: null, p2PulseTween: null,
+      timerText, p1ClassBar, p2ClassBar,
+      battleStartMs: 0,
     };
+
+  }
+
+  // Show or hide the entire top HUD strip (HP bars + names)
+  setHudVisible(visible) {
+    if (!this.hud) return;
+    const keys = ['p1Name', 'p1HpBg', 'p1HpBar', 'p1HpText', 'p2Name', 'p2HpBg', 'p2HpBar', 'p2HpText'];
+    keys.forEach((k) => {
+      if (this.hud[k]?.active) this.hud[k].setVisible(visible);
+    });
+    // Also hide the dark background strip — it is the first rectangle added in _buildTopHud
+    // We store a ref to it so we can toggle it too
+    if (this._hudBg?.active) this._hudBg.setVisible(visible);
   }
 
   _updateHudSlot(slot, hp, maxHp) {
@@ -428,6 +490,11 @@ export default class BattleScene extends Phaser.Scene {
     const key    = `${cls}_sheet`;
     const useLPC = this.textures.exists(key);
 
+    // During waiting/connecting, display all sprites at center regardless of server x position
+    const phase = this.room?.state?.phase;
+    const isWaiting = !phase || phase === 'waiting' || phase === 'connecting';
+    const spawnX = isWaiting ? W / 2 : player.x;
+
     const visualY = player.y + FOOT_OFFSET;
     const topY  = visualY - (useLPC ? SPRITE_HEIGHT : 72);
     const hpY   = topY - 10;
@@ -435,46 +502,58 @@ export default class BattleScene extends Phaser.Scene {
     const meY   = topY - 36;
 
     // Floor shadow (ellipse under feet)
-    const shadow = this.add.ellipse(player.x, visualY + 2, 52, 12, 0x000000, 0.35);
+    const shadow = this.add.ellipse(spawnX, visualY + 2, 52, 12, 0x000000, 0.35);
     shadow.setDepth(1);
 
     // Class aura — colored glow circle behind sprite (depth 1, behind body at depth 2)
-    const aura = this.add.circle(player.x, visualY - SPRITE_HEIGHT / 2, 34, CLASS_COLORS[cls] ?? 0xe74c3c, 0.20);
+    const aura = this.add.circle(spawnX, visualY - SPRITE_HEIGHT / 2, 34, CLASS_COLORS[cls] ?? 0xe74c3c, 0.20);
     aura.setDepth(1);
 
     let body;
+    let weapon = null;
     if (useLPC) {
-      body = this.add.sprite(player.x, visualY, key);
+      body = this.add.sprite(spawnX, visualY, key);
       body.setOrigin(0.5, 1).setScale(SPRITE_SCALE).setFlipX(!player.facingRight);
       body.play(`${cls}_idle`);
+      if (cls === 'rogue') body.setScale(SPRITE_SCALE, SPRITE_SCALE * 0.86);
       body.setDepth(2);
+
+      // Weapon overlay — only shown if player has a weapon item equipped in their loadout
+      const weaponKey = `${cls}_weapon`;
+      if (this.textures.exists(weaponKey) && player.hasWeapon) {
+        const wScale = cls === 'rogue' ? [SPRITE_SCALE, SPRITE_SCALE * 0.86] : [SPRITE_SCALE, SPRITE_SCALE];
+        weapon = this.add.sprite(spawnX, visualY, weaponKey);
+        weapon.setOrigin(0.5, 1).setScale(wScale[0], wScale[1]).setFlipX(!player.facingRight);
+        weapon.play(`${cls}_weapon_idle`);
+        weapon.setDepth(2);
+      }
     } else {
-      body = this.add.rectangle(player.x, visualY, 42, 72, CLASS_COLORS[cls] ?? 0xe74c3c, 0.9);
+      body = this.add.rectangle(spawnX, visualY, 42, 72, CLASS_COLORS[cls] ?? 0xe74c3c, 0.9);
       body.setOrigin(0.5, 1);
       body.setStrokeStyle(2, isMe ? 0xffffff : 0x888888);
       body.setDepth(2);
     }
 
-    const nameLabel = this.add.text(player.x, nameY, player.username, {
+    const nameLabel = this.add.text(spawnX, nameY, player.username, {
       fontSize: '11px', fontFamily: 'monospace',
       color: isMe ? '#facc15' : '#f8fafc', fontStyle: 'bold',
     }).setOrigin(0.5, 1).setDepth(3);
 
-    const classLabel = this.add.text(player.x, nameY + 11, cls.toUpperCase(), {
+    const classLabel = this.add.text(spawnX, nameY + 11, cls.toUpperCase(), {
       fontSize: '9px', fontFamily: 'monospace', color: CLASS_HEX[cls] ?? '#e74c3c',
     }).setOrigin(0.5, 1).setDepth(3);
 
-    const hpBg  = this.add.rectangle(player.x, hpY, 56, 7, 0x1a1a1a).setStrokeStyle(1, 0x444444).setDepth(3);
-    const hpBar = this.add.rectangle(player.x - 28, hpY, 56, 7, 0x22c55e).setOrigin(0, 0.5).setDepth(3);
+    const hpBg  = this.add.rectangle(spawnX, hpY, 56, 7, 0x1a1a1a).setStrokeStyle(1, 0x444444).setDepth(3);
+    const hpBar = this.add.rectangle(spawnX - 28, hpY, 56, 7, 0x22c55e).setOrigin(0, 0.5).setDepth(3);
 
     const meTag = isMe
-      ? this.add.text(player.x, meY, '▼ YOU', {
+      ? this.add.text(spawnX, meY, '▼ YOU', {
           fontSize: '9px', fontFamily: 'monospace', color: '#facc15', fontStyle: 'bold',
         }).setOrigin(0.5).setDepth(3)
       : null;
 
     this.sprites.set(sessionId, {
-      body, shadow, aura, useLPC, cls,
+      body, shadow, aura, weapon, useLPC, cls,
       nameLabel, classLabel, hpBg, hpBar, meTag, dcLabel: null, stunLabel: null,
       maxHp: player.maxHp || 100,
       deathPlayed: false,
@@ -487,6 +566,7 @@ export default class BattleScene extends Phaser.Scene {
       this.hud[slot + 'Name'].setText(player.username);
       this.hud[slot + 'MaxHp'] = player.maxHp || 100;
       this._updateHudSlot(slot, player.hp, player.maxHp || 100);
+      this.hud[slot + 'ClassBar'].setFillStyle(CLASS_COLORS[cls] ?? 0x888888).setAlpha(1);
     }
   }
 
@@ -500,12 +580,34 @@ export default class BattleScene extends Phaser.Scene {
       this._updateHudSlot(slot, player.hp, this.hud[slot + 'MaxHp']);
     }
 
-    const x = player.x;
+    // During waiting/connecting keep sprite pinned to center; don't follow server position
+    const phase = this.room?.state?.phase;
+    const isWaiting = !phase || phase === 'waiting' || phase === 'connecting';
+    const x = isWaiting ? W / 2 : player.x;
     const visualY = player.y + FOOT_OFFSET;
 
     s.body.setPosition(x, visualY);
     if (s.useLPC) s.body.setFlipX(!player.facingRight);
     if (s.aura?.active) s.aura.setPosition(x, visualY - SPRITE_HEIGHT / 2);
+    // Lazy-create weapon overlay if loadout fetch completed after initial spawn
+    if (s.useLPC && player.hasWeapon && !s.weapon) {
+      const weaponKey = `${s.cls}_weapon`;
+      if (this.textures.exists(weaponKey)) {
+        const wScale = s.cls === 'rogue' ? [SPRITE_SCALE, SPRITE_SCALE * 0.86] : [SPRITE_SCALE, SPRITE_SCALE];
+        s.weapon = this.add.sprite(x, visualY, weaponKey);
+        s.weapon.setOrigin(0.5, 1).setScale(wScale[0], wScale[1]).setFlipX(!player.facingRight);
+        s.weapon.play(`${s.cls}_weapon_idle`);
+        s.weapon.setDepth(2);
+      }
+    }
+
+    if (s.weapon?.active) {
+      // Hide weapon when dead/disconnected; otherwise follow hasWeapon flag
+      const alive = player.state !== 'dead' && player.state !== 'disconnected' && !s.deathPlayed;
+      s.weapon.setVisible(alive && Boolean(player.hasWeapon));
+      s.weapon.setPosition(x, visualY);
+      s.weapon.setFlipX(!player.facingRight);
+    }
 
     // Floor shadow follows feet, shrinks when jumping
     const shadowScale = Math.max(0.3, 1 - (FLOOR_Y - player.y) / 200);
@@ -571,10 +673,14 @@ export default class BattleScene extends Phaser.Scene {
 
       if (st === 'disconnected') {
         s.body.setAlpha(0.3);
+        if (s.weapon?.active) s.weapon.setAlpha(0.3);
         this._ensureDcLabel(s, x, topY - 12);
         return;
       }
-      if (s.body.alpha < 1 && st !== 'dead') s.body.setAlpha(1);
+      if (s.body.alpha < 1 && st !== 'dead') {
+        s.body.setAlpha(1);
+        if (s.weapon?.active) s.weapon.setAlpha(1);
+      }
       if (s.dcLabel) s.dcLabel.setVisible(false);
 
       if (st === 'dead') {
@@ -587,12 +693,18 @@ export default class BattleScene extends Phaser.Scene {
           } else {
             s.body.setAlpha(0.35);
           }
+          if (s.weapon?.active) s.weapon.setVisible(false);
         }
         return;
       }
 
       const animKey = `${s.cls}_${STATE_ANIM[st] ?? 'idle'}`;
       if (this.anims.exists(animKey)) s.body.play(animKey, true);
+
+      if (s.weapon?.active) {
+        const weaponAnimKey = `${s.cls}_weapon_${STATE_ANIM[st] ?? 'idle'}`;
+        if (this.anims.exists(weaponAnimKey)) s.weapon.play(weaponAnimKey, true);
+      }
 
     } else {
       const st = player.state;
@@ -640,7 +752,7 @@ export default class BattleScene extends Phaser.Scene {
     if (!s) return;
     if (s.stunLabel) this.tweens.killTweensOf(s.stunLabel);
     if (s.hpPulseTween) this.tweens.killTweensOf(s.hpBar);
-    [s.body, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpBar, s.meTag, s.dcLabel, s.stunLabel]
+    [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpBar, s.meTag, s.dcLabel, s.stunLabel]
       .forEach((o) => o?.destroy());
     this.sprites.delete(sessionId);
   }
@@ -652,14 +764,28 @@ export default class BattleScene extends Phaser.Scene {
     if (phase !== this.lastPhase) {
       this.lastPhase = phase;
 
+      // Show HUD only during active combat phases
+      this.setHudVisible(phase === 'battle' || phase === 'countdown');
+
       if (phase === 'countdown') {
         this._showVsScreen(state);
+        // Move sprites to their actual server positions when battle is about to start
+        this.sprites.forEach((s, sessionId) => {
+          const p = state.players?.get(sessionId);
+          if (p) {
+            const visualY = p.y + FOOT_OFFSET;
+            s.body.setPosition(p.x, visualY);
+            if (s.aura?.active) s.aura.setPosition(p.x, visualY - SPRITE_HEIGHT / 2);
+            s.shadow.setPosition(p.x, FLOOR_Y + FOOT_OFFSET + 2);
+          }
+        });
       }
       if (phase === 'battle') {
         this._clearVsObjects();
         this.hideOverlay();
         this.vsText.setVisible(false);
         this.showBattleGo();
+        if (this.hud) this.hud.battleStartMs = this.time.now;
       }
       if (phase === 'finished') {
         this._showFinishSequence(state);
@@ -785,6 +911,7 @@ export default class BattleScene extends Phaser.Scene {
     this.overlayBg.setVisible(true);
     this.overlayText.setText(title).setColor(color).setVisible(true);
     this.overlaySubText.setText(sub).setVisible(true);
+    this._playSound(title.startsWith('VICTORY') ? 'victory' : 'defeat');
   }
 
   hideOverlay() {
@@ -834,6 +961,7 @@ export default class BattleScene extends Phaser.Scene {
 
   // ── 8. Damage number + particles + screen shake ─────────────────────────
   showDamageNumber(gameX, gameY, damage) {
+    this._playSound('hit');
     // Particle burst
     if (this.hitEmitter) {
       this.hitEmitter.explode(damage >= 20 ? 14 : 8, gameX, gameY);
@@ -868,6 +996,7 @@ export default class BattleScene extends Phaser.Scene {
 
   // ── 9. Ability visual effects ─────────────────────────────────────────────
   showAbilityEffect(d) {
+    this._playSound('ability');
     if (d.cls === 'warrior') this._showBashEffect(d.fromX, d.fromY, d.hit);
     if (d.cls === 'mage')    this._showFireballEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit);
     if (d.cls === 'rogue')   this._showBlinkEffect(d.fromX, d.fromY, d.toX);
@@ -876,6 +1005,11 @@ export default class BattleScene extends Phaser.Scene {
   _showBashEffect(x, y, hit) {
     const ring = this.add.circle(x, y, 10, 0xff6600, 0).setDepth(8);
     ring.setStrokeStyle(3, hit ? 0xff4400 : 0x886600);
+    const lbl = this.add.text(x, y - 60, 'BASH!', {
+      fontSize: '20px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#ff6600', stroke: '#000', strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(13);
+    this.tweens.add({ targets: lbl, y: y - 100, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
     this.tweens.add({
       targets: ring, scaleX: 10, scaleY: 5, alpha: 0,
       duration: 400, ease: 'Power2',
@@ -888,6 +1022,11 @@ export default class BattleScene extends Phaser.Scene {
 
   _showFireballEffect(fromX, fromY, toX, toY, hit) {
     const ball = this.add.circle(fromX, fromY - 30, 11, 0xff4400).setDepth(9);
+    const lbl = this.add.text(fromX, fromY - 70, 'FIREBALL!', {
+      fontSize: '18px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#ff4400', stroke: '#000', strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(13);
+    this.tweens.add({ targets: lbl, y: fromY - 110, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
     const core = this.add.circle(fromX, fromY - 30,  5, 0xffee00).setDepth(9);
 
     // Fire particle trail following the ball
@@ -939,6 +1078,11 @@ export default class BattleScene extends Phaser.Scene {
 
   _showBlinkEffect(fromX, fromY, toX) {
     const centerY = fromY - SPRITE_HEIGHT / 2;
+    const lbl = this.add.text(toX, fromY - 70, 'BLINK!', {
+      fontSize: '20px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#00ffcc', stroke: '#000', strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(13);
+    this.tweens.add({ targets: lbl, y: fromY - 110, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
 
     // Smoke burst at departure point
     const depart = this.add.particles(fromX, centerY, 'smoke_particle', {
@@ -980,5 +1124,85 @@ export default class BattleScene extends Phaser.Scene {
     });
   }
 
-  update() {}
+  update(time) {
+    if (!this.room) return;
+
+    // Timer update
+    if (this.hud?.battleStartMs > 0 && this.hud?.timerText?.active) {
+      const elapsed = Math.floor((time - this.hud.battleStartMs) / 1000);
+      const m = Math.floor(elapsed / 60);
+      const s = elapsed % 60;
+      this.hud.timerText.setText(`${m}:${String(s).padStart(2, '0')}`);
+    }
+
+    // Mage levitation
+    this.sprites.forEach((s, sessionId) => {
+      if (s.cls !== 'mage' || !s.useLPC || s.deathPlayed) return;
+      const p = this.room.state?.players?.get(sessionId);
+      if (!p || p.state !== 'idle') return;
+      const floatY = Math.sin(time * 0.0025) * 5;
+      const vy = p.y + FOOT_OFFSET + floatY;
+      s.body.setY(vy);
+      if (s.weapon?.active) s.weapon.setY(vy);
+      if (s.aura?.active) s.aura.setY(vy - SPRITE_HEIGHT / 2);
+    });
+  }
+
+  _playSound(type) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!this._audioCtx) this._audioCtx = new AudioCtx();
+      const ctx = this._audioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
+      const now = ctx.currentTime;
+
+      if (type === 'hit') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(160, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.1);
+        gain.gain.setValueAtTime(0.25, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        osc.start(now); osc.stop(now + 0.12);
+
+      } else if (type === 'ability') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.exponentialRampToValueAtTime(180, now + 0.28);
+        gain.gain.setValueAtTime(0.35, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+        osc.start(now); osc.stop(now + 0.32);
+
+      } else if (type === 'victory') {
+        [262, 330, 392, 523].forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = 'triangle';
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0, now + i * 0.13);
+          gain.gain.linearRampToValueAtTime(0.3, now + i * 0.13 + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.13 + 0.35);
+          osc.start(now + i * 0.13); osc.stop(now + i * 0.13 + 0.38);
+        });
+
+      } else if (type === 'defeat') {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(280, now);
+        osc.frequency.exponentialRampToValueAtTime(90, now + 0.55);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+        osc.start(now); osc.stop(now + 0.6);
+      }
+    } catch (_) {}
+  }
 }

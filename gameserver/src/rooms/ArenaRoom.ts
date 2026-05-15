@@ -4,7 +4,7 @@ import axios from "axios";
 import { ArenaState, Player } from "../schemas/ArenaState";
 
 const FASTAPI_URL = process.env.FASTAPI_URL || "http://localhost:8001";
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "dev-internal-secret";
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET;
 const SKIP_AUTH = process.env.SKIP_AUTH === "true";
 
 // ── Game constants ────────────────────────────────────────────────────────────
@@ -110,6 +110,9 @@ export class ArenaRoom extends Room<ArenaState> {
     player.maxHp = CLASS_HP[player.characterClass] ?? 100;
     player.hp = player.maxHp;
 
+    // Fetch equipment bonuses (fire-and-forget but applied before battle starts)
+    this.fetchAndApplyLoadout(player).catch(() => {});
+
     this.state.players.set(client.sessionId, player);
 
     console.log(`[ArenaRoom] ${player.username} joined (slot ${player.slotIndex})`);
@@ -152,6 +155,31 @@ export class ArenaRoom extends Room<ArenaState> {
 
   onDispose() {
     console.log("[ArenaRoom] room disposed");
+  }
+
+  // ── Private: fetch loadout bonuses from FastAPI and apply to player ─────────
+  private async fetchAndApplyLoadout(player: Player) {
+    if (!INTERNAL_SECRET) {
+      console.warn("[ArenaRoom] INTERNAL_SECRET is not configured; skipping loadout fetch");
+      return;
+    }
+    try {
+      const res = await axios.get(
+        `${FASTAPI_URL}/api/internal/user-loadout/${player.userId}`,
+        { headers: { "x-internal-secret": INTERNAL_SECRET }, timeout: 3000 }
+      );
+      const d = res.data;
+      player.attackBonus    = Number(d.attack_bonus    || 0);
+      player.abilityBonus   = Number(d.ability_bonus   || 0);
+      player.defendReduction = Math.min(0.5, Number(d.defend_reduction || 0) / 100); // cap at 50%
+      player.hpBonus        = Number(d.hp_bonus        || 0);
+      player.hasWeapon      = Boolean(d.has_weapon);
+      // Apply HP bonus
+      player.maxHp += player.hpBonus;
+      player.hp     = player.maxHp;
+    } catch {
+      // No items equipped — keep defaults (all 0)
+    }
   }
 
   // ── Private: countdown then start battle ─────────────────────────────────
@@ -232,7 +260,7 @@ export class ArenaRoom extends Room<ArenaState> {
             const dist  = Math.abs(player.x - opp.x);
             const yDist = Math.abs(player.y - opp.y);
             if (dist <= ATTACK_RANGE && !(opp.isGrounded === false && yDist > 40)) {
-              const dmg = ATTACK_DMG_MIN + Math.floor(Math.random() * (ATTACK_DMG_MAX - ATTACK_DMG_MIN + 1));
+              const dmg = ATTACK_DMG_MIN + Math.floor(Math.random() * (ATTACK_DMG_MAX - ATTACK_DMG_MIN + 1)) + player.attackBonus;
               this.dealDamage(sessionId, opp, oppSid, dmg, now);
             }
           });
@@ -258,7 +286,7 @@ export class ArenaRoom extends Room<ArenaState> {
                 hit = true;
                 opp.stunUntil  = now + BASH_STUN_MS;
                 opp.isStunned  = true;
-                this.dealDamage(sessionId, opp, oppSid, BASH_DMG, now);
+                this.dealDamage(sessionId, opp, oppSid, BASH_DMG + player.abilityBonus, now);
               }
             });
             this.broadcast("ability_used", { sessionId, cls: "warrior", fromX: player.x, fromY: player.y, hit });
@@ -280,7 +308,7 @@ export class ArenaRoom extends Room<ArenaState> {
                 const origX = opp.x;
                 const dir   = opp.x > player.x ? 1 : -1;
                 opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * FIREBALL_KNOCKBACK));
-                this.dealDamageAt(sessionId, opp, oppSid, FIREBALL_DMG, origX, opp.y, now);
+                this.dealDamageAt(sessionId, opp, oppSid, FIREBALL_DMG + player.abilityBonus, origX, opp.y, now);
               }
             });
 
@@ -325,8 +353,9 @@ export class ArenaRoom extends Room<ArenaState> {
   }
 
   private dealDamageAt(attackerSid: string, target: Player, targetSid: string, dmg: number, nx: number, ny: number, now: number) {
-    target.hp = Math.max(0, target.hp - dmg);
-    this.broadcast("damage_number", { x: nx, y: ny - 40, damage: dmg });
+    const effectiveDmg = Math.max(1, Math.round(dmg * (1 - target.defendReduction)));
+    target.hp = Math.max(0, target.hp - effectiveDmg);
+    this.broadcast("damage_number", { x: nx, y: ny - 40, damage: effectiveDmg });
     if (target.hp <= 0) {
       target.state = "dead";
       this.endMatch(attackerSid, targetSid, false);
@@ -353,6 +382,10 @@ export class ArenaRoom extends Room<ArenaState> {
 
     // Report result to FastAPI (fire-and-forget)
     if (winner?.userId && loser?.userId) {
+      if (!INTERNAL_SECRET) {
+        console.warn("[ArenaRoom] INTERNAL_SECRET is not configured; match result not reported");
+        return;
+      }
       axios
         .post(
           `${FASTAPI_URL}/api/internal/match-result`,

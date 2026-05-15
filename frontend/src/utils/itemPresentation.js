@@ -79,9 +79,15 @@ export function formatClassLabel(value) {
   return className.charAt(0).toUpperCase() + className.slice(1);
 }
 
+// Remap legacy DB image_path values that point to files that no longer exist
+const IMAGE_PATH_REMAP = {
+  '/items/warrior_sword.png': '/items/warrior_katana.png',
+  '/items/rogue_dagger.png':  '/items/rogue_scimitar.png',
+};
+
 export function getItemImageSrc(item) {
   const explicitPath = item?.image_path || item?.image || item?.icon_path;
-  if (explicitPath) return explicitPath;
+  if (explicitPath) return IMAGE_PATH_REMAP[explicitPath] || explicitPath;
 
   const scrollType = String(item?.scroll_type || item?.type || item?.item_id || item?.id || '').trim().toLowerCase();
   if (scrollType === 'normal_scroll') return '/items/normal_scroll.png';
@@ -90,13 +96,13 @@ export function getItemImageSrc(item) {
   const className = getClassKey(item) || 'warrior';
   const slot = getSlotKey(item) || 'weapon';
   const weaponAssetByClass = {
-    warrior: 'warrior_sword',
+    warrior: 'warrior_katana',
     mage: 'mage_staff',
-    rogue: 'rogue_dagger',
+    rogue: 'rogue_scimitar',
   };
 
   if (slot === 'weapon') {
-    return `/items/${weaponAssetByClass[className] || 'warrior_sword'}.png`;
+    return `/items/${weaponAssetByClass[className] || 'warrior_katana'}.png`;
   }
 
   return `/items/${className}_${slot}.png`;
