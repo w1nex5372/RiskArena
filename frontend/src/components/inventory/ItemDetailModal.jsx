@@ -13,6 +13,7 @@ import {
   getTierLabel,
   getTierTheme,
 } from '../../utils/itemPresentation';
+import WeaponIcon from '../WeaponIcon';
 
 const SELL_PRICES = {
   common: 5,
@@ -35,15 +36,30 @@ function ItemImage({ item, size = 80 }) {
   const src = getItemImageSrc(item);
   const slot = getSlotKey(item);
   const Icon = SLOT_ICON[slot] || Sword;
+  const imagePath = item?.image_path;
 
-  if (failed) {
+  if (slot === 'weapon' && imagePath && !failed) {
+    return (
+      <div
+        style={{
+          width: size, height: size, borderRadius: 18, flexShrink: 0,
+          overflow: 'hidden', border: `2px solid ${theme.border}`,
+          boxShadow: `0 0 14px ${theme.glow}`,
+        }}
+      >
+        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} />
+      </div>
+    );
+  }
+
+  if (!src || failed) {
     return (
       <div
         style={{
           width: size,
           height: size,
           borderRadius: 18,
-          background: theme.soft,
+          backgroundColor: theme.soft,
           border: `2px solid ${theme.border}`,
           display: 'flex',
           alignItems: 'center',

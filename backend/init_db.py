@@ -50,6 +50,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS max_win_streak     INTEGER NOT NULL D
 ALTER TABLE users ADD COLUMN IF NOT EXISTS settings           JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS wins               INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS losses             INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS energy INTEGER NOT NULL DEFAULT 10;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS energy_last_regen TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS promo_codes (
     code         VARCHAR(50) PRIMARY KEY,
@@ -437,40 +439,7 @@ async def init():
             END;
             $$;
         """)
-        # Seed items (idempotent via ON CONFLICT DO NOTHING on name+class_name+tier)
-        await conn.execute("""
-            INSERT INTO items
-                (name, description, class_name, slot, tier, price,
-                 attack_bonus, ability_bonus, defend_reduction, hp_bonus, risk_win_chance, image_path)
-            VALUES
-            -- COMMON starter items (price = 0)
-            ('Iron Sword',       'Starter warrior weapon',  'warrior', 'weapon',  'common',    0,    3,  0, 0,  5, 0.00, '/items/warrior_sword.png'),
-            ('Bronze Plate',     'Starter warrior armor',   'warrior', 'armor',   'common',    0,    0,  0, 1, 10, 0.00, '/items/warrior_armor.png'),
-            ('War Horn',         'Starter warrior ability', 'warrior', 'ability', 'common',    0,    0,  3, 0,  0, 0.00, '/items/warrior_ability.png'),
-            ('Apprentice Staff', 'Starter mage weapon',     'mage',    'weapon',  'common',    0,    2,  3, 0,  0, 0.00, '/items/mage_staff.png'),
-            ('Cloth Robes',      'Starter mage armor',      'mage',    'armor',   'common',    0,    0,  0, 0,  8, 0.00, '/items/mage_armor.png'),
-            ('Spell Scroll',     'Starter mage ability',    'mage',    'ability', 'common',    0,    0,  4, 0,  0, 0.03, '/items/mage_ability.png'),
-            ('Short Dagger',     'Starter rogue weapon',    'rogue',   'weapon',  'common',    0,    4,  0, 0,  0, 0.05, '/items/rogue_dagger.png'),
-            ('Leather Vest',     'Starter rogue armor',     'rogue',   'armor',   'common',    0,    0,  0, 2,  6, 0.00, '/items/rogue_armor.png'),
-            ('Poison Vial',      'Starter rogue ability',   'rogue',   'ability', 'common',    0,    0,  3, 0,  0, 0.05, '/items/rogue_ability.png'),
-            -- UNCOMMON shop items (price = 500)
-            ('Knight''s Blade',  'Uncommon warrior weapon', 'warrior', 'weapon',  'uncommon',  500,  6,  0, 0, 10, 0.00, NULL),
-            ('Crystal Staff',    'Uncommon mage weapon',    'mage',    'weapon',  'uncommon',  500,  5,  6, 0,  0, 0.00, NULL),
-            ('Shadow Dagger',    'Uncommon rogue weapon',   'rogue',   'weapon',  'uncommon',  500,  7,  0, 0,  0, 0.08, NULL),
-            -- RARE shop items (price = 1500)
-            ('Ares'' Sword',     'Rare warrior weapon',     'warrior', 'weapon',  'rare',     1500, 10,  0, 3, 15, 0.00, NULL),
-            ('Arcane Staff',     'Rare mage weapon',        'mage',    'weapon',  'rare',     1500,  8, 10, 0,  0, 0.08, NULL),
-            ('Viper''s Fang',    'Rare rogue weapon',       'rogue',   'weapon',  'rare',     1500, 11,  0, 2,  0, 0.12, NULL),
-            -- EPIC drop-only items (price = 0)
-            ('Warbringer',       'Epic warrior weapon',     'warrior', 'weapon',  'epic',        0, 15,  5, 6, 25, 0.00, NULL),
-            ('Void Staff',       'Epic mage weapon',        'mage',    'weapon',  'epic',        0, 13, 15, 0,  0, 0.15, NULL),
-            ('Deathmark Blade',  'Epic rogue weapon',       'rogue',   'weapon',  'epic',        0, 16,  0, 4,  0, 0.18, NULL),
-            -- LEGENDARY drop-only items (price = 0)
-            ('Blade of Olympus', 'Legendary warrior weapon','warrior', 'weapon',  'legendary',   0, 22,  8,10, 40, 0.00, NULL),
-            ('Staff of Zeus',    'Legendary mage weapon',   'mage',    'weapon',  'legendary',   0, 18, 20, 0,  0, 0.25, NULL),
-            ('Shadow of Hermes', 'Legendary rogue weapon',  'rogue',   'weapon',  'legendary',   0, 20,  6, 6,  0, 0.28, NULL)
-            ON CONFLICT (name, class_name, tier) DO NOTHING
-        """)
+        # Item seeding handled via FULL_ITEM_CATALOG in itemization.py
         print("✅ All tables created successfully.")
         await conn.execute("""
             ALTER TABLE inventory DROP CONSTRAINT IF EXISTS inventory_item_rarity_check;
@@ -639,6 +608,24 @@ async def init():
                 END
             FROM items i
             WHERE inv.item_id = i.id
+        """)
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'equipped_items' AND column_name = 'class_name'
+                ) THEN
+                    ALTER TABLE equipped_items ADD COLUMN class_name TEXT NOT NULL DEFAULT '';
+                    UPDATE equipped_items ei
+                    SET class_name = COALESCE(
+                        (SELECT class_name FROM users WHERE id = ei.user_id), 'warrior'
+                    );
+                    ALTER TABLE equipped_items DROP CONSTRAINT IF EXISTS equipped_items_pkey;
+                    ALTER TABLE equipped_items ADD PRIMARY KEY (user_id, slot, class_name);
+                END IF;
+            END;
+            $$;
         """)
     finally:
         await conn.close()

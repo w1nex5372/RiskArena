@@ -85,6 +85,49 @@ const IMAGE_PATH_REMAP = {
   '/items/rogue_dagger.png':  '/items/rogue_scimitar.png',
 };
 
+const LPC_WEAPON_SHEETS = new Set([
+  '/items/warrior_katana.png',
+  '/items/mage_staff.png',
+  '/items/rogue_scimitar.png',
+]);
+
+const LPC_FRAME_W = 64;
+const LPC_FRAME_H = 64;
+
+// Per-sheet dimensions (width × height in pixels)
+const LPC_SHEET_DIMS = {
+  '/items/warrior_katana.png': [1152, 4480],
+  '/items/mage_staff.png':     [1536, 4224],
+  '/items/rogue_scimitar.png': [1152, 4480],
+};
+
+// Per-weapon icon frame: row/col/crop tuned by visual inspection of each sheet.
+// warrior/rogue: row 67 = east-attack mid-swing (sword extended to the right, most prominent).
+// mage: rows 0-3 at the TOP of the sheet are a thrust/walk block with clear vertical staff shapes;
+//        row 3 col 6 = east thrust, staff extended to the right.
+const LPC_ICON_CONFIG = {
+  '/items/warrior_katana.png':  { row: 67, col: 2, crop: 64 },
+  '/items/mage_staff.png':      { row: 3,  col: 6, crop: 64 },
+  '/items/rogue_scimitar.png':  { row: 67, col: 2, crop: 64 },
+};
+
+export function getWeaponSpriteStyle(item, size) {
+  const path = item?.image_path;
+  if (!path || !LPC_WEAPON_SHEETS.has(path)) return null;
+  const [sheetW, sheetH] = LPC_SHEET_DIMS[path] || [1152, 4480];
+  const { row, col, crop } = LPC_ICON_CONFIG[path] || { row: 67, col: 2, crop: 64 };
+  const scale = size / crop;
+  const frameX = col * LPC_FRAME_W;
+  const frameY = row * LPC_FRAME_H;
+  return {
+    backgroundImage: `url(${path})`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: `-${frameX * scale}px -${frameY * scale}px`,
+    backgroundSize: `${sheetW * scale}px ${sheetH * scale}px`,
+    imageRendering: 'pixelated',
+  };
+}
+
 export function getItemImageSrc(item) {
   // Scrolls first — they have no slot field
   const scrollType = String(item?.scroll_type || item?.type || item?.item_id || item?.id || '').trim().toLowerCase();

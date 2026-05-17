@@ -22,6 +22,7 @@ import {
   getTierLabel,
   getTierTheme,
 } from '../../utils/itemPresentation';
+import WeaponIcon from '../WeaponIcon';
 
 const HUB_TABS = [
   { key: 'loadout', label: 'Inventory', helper: 'Your collected gear', cta: 'Manage', Icon: Backpack },
@@ -68,6 +69,11 @@ const SCROLL_OPTIONS = [
 
 function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
   const [failed, setFailed] = useState(false);
+  const imagePath = item?.image_path;
+  const isWeapon = getSlotKey(item) === 'weapon';
+  if (isWeapon && imagePath && !failed) {
+    return <WeaponIcon imagePath={imagePath} size={60} borderRadius={10} />;
+  }
   if (!src || failed) {
     return <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />;
   }
@@ -107,12 +113,19 @@ function ItemImage({ item, size = 52 }) {
   const slot = getSlotKey(item);
   const Icon = TAB_ICON[formatSlotLabel(slot)] || Sword;
   const ringClass = rarityRingClass(item);
+  const imagePath = item?.image_path;
 
-  useEffect(() => {
-    setFailed(false);
-  }, [src]);
+  useEffect(() => { setFailed(false); }, [src]);
 
-  if (failed) {
+  if (slot === 'weapon' && imagePath && !failed) {
+    return (
+      <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
+        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} />
+      </div>
+    );
+  }
+
+  if (!src || failed) {
     return (
       <div
         className={ringClass}

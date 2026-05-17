@@ -15,6 +15,7 @@ import {
   getTierKey,
   getTierTheme,
 } from '../../utils/itemPresentation';
+import WeaponIcon from '../WeaponIcon';
 
 const SHOP_TIERS = ['common', 'uncommon', 'rare'];
 const SHOP_CLASSES = ['all', 'warrior', 'mage', 'rogue'];
@@ -44,12 +45,22 @@ function ItemImage({ item, size = 54 }) {
   const [failed, setFailed] = useState(false);
   const theme = getTierTheme(item);
   const src = getItemImageSrc(item);
-  const Icon = SLOT_ICON[getSlotKey(item)] || Sword;
+  const slot = getSlotKey(item);
+  const Icon = SLOT_ICON[slot] || Sword;
   const ringClass = rarityRingClass(item);
+  const imagePath = item?.image_path;
 
   useEffect(() => { setFailed(false); }, [src]);
 
-  if (failed) {
+  if (slot === 'weapon' && imagePath && !failed) {
+    return (
+      <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
+        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} />
+      </div>
+    );
+  }
+
+  if (!src || failed) {
     return (
       <div className={ringClass} style={{
         width: size, height: size, borderRadius: 14, flexShrink: 0,

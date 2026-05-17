@@ -53,6 +53,13 @@ function authConfig() {
   };
 }
 
+axios.defaults.withCredentials = true;
+axios.interceptors.request.use((config) => {
+  const token = getStoredSessionToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
 // Prize links configuration
 
 
@@ -1306,45 +1313,8 @@ function App() {
           data: error.response?.data
         });
         
-        // Don't show multiple error toasts - just log and proceed to fallback
-        console.log('⚠️ Auth failed - attempting fallback authentication...');
-        
-        // If we have Telegram user data, try to find existing account
-        if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe) {
-          const telegramUser = window.Telegram.WebApp.initDataUnsafe.user;
-          if (telegramUser && telegramUser.id) {
-            try {
-              console.log('Trying to find existing user by Telegram ID:', telegramUser.id);
-              const response = await axios.get(`${API}/users/telegram/${telegramUser.id}`);
-              
-              if (response.data) {
-                console.log('Found existing user with tokens!', response.data);
-
-                cancelFallbackTimeout();
-                setUser(response.data);
-                saveUserSession(response.data);
-                setIsLoading(false);
-                cancelAuthTimeout();
-
-                toast.success(`Welcome back, ${response.data.first_name}!`);
-                  
-                setTimeout(() => {
-                  loadUserPrizes();
-                  loadDerivedWallet();
-                }, 1000);
-                
-                return;
-              }
-            } catch (lookupError) {
-              console.log('User not found by Telegram ID - will create new account');
-              // Don't show error toast here - fallback will handle it
-            }
-          }
-        }
-        
-        // If all else fails, fallback will handle user creation
-        console.log('⚠️ Auth failed - fallback will create user in 2 seconds...');
-        // Note: isLoading stays true so fallback can detect and handle it
+        console.log('⚠️ Auth failed - secure fallback will retry verified Telegram initData only.');
+        // Note: isLoading stays true so fallback can retry once and then surface the error.
       }
     };
 
@@ -1368,98 +1338,42 @@ function App() {
         return;
       }
       
-      // No user found - create one
-      console.log('✅ No user found - activating fallback mechanism...');
-        
-        let telegramUser = null;
-        
-        // Try to get Telegram user data even if authentication failed
-        if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe) {
-          telegramUser = window.Telegram.WebApp.initDataUnsafe.user;
-        }
-        
-        if (telegramUser && telegramUser.id) {
-          // Try to find existing user in database by Telegram ID
-          try {
-            const response = await axios.get(`${API}/users/telegram/${telegramUser.id}`);
-            if (response.data) {
-              cancelFallbackTimeout();
-              setUser(response.data);
-              saveUserSession(response.data);
-              setIsLoading(false);
-              cancelAuthTimeout();
+      console.log('No authenticated user found - retrying verified Telegram authentication once.');
 
-              toast.success(`Welcome back, ${telegramUser.first_name}!`);
-
-              return;
-            }
-          } catch (e) {
-            console.log('User not found in database, will create fallback');
-          }
-        }
-
-        // Last resort fallback - create and save to backend
-        const fallbackTelegramData = {
-          id: telegramUser?.id || Date.now(),
-          first_name: telegramUser?.first_name || 'Player',
-          last_name: telegramUser?.last_name || '',
-          username: telegramUser?.username || '',
-          photo_url: telegramUser?.photo_url || '',
-          auth_date: Math.floor(Date.now() / 1000), // Unix timestamp
-          hash: 'fallback-hash-' + Date.now() // Fallback hash
-        };
-        
-        const fallbackUserCreate = {
-          telegram_auth_data: fallbackTelegramData
-        };
-        
+      const webApp = window.Telegram?.WebApp;
+      const telegramUser = webApp?.initDataUnsafe?.user;
+      if (webApp?.initData && telegramUser?.id) {
         try {
-          // Save fallback user to backend database
-          const response = await axios.post(`${API}/auth/telegram`, fallbackUserCreate);
+          const initDataParams = new URLSearchParams(webApp.initData);
+          const authDate = parseInt(initDataParams.get('auth_date') || `${Math.floor(Date.now() / 1000)}`, 10);
+          const response = await axios.post(`${API}/auth/telegram`, {
+            telegram_auth_data: {
+              id: parseInt(telegramUser.id),
+              first_name: telegramUser.first_name || 'Telegram User',
+              last_name: telegramUser.last_name || '',
+              username: telegramUser.username || '',
+              photo_url: telegramUser.photo_url || '',
+              auth_date: authDate,
+              hash: webApp.initData,
+              init_data: webApp.initData,
+              telegram_id: parseInt(telegramUser.id)
+            }
+          });
+
           if (response.data) {
-            cancelFallbackTimeout();
             setUser(response.data);
             saveUserSession(response.data);
             cancelAuthTimeout();
-
-            toast.success('Account created successfully!');
+            toast.success(`Welcome back, ${response.data.first_name}!`);
+            return;
           }
         } catch (error) {
-          console.error('Fallback account creation failed:', error);
-
-          // Small delay before retrying fetch in case the user was created concurrently
-          if (telegramUser && telegramUser.id) {
-            try {
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              const retryResponse = await axios.get(`${API}/users/telegram/${telegramUser.id}`);
-
-              if (retryResponse.data) {
-                cancelFallbackTimeout();
-                setUser(retryResponse.data);
-                saveUserSession(retryResponse.data);
-                setIsLoading(false);
-                cancelAuthTimeout();
-                toast.success(`Welcome back, ${telegramUser.first_name}!`);
-                return;
-              }
-            } catch (retryError) {
-              console.error('Retry lookup after fallback failure also failed:', retryError);
-            }
-          }
-
-          // If backend save fails, use frontend-only fallback
-          cancelFallbackTimeout();
-          setUser({
-            id: 'fallback-' + Date.now(),
-            first_name: fallbackTelegramData.first_name,
-            last_name: fallbackTelegramData.last_name,
-            token_balance: 0,
-            telegram_id: fallbackTelegramData.id,
-            username: fallbackTelegramData.username
-          });
-          cancelAuthTimeout();
-          toast.warning('Using temporary account - limited functionality');
+          console.error('Verified Telegram fallback failed:', error);
         }
+      }
+
+      cancelAuthTimeout();
+      toast.error('Telegram authentication failed. Reopen the app from Telegram.');
       // Always ensure loading is stopped
       setIsLoading(false);
     }, 3000); // 3 seconds - gives real auth time to complete, but not too long
@@ -1659,7 +1573,7 @@ function App() {
       // Refresh user data to get updated balance
       setTimeout(async () => {
         try {
-          const userResponse = await axios.get(`${API}/users/telegram/${user.telegram_id}`);
+          const userResponse = await axios.get(`${API}/me`);
           if (userResponse.data) {
             setUser(userResponse.data);
             console.log('💰 Winner balance updated!');
@@ -2231,33 +2145,55 @@ function App() {
   }
 
   // Loading screen
-  if (isLoading) {
-    console.log('🔄 Rendering: LOADING screen');
+  if (isLoading || !user) {
+    const loadingMsg = isLoading ? 'Authenticating...' : 'Entering the Arena...';
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{background: 'linear-gradient(135deg, #08080f 0%, #1a0320 40%, #08080f 100%)'}}>
-        <Card className="w-full max-w-md bg-[#0d0d1a]/95 border-red-900/40">
-          <CardContent className="p-8 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-            <h3 className="text-xl font-bold text-white mb-2">Connecting to Telegram...</h3>
-            <p className="text-slate-400">Authenticating your account</p>
-          </CardContent>
-        </Card>
-        <Toaster richColors position="top-right" />
-      </div>
-    );
-  }
+      <div style={{
+        minHeight: '100vh',
+        background: 'radial-gradient(ellipse at 50% 30%, rgba(139,0,0,0.18) 0%, transparent 60%), linear-gradient(180deg, #08080f 0%, #130818 50%, #08080f 100%)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: 24, position: 'relative', overflow: 'hidden',
+      }}>
+        {/* Background glow orbs */}
+        <div style={{ position: 'absolute', top: '20%', left: '50%', transform: 'translateX(-50%)', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, rgba(139,0,0,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
-  if (!user) {
-    console.log('🔄 Rendering: NO USER screen');
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{background: 'linear-gradient(135deg, #08080f 0%, #1a0320 40%, #08080f 100%)'}}>
-        <Card className="w-full max-w-md bg-[#0d0d1a]/95 border-red-900/40">
-          <CardContent className="p-8 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-            <h3 className="text-xl font-bold text-white mb-2">Loading SpinWar...</h3>
-            <p className="text-slate-400">Connecting to Telegram Web App</p>
-          </CardContent>
-        </Card>
+        {/* Logo area */}
+        <div style={{ textAlign: 'center', marginBottom: 48 }}>
+          {/* Crossed swords icon */}
+          <div style={{ fontSize: 56, marginBottom: 16, filter: 'drop-shadow(0 0 18px rgba(201,168,76,0.5))' }}>⚔️</div>
+          <div style={{ fontSize: 32, fontWeight: 900, letterSpacing: 4, color: '#fff', textTransform: 'uppercase', textShadow: '0 0 30px rgba(201,168,76,0.4)' }}>
+            Risk<span style={{ color: '#c9a84c' }}>Arena</span>
+          </div>
+          <div style={{ fontSize: 12, letterSpacing: 6, color: 'rgba(201,168,76,0.6)', textTransform: 'uppercase', marginTop: 6 }}>
+            Season 1 · Rise to Risk
+          </div>
+        </div>
+
+        {/* Spinner */}
+        <div style={{ position: 'relative', width: 56, height: 56, marginBottom: 24 }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%',
+            border: '2px solid rgba(255,255,255,0.05)',
+            borderTopColor: '#c9a84c',
+            borderRightColor: 'rgba(201,168,76,0.4)',
+            animation: 'spin 1s linear infinite',
+          }} />
+          <div style={{
+            position: 'absolute', inset: 8, borderRadius: '50%',
+            border: '2px solid rgba(255,255,255,0.03)',
+            borderTopColor: 'rgba(139,0,0,0.8)',
+            animation: 'spin 1.5s linear infinite reverse',
+          }} />
+        </div>
+
+        <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, fontWeight: 600, letterSpacing: 1 }}>
+          {loadingMsg}
+        </div>
+        <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12, marginTop: 6 }}>
+          Compete. Climb. Dominate.
+        </div>
+
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <Toaster richColors position="top-right" />
       </div>
     );
@@ -2417,7 +2353,7 @@ function App() {
                 <span>Buy Tokens</span>
               </button>
 
-              {(user?.is_admin || user?.is_owner || user?.telegram_id === 7983427898) && (
+              {(user?.is_admin || user?.is_owner) && (
                 <button
                   onClick={() => setActiveTab('admin')}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
@@ -2816,6 +2752,7 @@ function App() {
                 onEnterRealTime={() => setInRealTimeArena(true)}
                 onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
                 onNavigateInventory={() => setActiveTab('inventory')}
+                onEnergySpent={(energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev)}
               />
             )}
 
@@ -3097,7 +3034,7 @@ function App() {
             )}
 
             {/* Admin Panel Tab */}
-            {activeTab === 'admin' && (user?.is_admin || user?.is_owner || user?.telegram_id === 7983427898) && (
+            {activeTab === 'admin' && (user?.is_admin || user?.is_owner) && (
               <AdminPanel API={API} rooms={rooms} isMobile={isMobile} onRoomsRefresh={loadRooms} socket={socket} />
             )}
 

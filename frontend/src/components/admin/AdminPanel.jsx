@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
+import apiClient from '../../api/client';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 
 function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
-  const ADMIN_KEY = process.env.REACT_APP_ADMIN_KEY || '';
   const [tgId, setTgId] = React.useState('');
   const [tokenAmount, setTokenAmount] = React.useState('');
   const [userInfo, setUserInfo] = React.useState(null);
@@ -52,7 +51,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
   const loadRoomConfigs = async () => {
     try {
-      const r = await axios.get(`${API}/admin/room-configs?admin_key=${ADMIN_KEY}`);
+      const r = await apiClient.get('/admin/room-configs');
       setRoomConfigs(r.data);
       const edits = {};
       r.data.forEach(rc => { edits[rc.room_type] = { ...rc }; });
@@ -65,9 +64,14 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     if (!edit) return;
     setRoomConfigSaving(s => ({ ...s, [roomType]: true }));
     try {
-      const r = await axios.post(
-        `${API}/admin/room-config/${roomType}?admin_key=${ADMIN_KEY}&min_bet=${Number(edit.min_bet)}&max_bet=${Number(edit.max_bet)}&max_players=${Number(edit.max_players)}&min_players=${Number(edit.min_players)}`
-      );
+      const r = await apiClient.post(`/admin/room-config/${roomType}`, null, {
+        params: {
+          min_bet: Number(edit.min_bet),
+          max_bet: Number(edit.max_bet),
+          max_players: Number(edit.max_players),
+          min_players: Number(edit.min_players),
+        },
+      });
       setRoomConfigs(prev => prev.map(rc => rc.room_type === roomType ? { ...rc, ...r.data } : rc));
       setRoomConfigEdits(prev => ({ ...prev, [roomType]: { ...prev[roomType], ...r.data } }));
       toast.success(`✅ ${roomType} room config saved`);
@@ -80,7 +84,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
   const loadFreerollConfig = async () => {
     try {
-      const r = await axios.get(`${API}/admin/freeroll-config?admin_key=${ADMIN_KEY}`);
+      const r = await apiClient.get('/admin/freeroll-config');
       setFreerollConfig(r.data);
       setFreerollPrize(String(r.data.prize));
       setFreerollMaxPlayers(String(r.data.max_players));
@@ -92,7 +96,13 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const saveFreerollConfig = async () => {
     setFreerollSaving(true);
     try {
-      const r = await axios.post(`${API}/admin/freeroll-config?admin_key=${ADMIN_KEY}&prize=${freerollPrize}&max_players=${freerollMaxPlayers}&is_locked=${freerollConfig.is_locked}`);
+      const r = await apiClient.post('/admin/freeroll-config', null, {
+        params: {
+          prize: freerollPrize,
+          max_players: freerollMaxPlayers,
+          is_locked: freerollConfig.is_locked,
+        },
+      });
       setFreerollConfig(r.data);
       toast.success('✅ Grand Arena config saved');
     } catch (e) {
@@ -105,7 +115,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const toggleFreerollLock = async () => {
     const newLocked = !freerollConfig.is_locked;
     try {
-      const r = await axios.post(`${API}/admin/freeroll-config?admin_key=${ADMIN_KEY}&is_locked=${newLocked}`);
+      const r = await apiClient.post('/admin/freeroll-config', null, {
+        params: { is_locked: newLocked },
+      });
       setFreerollConfig(r.data);
       toast.success(newLocked ? '🔒 Grand Arena locked' : '🔓 Grand Arena unlocked');
     } catch (e) {
@@ -118,7 +130,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     setLookupLoading(true);
     setUserInfo(null);
     try {
-      const r = await axios.get(`${API}/users/telegram/${tgId}`);
+      const r = await apiClient.get(`/users/telegram/${tgId}`);
       setUserInfo(r.data);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'User not found');
@@ -131,7 +143,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     const amt = parseInt(tokenAmount);
     if (!tgId || !amt) return toast.error('Enter Telegram ID and token amount');
     try {
-      const r = await axios.post(`${API}/admin/adjust-tokens/${tgId}?admin_key=${ADMIN_KEY}&tokens=${delta * amt}`);
+      const r = await apiClient.post(`/admin/adjust-tokens/${tgId}`, null, {
+        params: { tokens: delta * amt },
+      });
       toast.success(`✅ ${delta > 0 ? 'Added' : 'Removed'} ${amt} tokens. New balance: ${r.data.new_balance}`);
       setUserInfo(prev => prev ? { ...prev, token_balance: r.data.new_balance } : null);
     } catch (e) {
@@ -143,7 +157,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     if (!tgId) return toast.error('Enter Telegram ID first');
     try {
       const action = ban ? 'ban' : 'unban';
-      await axios.post(`${API}/admin/${action}/${tgId}?admin_key=${ADMIN_KEY}`);
+      await apiClient.post(`/admin/${action}/${tgId}`);
       toast.success(`✅ User ${tgId} ${ban ? 'banned' : 'unbanned'}`);
       setUserInfo(prev => prev ? { ...prev, is_banned: ban } : null);
     } catch (e) {
@@ -154,7 +168,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const setRole = async (isAdmin, isOwner) => {
     if (!tgId) return toast.error('Enter Telegram ID first');
     try {
-      const r = await axios.post(`${API}/admin/set-role/${tgId}?admin_key=${ADMIN_KEY}&is_admin=${isAdmin}&is_owner=${isOwner}`);
+      const r = await apiClient.post(`/admin/set-role/${tgId}`, null, {
+        params: { is_admin: isAdmin, is_owner: isOwner },
+      });
       toast.success(`✅ Role set to: ${r.data.role}`);
       setUserInfo(prev => prev ? { ...prev, is_admin: isAdmin, is_owner: isOwner } : null);
     } catch (e) {
@@ -167,7 +183,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     if (!tgId) return toast.error('Enter Telegram ID first');
     setGivingItems(true);
     try {
-      const r = await axios.post(`${API}/admin/give-all-items?admin_key=${ADMIN_KEY}&telegram_id=${tgId}`);
+      const r = await apiClient.post('/admin/give-all-items', null, {
+        params: { telegram_id: tgId },
+      });
       toast.success(`✅ Gave ${r.data.added} items to user ${tgId}`);
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Failed to give items');
@@ -179,9 +197,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const addFakePlayer = async () => {
     if (!fakeBet) return toast.error('Enter bet amount');
     try {
-      const r = await axios.post(
-        `${API}/admin/add-fake-player?room_type=${fakeRoom}&player_name=Anonymous&bet_amount=${fakeBet}&admin_key=${ADMIN_KEY}`
-      );
+      const r = await apiClient.post('/admin/add-fake-player', null, {
+        params: { room_type: fakeRoom, player_name: 'Anonymous', bet_amount: fakeBet },
+      });
       toast.success(`✅ ${r.data.message}. Players: ${r.data.players_count}/3`);
       setFakeBet('');
       onRoomsRefresh?.();
@@ -192,7 +210,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
   const removeFakePlayer = async () => {
     try {
-      const r = await axios.post(`${API}/admin/remove-fake-player?room_type=${fakeRoom}&admin_key=${ADMIN_KEY}`);
+      const r = await apiClient.post('/admin/remove-fake-player', null, {
+        params: { room_type: fakeRoom },
+      });
       toast.success(`✅ ${r.data.message}. Players: ${r.data.players_count}/3`);
       onRoomsRefresh?.();
     } catch (e) {
@@ -202,7 +222,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
   const forceStart = async () => {
     try {
-      const r = await axios.post(`${API}/admin/force-start/${fakeRoom}?admin_key=${ADMIN_KEY}`);
+      const r = await apiClient.post(`/admin/force-start/${fakeRoom}`);
       toast.success(`🚀 ${r.data.message}`);
       onRoomsRefresh?.();
     } catch (e) {
@@ -212,7 +232,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
   const forceCloseRoom = async (roomType) => {
     try {
-      await axios.post(`${API}/admin/force-close-room/${roomType}?admin_key=${ADMIN_KEY}`);
+      await apiClient.post(`/admin/force-close-room/${roomType}`);
       toast.success(`✅ ${roomType} room cleared`);
       onRoomsRefresh?.();
     } catch (e) {
@@ -222,7 +242,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
   const loadUsers = async () => {
     try {
-      const r = await axios.get(`${API}/admin/list-users?admin_key=${ADMIN_KEY}&limit=20&search=${encodeURIComponent(searchTerm)}`);
+      const r = await apiClient.get('/admin/list-users', {
+        params: { limit: 20, search: searchTerm },
+      });
       setUserList(r.data.users);
     } catch (e) {
       toast.error('Failed to load users');
@@ -233,8 +255,8 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     setStatsLoading(true);
     try {
       const [sR, mR] = await Promise.all([
-        axios.get(`${API}/admin/stats?admin_key=${ADMIN_KEY}`),
-        axios.get(`${API}/admin/maintenance-status?admin_key=${ADMIN_KEY}`),
+        apiClient.get('/admin/stats'),
+        apiClient.get('/admin/maintenance-status'),
       ]);
       setStats(sR.data);
       setMaintenance(mR.data.maintenance_mode);
@@ -248,7 +270,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const loadRecentGames = async () => {
     setGamesLoading(true);
     try {
-      const r = await axios.get(`${API}/admin/recent-games?admin_key=${ADMIN_KEY}&limit=10`);
+      const r = await apiClient.get('/admin/recent-games', { params: { limit: 10 } });
       setRecentGames(r.data.games);
     } catch (e) {
       toast.error('Failed to load games');
@@ -260,7 +282,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const loadChart = async () => {
     setChartLoading(true);
     try {
-      const r = await axios.get(`${API}/admin/daily-stats?admin_key=${ADMIN_KEY}&days=7`);
+      const r = await apiClient.get('/admin/daily-stats', { params: { days: 7 } });
       setDailyStats(r.data.days);
     } catch (e) {
       toast.error('Failed to load chart');
@@ -271,7 +293,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
   const toggleMaintenance = async () => {
     try {
-      const r = await axios.post(`${API}/admin/toggle-maintenance?admin_key=${ADMIN_KEY}`);
+      const r = await apiClient.post('/admin/toggle-maintenance');
       setMaintenance(r.data.maintenance_mode);
       toast.success(`🔧 Maintenance ${r.data.maintenance_mode ? 'ON' : 'OFF'}`);
     } catch (e) {
@@ -284,7 +306,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     if (!window.confirm(`Send to ALL users?\n\n"${broadcastMsg}"`)) return;
     setBroadcasting(true);
     try {
-      const r = await axios.post(`${API}/admin/broadcast?admin_key=${ADMIN_KEY}&message=${encodeURIComponent(broadcastMsg)}`);
+      const r = await apiClient.post('/admin/broadcast', null, {
+        params: { message: broadcastMsg },
+      });
       const d = r.data;
       if (d.failed > 0 && d.errors?.length) {
         toast.error(`Sent: ${d.sent}, Failed: ${d.failed} — ${d.errors[0]}`);
@@ -303,7 +327,14 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const createPromo = async () => {
     if (!promoCode || !promoAmount) return toast.error('Enter code and amount');
     try {
-      await axios.post(`${API}/admin/promo-codes?admin_key=${ADMIN_KEY}&code=${encodeURIComponent(promoCode)}&token_amount=${promoAmount}&max_uses=${promoUnlimited ? 1 : (promoMaxUses || 1)}&unlimited=${promoUnlimited}`);
+      await apiClient.post('/admin/promo-codes', null, {
+        params: {
+          code: promoCode,
+          token_amount: promoAmount,
+          max_uses: promoUnlimited ? 1 : (promoMaxUses || 1),
+          unlimited: promoUnlimited,
+        },
+      });
       toast.success(`✅ Code "${promoCode.toUpperCase()}" created`);
       setPromoCode(''); setPromoAmount(''); setPromoMaxUses('1'); setPromoUnlimited(false);
       loadPromoCodes();
@@ -314,14 +345,14 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
 
   const loadPromoCodes = async () => {
     try {
-      const r = await axios.get(`${API}/admin/promo-codes?admin_key=${ADMIN_KEY}`);
+      const r = await apiClient.get('/admin/promo-codes');
       setPromoCodes(r.data.codes);
     } catch (e) {}
   };
 
   const deletePromo = async (code) => {
     try {
-      await axios.delete(`${API}/admin/promo-codes/${code}?admin_key=${ADMIN_KEY}`);
+      await apiClient.delete(`/admin/promo-codes/${code}`);
       toast.success(`🗑️ Deleted ${code}`);
       setPromoCodes(prev => prev.filter(c => c.code !== code));
     } catch (e) {
@@ -332,7 +363,9 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
   const confirmSolPayment = async () => {
     if (!solWallet || !solSig) return toast.error('Enter wallet and signature');
     try {
-      await axios.post(`${API}/admin/process-payment?admin_key=${ADMIN_KEY}&wallet_address=${encodeURIComponent(solWallet)}&signature=${encodeURIComponent(solSig)}`);
+      await apiClient.post('/admin/process-payment', null, {
+        params: { wallet_address: solWallet, signature: solSig },
+      });
       toast.success('✅ Payment processed');
       setSolWallet(''); setSolSig('');
     } catch (e) {
@@ -340,7 +373,15 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
     }
   };
 
-  const exportCSV = () => window.open(`${API}/admin/export-users?admin_key=${ADMIN_KEY}`, '_blank');
+  const exportCSV = () => {
+    apiClient.get('/admin/export-users', { responseType: 'blob' })
+      .then((res) => {
+        const blobUrl = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+        window.open(blobUrl, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+      })
+      .catch(() => toast.error('Export failed'));
+  };
 
   React.useEffect(() => {
     if (!socket) return;

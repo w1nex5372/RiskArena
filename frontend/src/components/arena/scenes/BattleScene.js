@@ -12,8 +12,8 @@ const makeF = (cols) => (row, col) => row * cols + col;
 
 // Animation row definitions — same rows work for all LPC sheets
 const ANIM_ROW_DEFS = {
-  idle:   { rowFn: (F) => [F(10, 0)],                                    rate: 1,  loop: -1 },
-  walk:   { rowFn: (F) => Array.from({ length: 9 }, (_, i) => F(10, i)), rate: 9,  loop: -1 },
+  idle:   { rowFn: (F) => [F(11, 0)],                                    rate: 1,  loop: -1 },
+  walk:   { rowFn: (F) => Array.from({ length: 9 }, (_, i) => F(11, i)), rate: 9,  loop: -1 },
   attack: { rowFn: (F) => Array.from({ length: 6 }, (_, i) => F(15, i)), rate: 12, loop: 0  },
   hurt:   { rowFn: (F) => [F(20, 0), F(20, 1), F(20, 2)],               rate: 8,  loop: 0  },
   dead:   { rowFn: (F) => Array.from({ length: 6 }, (_, i) => F(20, i)), rate: 6,  loop: 0  },
@@ -36,8 +36,18 @@ const FOOT_OFFSET    = 12;
 
 const CLASS_COLORS = { warrior: 0xe74c3c, mage: 0x9b59b6, rogue: 0x2ecc71 };
 const CLASS_HEX    = { warrior: '#e74c3c', mage: '#9b59b6', rogue: '#2ecc71' };
-const WEAPON_COLS  = 18; // weapon sheets: 1152px / 64px = 18 cols
-const CLASS_WEAPON = { warrior: 'warrior_katana', mage: 'mage_staff', rogue: 'rogue_scimitar' };
+const CLASS_WEAPON      = { warrior: 'warrior_katana', mage: 'mage_staff', rogue: 'rogue_scimitar' };
+// Per-weapon sheet column counts (width / 64)
+const WEAPON_SHEET_COLS = { warrior: 18, mage: 24, rogue: 18 };
+// Weapon sheet rows follow 4-dir blocks (south=+0, west=+1, north=+2, east=+3).
+// Character uses south-facing (row 11) so weapon must also use south rows.
+// Row 60 = south idle/walk, row 64 = south attack, row 68/69 = hurt/dead.
+// mage_staff (66 rows): row 64 = south attack, row 65 = hurt/dead.
+const WEAPON_ANIM_ROWS  = {
+  warrior: { idle: 60, walk: 60, walkFrames: 9, attack: 64, attackFrames: 6, hurt: 68, dead: 69 },
+  mage:    { idle: 60, walk: 60, walkFrames: 9, attack: 64, attackFrames: 6, hurt: 65, dead: 65 },
+  rogue:   { idle: 60, walk: 60, walkFrames: 9, attack: 64, attackFrames: 6, hurt: 68, dead: 69 },
+};
 
 // Spectator palette (pixel crowd)
 const CROWD_COLORS = [
@@ -68,6 +78,8 @@ export default class BattleScene extends Phaser.Scene {
 
   // ── 1. Preload ─────────────────────────────────────────────────────────
   preload() {
+    this._isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent) || window.innerWidth < 600;
+
     this.load.on('loaderror', (file) => {
       console.warn(`[BattleScene] ${file.key} missing — using rectangle fallback`);
     });
@@ -76,10 +88,20 @@ export default class BattleScene extends Phaser.Scene {
         frameWidth: 64, frameHeight: 64,
       });
     });
-    ['warrior', 'mage', 'rogue'].forEach((cls) => {
-      this.load.spritesheet(`${cls}_weapon`, `/items/${CLASS_WEAPON[cls]}.png`, {
-        frameWidth: 64, frameHeight: 64,
+    // Skip weapon sheets on mobile — saves ~15MB texture memory
+    if (!this._isMobile) {
+      ['warrior', 'mage', 'rogue'].forEach((cls) => {
+        this.load.spritesheet(`${cls}_weapon`, `/items/${CLASS_WEAPON[cls]}.png`, {
+          frameWidth: 64, frameHeight: 64,
+        });
       });
+    }
+
+    // Handle WebGL context loss gracefully
+    this.game.canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      console.warn('[BattleScene] WebGL context lost — reloading');
+      setTimeout(() => window.location.reload(), 1500);
     });
   }
 
@@ -87,9 +109,9 @@ export default class BattleScene extends Phaser.Scene {
   create() {
     this._createParticleTexture();
     this._buildArena();
-    this._buildFloorFog();
+    if (!this._isMobile) this._buildFloorFog();
     this._registerAnimations();
-    this._registerWeaponAnimations();
+    if (!this._isMobile) this._registerWeaponAnimations();
     this._buildOverlays();
     this._buildTopHud();
 
@@ -223,7 +245,8 @@ export default class BattleScene extends Phaser.Scene {
     // Pixel spectators (tiny 3×5 rectangles)
     const rng = (seed, range) => Math.floor(((seed * 1664525 + 1013904223) & 0x7fffffff) / 0x7fffffff * range);
     let seed = 42;
-    for (let i = 0; i < 90; i++) {
+    const spectatorCount = this._isMobile ? 30 : 90;
+    for (let i = 0; i < spectatorCount; i++) {
       seed = (seed * 1664525 + 1013904223) & 0x7fffffff;
       const sx = 10 + (seed % (W - 20));
       seed = (seed * 1664525 + 1013904223) & 0x7fffffff;
@@ -321,21 +344,20 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   _registerWeaponAnimations() {
-    const Fw = makeF(WEAPON_COLS);
-    // Weapon overlay PNGs only have content in rows 60-69 (bottom of the sheet).
-    // Row layout (LPC order: N/W/S/E per animation type):
-    //   60-63 = Walk (East = row 63), 64-67 = Slash (East = row 67), 68 = Hurt, 69 = Death
-    const defs = {
-      idle:   { frames: [Fw(63, 0)],                                     rate: 1,  loop: -1 },
-      walk:   { frames: Array.from({ length: 9 }, (_, i) => Fw(63, i)),  rate: 9,  loop: -1 },
-      attack: { frames: Array.from({ length: 6 }, (_, i) => Fw(67, i)),  rate: 12, loop: 0  },
-      hurt:   { frames: [Fw(68, 0), Fw(68, 1), Fw(68, 2)],              rate: 8,  loop: 0  },
-      dead:   { frames: Array.from({ length: 6 }, (_, i) => Fw(69, i)),  rate: 6,  loop: 0  },
-      jump:   { frames: [Fw(63, 0)],                                     rate: 1,  loop: -1 },
-    };
+    // Per-class weapon animations — accounts for different column counts and row layouts per sheet
     ['warrior', 'mage', 'rogue'].forEach((cls) => {
       const key = `${cls}_weapon`;
       if (!this.textures.exists(key)) return;
+      const Fw   = makeF(WEAPON_SHEET_COLS[cls] ?? 18);
+      const rows = WEAPON_ANIM_ROWS[cls];
+      const defs = {
+        idle:   { frames: [Fw(rows.idle, 0)],                                                    rate: 1,  loop: -1 },
+        walk:   { frames: Array.from({ length: rows.walkFrames }, (_, i) => Fw(rows.walk, i)),   rate: 9,  loop: -1 },
+        attack: { frames: Array.from({ length: rows.attackFrames }, (_, i) => Fw(rows.attack, i)), rate: 12, loop: 0 },
+        hurt:   { frames: [Fw(rows.hurt, 0), Fw(rows.hurt, 1), Fw(rows.hurt, 2)],               rate: 8,  loop: 0  },
+        dead:   { frames: Array.from({ length: 6 }, (_, i) => Fw(rows.dead, i)),                rate: 6,  loop: 0  },
+        jump:   { frames: [Fw(rows.idle, 0)],                                                    rate: 1,  loop: -1 },
+      };
       Object.entries(defs).forEach(([name, def]) => {
         const animKey = `${cls}_weapon_${name}`;
         if (!this.anims.exists(animKey)) {
@@ -964,7 +986,8 @@ export default class BattleScene extends Phaser.Scene {
     this._playSound('hit');
     // Particle burst
     if (this.hitEmitter) {
-      this.hitEmitter.explode(damage >= 20 ? 14 : 8, gameX, gameY);
+      const count = this._isMobile ? (damage >= 20 ? 5 : 3) : (damage >= 20 ? 14 : 8);
+      this.hitEmitter.explode(count, gameX, gameY);
     }
 
     // Screen shake on heavy hits
@@ -1030,7 +1053,7 @@ export default class BattleScene extends Phaser.Scene {
     const core = this.add.circle(fromX, fromY - 30,  5, 0xffee00).setDepth(9);
 
     // Fire particle trail following the ball
-    const trail = this.add.particles(fromX, fromY - 30, 'fire_particle', {
+    const trail = this._isMobile ? null : this.add.particles(fromX, fromY - 30, 'fire_particle', {
       speed:    { min: 20, max: 60 },
       angle:    { min: 160, max: 200 },
       scale:    { start: 1.0, end: 0 },
@@ -1045,15 +1068,16 @@ export default class BattleScene extends Phaser.Scene {
       targets: [ball, core], x: toX, y: toY - 30,
       duration: 320, ease: 'Linear',
       onUpdate: () => {
-        if (ball.active) trail.setPosition(ball.x, ball.y);
+        if (ball.active && trail) trail.setPosition(ball.x, ball.y);
       },
       onComplete: () => {
-        trail.destroy();
+        if (trail) trail.destroy();
         if (ball.active) ball.destroy();
         if (core.active) core.destroy();
         if (!this.scene?.isActive()) return;
 
         // Impact explosion
+        const blastCount = this._isMobile ? (hit ? 6 : 3) : (hit ? 20 : 8);
         const blast = this.add.particles(toX, toY - 30, 'fire_particle', {
           speed: { min: 80, max: 200 },
           angle: { min: 0, max: 360 },
@@ -1061,10 +1085,10 @@ export default class BattleScene extends Phaser.Scene {
           alpha: { start: 1, end: 0 },
           tint:  [0xff6600, 0xff2200, 0xffee00],
           lifespan: 320,
-          quantity: hit ? 20 : 8,
+          quantity: blastCount,
           emitting: false,
         }).setDepth(9);
-        blast.explode(hit ? 20 : 8);
+        blast.explode(blastCount);
         this.time.delayedCall(400, () => { if (blast.active) blast.destroy(); });
 
         if (hit) {

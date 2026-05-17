@@ -177,8 +177,9 @@ export class ArenaRoom extends Room<ArenaState> {
       // Apply HP bonus
       player.maxHp += player.hpBonus;
       player.hp     = player.maxHp;
-    } catch {
-      // No items equipped — keep defaults (all 0)
+      console.log(`[ArenaRoom] loadout applied for ${player.username}: hasWeapon=${player.hasWeapon} atk=${player.attackBonus}`);
+    } catch (err: any) {
+      console.warn(`[ArenaRoom] loadout fetch failed for ${player.username} (userId=${player.userId}): ${err?.message}`);
     }
   }
 

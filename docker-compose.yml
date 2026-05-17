@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -39,6 +39,7 @@ services:
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
       CASINO_WALLET_PRIVATE_KEY: ${CASINO_WALLET_PRIVATE_KEY:-}
       CASINO_WALLET_ADDRESS: ${CASINO_WALLET_ADDRESS:-YourWalletAddressHere12345678901234567890123456789}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
       PORT: "8001"
     ports:
       - "8001:8001"
@@ -54,8 +55,8 @@ services:
     environment:
       PORT: "2567"
       FASTAPI_URL: http://backend:8001
-      INTERNAL_SECRET: ${INTERNAL_SECRET:-dev-internal-secret}
-      SKIP_AUTH: "true"
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
+      SKIP_AUTH: "false"
     ports:
       - "2567:2567"
 
@@ -64,7 +65,6 @@ services:
       context: ./frontend
       args:
         REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-}
-        REACT_APP_ADMIN_KEY: ${ADMIN_KEY:-}
         REACT_APP_GAME_SERVER_URL: ${REACT_APP_GAME_SERVER_URL:-}
     container_name: riskarena-frontend
     restart: unless-stopped

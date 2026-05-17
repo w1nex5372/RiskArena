@@ -4,6 +4,7 @@ import apiClient from '../../api/client';
 import { CLASS_MODIFIERS, CLASS_INFO } from '../../utils/characters';
 import { getItemImageSrc, getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
 import CharPreview from '../arena/CharPreview';
+import WeaponIcon from '../WeaponIcon';
 
 function SlotImage({ item, FallbackIcon, size = 44 }) {
   const [failed, setFailed] = useState(false);
@@ -11,6 +12,16 @@ function SlotImage({ item, FallbackIcon, size = 44 }) {
 
   const src = getItemImageSrc(item);
   const theme = getTierTheme(item);
+  const imagePath = item?.image_path;
+  const slot = String(item?.slot || item?.category || item?.type || '').toLowerCase();
+
+  if (slot === 'weapon' && imagePath && !failed) {
+    return (
+      <div style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 10, overflow: 'hidden' }}>
+        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} />
+      </div>
+    );
+  }
 
   if (!src || failed) {
     const Icon = FallbackIcon || Sword;
@@ -315,7 +326,7 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
             {/* Glow behind image */}
             <div style={{ position: 'absolute', bottom: -16, right: -20, width: 120, height: 120, background: `radial-gradient(circle, ${classInfo.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
 
-            <CharPreview cls={selectedClass} size={150} style={{ filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.7))' }} />
+            <CharPreview cls={selectedClass} size={150} weaponSrc={equipped?.weapon?.image_path || null} style={{ filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.7))' }} />
 
             {/* Right arrow */}
             <button

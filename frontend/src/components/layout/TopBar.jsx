@@ -89,8 +89,23 @@ export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyT
           </div>
         </div>
 
-        {/* Right: coins + buy button */}
+        {/* Right: energy + coins + buy button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          {user?.energy !== undefined && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: user.energy === user.max_energy
+                  ? '#22c55e'
+                  : user.energy <= 3
+                  ? '#ef4444'
+                  : '#f59e0b',
+              }}>
+                ⚡ {user.energy}/{user.max_energy}
+              </span>
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Coins style={{ width: 18, height: 18, color: '#f59e0b' }} />
             <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: 16 }}>

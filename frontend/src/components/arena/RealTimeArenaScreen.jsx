@@ -169,6 +169,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const [dotCount, setDotCount] = useState(1);
   const [abilityReady, setAbilityReady] = useState(true);
   const [playerClass, setPlayerClass] = useState('warrior');
+  const [isPortrait, setIsPortrait] = useState(() => window.innerHeight > window.innerWidth);
   const [loadoutStats, setLoadoutStats] = useState({});
   const updatePhase = useCallback((p) => {
     phaseRef.current = p;
@@ -182,24 +183,28 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       .catch(() => {});
   }, [user?.id]); // eslint-disable-line
 
-  // ── 0. Telegram expand + best-effort landscape lock ───────────────────────
+  // ── 0. Telegram expand + orientation tracking ────────────────────────────
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
     if (tg) {
       tg.expand?.();
       tg.enableClosingConfirmation?.();
       tg.requestFullscreen?.();
-      tg.lockOrientation?.();
     }
     screen.orientation?.lock?.('landscape').catch(() => {});
+
+    const onResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
 
     return () => {
       if (tg) {
         tg.exitFullscreen?.();
-        tg.unlockOrientation?.();
         tg.disableClosingConfirmation?.();
       }
       screen.orientation?.unlock?.();
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
     };
   }, []); // eslint-disable-line
 
@@ -218,8 +223,11 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
       },
-      render: { antialias: false, pixelArt: false },
-      // Prevent Phaser from adding its own keyboard listeners that conflict
+      render: {
+        antialias: false,
+        pixelArt: false,
+        powerPreference: 'low-power',
+      },
       input: { keyboard: false },
     };
 
@@ -434,7 +442,17 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={{
+    <div style={isPortrait ? {
+      position: 'fixed', zIndex: 9999,
+      top: 0, left: 0,
+      width: '100vh', height: '100vw',
+      transformOrigin: '0 0',
+      transform: 'translateY(100vh) rotate(90deg)',
+      overflow: 'hidden',
+      display: 'flex', flexDirection: 'column',
+      background: '#0d0d1a',
+      userSelect: 'none', WebkitUserSelect: 'none',
+    } : {
       position: 'fixed', zIndex: 9999,
       top: 0, left: 0,
       width: '100%', height: '100%',
@@ -519,24 +537,54 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         <div style={{
           position: 'absolute', inset: 0, zIndex: 20,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(13,13,26,0.88)', padding: 24,
+          background: 'rgba(13,13,26,0.93)',
         }}>
-          <div style={{ fontSize: 48, marginBottom: 10 }}>{result.won ? '🏆' : '💀'}</div>
+          {/* Result header */}
+          <div style={{ fontSize: 52, marginBottom: 6 }}>{result.won ? '🏆' : '💀'}</div>
           <div style={{
-            fontSize: 28, fontWeight: 900,
+            fontSize: 32, fontWeight: 900, letterSpacing: '0.1em', marginBottom: 4,
             color: result.won ? '#22c55e' : '#ef4444',
-            letterSpacing: '0.08em', marginBottom: 8,
           }}>
             {result.won ? 'VICTORY' : 'DEFEAT'}
           </div>
-          <div style={{ fontSize: 14, color: '#94a3b8', marginBottom: 28 }}>
-            {result.won ? `You defeated ${result.opponentName}` : `Defeated by ${result.opponentName}`}
+          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>
+            {result.won
+              ? `You defeated ${result.opponentName}`
+              : `Defeated by ${result.opponentName}`}
           </div>
-          <button onClick={onLeave} style={{
-            background: 'linear-gradient(135deg, #c9a84c, #8b6914)',
-            color: '#0d0d1a', fontWeight: 800, fontSize: 14,
-            border: 'none', borderRadius: 12, padding: '12px 40px', cursor: 'pointer',
-          }}>Back to Lobby</button>
+
+          {/* Rewards */}
+          <div style={{
+            display: 'flex', gap: 12, marginBottom: 28,
+          }}>
+            {result.won && (
+              <div style={{
+                background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)',
+                borderRadius: 10, padding: '10px 18px', textAlign: 'center', minWidth: 80,
+              }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#c9a84c' }}>+60</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>TOKENS</div>
+              </div>
+            )}
+            <div style={{
+              background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
+              borderRadius: 10, padding: '10px 18px', textAlign: 'center', minWidth: 80,
+            }}>
+              <div style={{ fontSize: 18, fontWeight: 900, color: '#818cf8' }}>
+                +{result.won ? 120 : 30}
+              </div>
+              <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>XP</div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button onClick={onLeave} style={{
+              background: 'linear-gradient(135deg, #c9a84c, #8b6914)',
+              color: '#0d0d1a', fontWeight: 800, fontSize: 14,
+              border: 'none', borderRadius: 12, padding: '12px 32px', cursor: 'pointer',
+            }}>Back to Lobby</button>
+          </div>
         </div>
       )}
 
@@ -569,16 +617,16 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
             {/* Hero card — char preview + class info */}
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 12,
+              display: 'flex', alignItems: 'center', gap: 10,
               background: 'linear-gradient(135deg, #0d0d1a 0%, #1a0a0a 55%, #2d0000 100%)',
               border: '1px solid rgba(201,168,76,0.25)',
               borderBottom: `2px solid ${info.color}55`,
-              borderRadius: 16, padding: '10px 14px',
+              borderRadius: 14, padding: '8px 12px',
               position: 'relative', overflow: 'hidden',
             }}>
-              <div style={{ position: 'absolute', left: -20, bottom: -20, width: 110, height: 110, background: `radial-gradient(circle, ${info.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
+              <div style={{ position: 'absolute', left: -20, bottom: -20, width: 100, height: 100, background: `radial-gradient(circle, ${info.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
 
-              <CharPreview cls={cls} size={80} />
+              <CharPreview cls={cls} size={72} />
 
               <div style={{ flex: 1, zIndex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.14em', color: '#c9a84c', textTransform: 'uppercase', marginBottom: 3 }}>Your Fighter</div>

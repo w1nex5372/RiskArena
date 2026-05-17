@@ -75,7 +75,7 @@ CORS_ORIGINS = [
     "https://erniocasino.vercel.app",
     "https://www.erniocasino.vercel.app",
     "http://localhost:3000",
-    # Telegram WebApp origins — required for Mini App preflight requests
+    # Telegram WebApp origins â€” required for Mini App preflight requests
     "https://web.telegram.org",
     "https://telegram.org",
 ]
@@ -139,7 +139,7 @@ class SolanaWalletDerivation:
                 # Create master keypair from base58 private key
                 private_key_bytes = base58.b58decode(master_private_key_base58)
                 self.master_keypair = Keypair.from_bytes(private_key_bytes)
-                logging.info(f"🔑 Master wallet initialized: {self.master_keypair.pubkey()}")
+                logging.info(f"ðŸ”‘ Master wallet initialized: {self.master_keypair.pubkey()}")
             except Exception as e:
                 logging.error(f"Error initializing master wallet: {e}")
                 self.master_keypair = None
@@ -162,7 +162,7 @@ class SolanaWalletDerivation:
             
             # For demo purposes, we'll track this address but won't need the private key
             # In production, you'd use proper Solana keypair derivation libraries
-            logging.info(f"🎯 Derived address for user {telegram_id}: {derived_address}")
+            logging.info(f"ðŸŽ¯ Derived address for user {telegram_id}: {derived_address}")
             
             return {
                 "address": derived_address,
@@ -207,7 +207,7 @@ class SolanaWalletDerivation:
                 )
             )
             
-            logging.info(f"💸 Would sweep {sweep_amount} lamports from {derived_keypair.pubkey()} to {self.master_keypair.pubkey()}")
+            logging.info(f"ðŸ’¸ Would sweep {sweep_amount} lamports from {derived_keypair.pubkey()} to {self.master_keypair.pubkey()}")
             # TODO: Implement actual transaction signing and sending
             
             return True
@@ -436,6 +436,7 @@ async def _fetch_equipped_snapshot(user_id: str) -> Dict[str, Any]:
             """
             SELECT ei.slot, ei.inventory_id, COALESCE(inv.enchant_level, 0) AS enchant_level, i.*
             FROM equipped_items ei
+            JOIN users u ON u.id = ei.user_id
             JOIN items i ON i.id = ei.item_id
             LEFT JOIN LATERAL (
                 SELECT id, enchant_level
@@ -450,6 +451,7 @@ async def _fetch_equipped_snapshot(user_id: str) -> Dict[str, Any]:
                 LIMIT 1
             ) inv ON TRUE
             WHERE ei.user_id = $1
+              AND ei.class_name = u.class_name
             """,
             user_id,
         )
@@ -499,7 +501,7 @@ async def _get_and_regen_energy(user_id: str, conn) -> dict:
 active_rooms: Dict[str, GameRoom] = {}
 room_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
-# Maintenance mode — blocks new room joins (resets on restart)
+# Maintenance mode â€” blocks new room joins (resets on restart)
 maintenance_mode: bool = False
 
 # Free Roll room global config
@@ -651,16 +653,16 @@ async def send_prize_notification(telegram_id: int, username: str, room_type: st
     """Send prize notification with claim button to Telegram user"""
     try:
         # Format the message
-        message = f"🎉 <b>Congratulations {username}!</b>\n\n"
+        message = f"ðŸŽ‰ <b>Congratulations {username}!</b>\n\n"
         message += f"You won the {room_type.title()} Room battle!\n\n"
-        message += "🏆 <b>You have a prize waiting!</b>\n"
+        message += "ðŸ† <b>You have a prize waiting!</b>\n"
         message += "Click the button below to claim your prize:"
         
         # Create inline keyboard with claim button
         reply_markup = {
             "inline_keyboard": [[
                 {
-                    "text": "🎁 Claim Your Prize",
+                    "text": "ðŸŽ Claim Your Prize",
                     "url": prize_link
                 }
             ]]
@@ -681,12 +683,12 @@ class PriceOracle:
         self.cache_duration = 60  # Cache for 60 seconds
         
     async def get_sol_eur_price(self) -> float:
-        """Get current SOL price in EUR — Binance primary, CoinGecko fallback"""
+        """Get current SOL price in EUR â€” Binance primary, CoinGecko fallback"""
         current_time = time.time()
         if self.cached_price and (current_time - self.last_update) < self.cache_duration:
             return self.cached_price
 
-        # 1) Binance — no key needed, direct SOL/EUR pair
+        # 1) Binance â€” no key needed, direct SOL/EUR pair
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -699,3841 +701,3851 @@ class PriceOracle:
                         price = float(data["price"])
                         self.cached_price = price
                         self.last_update = current_time
-                        logging.info(f"💰 SOL/EUR (Binance): {price}")
+                        logging.info(f"ðŸ’° SOL/EUR (Binance): {price}")
                         return price
                     logging.warning(f"Binance returned {resp.status}, trying CoinGecko...")
-                except Exception as e:
-                    logging.warning(f"Binance price fetch failed: {e}, trying CoinGecko...")
+        except Exception as e:
+            logging.warning(f"Binance price fetch failed: {e}, trying CoinGecko...")
 
-                # 2) CoinGecko fallback
-                try:
-                    async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as session:
-                        async with session.get(
-                            "https://api.coingecko.com/api/v3/simple/price",
-                            params={"ids": "solana", "vs_currencies": "eur"},
-                            timeout=aiohttp.ClientTimeout(total=10)
-                        ) as resp:
-                            if resp.status == 200:
-                                data = await resp.json()
-                                price = float(data["solana"]["eur"])
-                                self.cached_price = price
-                                self.last_update = current_time
-                                logging.info(f"💰 SOL/EUR (CoinGecko): {price}")
-                                return price
-                except Exception as e:
-                    logging.error(f"CoinGecko price fetch failed: {e}")
+        # 2) CoinGecko fallback
+        try:
+            async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as session:
+                async with session.get(
+                    "https://api.coingecko.com/api/v3/simple/price",
+                    params={"ids": "solana", "vs_currencies": "eur"},
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        price = float(data["solana"]["eur"])
+                        self.cached_price = price
+                        self.last_update = current_time
+                        logging.info(f"ðŸ’° SOL/EUR (CoinGecko): {price}")
+                        return price
+        except Exception as e:
+            logging.error(f"CoinGecko price fetch failed: {e}")
 
-                logging.error("All price sources failed, using cached/fallback")
-                return self.cached_price or 120.0
-            
-            def calculate_tokens_from_sol(self, sol_amount: float, sol_eur_price: float) -> int:
-                """Calculate tokens from SOL amount using real-time EUR price"""
-                # SOL → EUR → Tokens (1 EUR = 100 tokens)
-                eur_value = sol_amount * sol_eur_price
-                tokens = int(eur_value * 100)
-                
-                logging.info(f"💱 Conversion: {sol_amount} SOL × {sol_eur_price} EUR/SOL = {eur_value:.4f} EUR = {tokens} tokens")
-                return tokens
+        logging.error("All price sources failed, using cached/fallback")
+        return self.cached_price or 120.0
+    
+    def calculate_tokens_from_sol(self, sol_amount: float, sol_eur_price: float) -> int:
+        """Calculate tokens from SOL amount using real-time EUR price"""
+        # SOL â†’ EUR â†’ Tokens (1 EUR = 100 tokens)
+        eur_value = sol_amount * sol_eur_price
+        tokens = int(eur_value * 100)
+        
+        logging.info(f"ðŸ’± Conversion: {sol_amount} SOL Ã— {sol_eur_price} EUR/SOL = {eur_value:.4f} EUR = {tokens} tokens")
+        return tokens
 
-        # Initialize price oracle
-        price_oracle = PriceOracle()
+# Initialize price oracle
+price_oracle = PriceOracle()
 
-        # Payment Request System
-        class PaymentRequest:
-            def __init__(self, user_id: str, telegram_id: int, eur_amount: float):
-                self.id = str(uuid.uuid4())[:8]  # Short ID
-                self.user_id = user_id
-                self.telegram_id = telegram_id
-                self.eur_amount = eur_amount
-                self.expected_sol_amount = None
-                self.tokens_to_credit = int(eur_amount * 100)  # 1 EUR = 100 tokens
-                self.created_at = time.time()
-                self.expires_at = time.time() + 300  # 5 minutes
-                self.status = "pending"
-                
-            async def calculate_expected_sol(self) -> float:
-                """Calculate expected SOL amount based on current price"""
-                sol_price = await price_oracle.get_sol_eur_price()
-                self.expected_sol_amount = self.eur_amount / sol_price
-                return self.expected_sol_amount
-            
-            def is_expired(self) -> bool:
-                return time.time() > self.expires_at
-            
-            def matches_payment(self, received_sol: float, tolerance: float = 0.02) -> bool:
-                """Check if received SOL matches expected amount (2% tolerance)"""
-                if not self.expected_sol_amount:
-                    return False
-                
-                min_amount = self.expected_sol_amount * (1 - tolerance)
-                max_amount = self.expected_sol_amount * (1 + tolerance)
-                
-                return min_amount <= received_sol <= max_amount
+# Payment Request System
+class PaymentRequest:
+    def __init__(self, user_id: str, telegram_id: int, eur_amount: float):
+        self.id = str(uuid.uuid4())[:8]  # Short ID
+        self.user_id = user_id
+        self.telegram_id = telegram_id
+        self.eur_amount = eur_amount
+        self.expected_sol_amount = None
+        self.tokens_to_credit = int(eur_amount * 100)  # 1 EUR = 100 tokens
+        self.created_at = time.time()
+        self.expires_at = time.time() + 300  # 5 minutes
+        self.status = "pending"
+        
+    async def calculate_expected_sol(self) -> float:
+        """Calculate expected SOL amount based on current price"""
+        sol_price = await price_oracle.get_sol_eur_price()
+        self.expected_sol_amount = self.eur_amount / sol_price
+        return self.expected_sol_amount
+    
+    def is_expired(self) -> bool:
+        return time.time() > self.expires_at
+    
+    def matches_payment(self, received_sol: float, tolerance: float = 0.02) -> bool:
+        """Check if received SOL matches expected amount (2% tolerance)"""
+        if not self.expected_sol_amount:
+            return False
+        
+        min_amount = self.expected_sol_amount * (1 - tolerance)
+        max_amount = self.expected_sol_amount * (1 + tolerance)
+        
+        return min_amount <= received_sol <= max_amount
 
-        # Payment request storage
-        active_payment_requests = {}  # request_id -> PaymentRequest
+# Payment request storage
+active_payment_requests = {}  # request_id -> PaymentRequest
 
-        async def get_or_create_derived_address(user_id: str, telegram_id: int) -> dict:
-            """Get existing derived address or create new one for user"""
-            try:
-                # Check if user already has a derived address
-                user = await dbq.get_user_by_telegram_id(telegram_id)
+async def get_or_create_derived_address(user_id: str, telegram_id: int) -> dict:
+    """Get existing derived address or create new one for user"""
+    try:
+        # Check if user already has a derived address
+        user = await dbq.get_user_by_telegram_id(telegram_id)
 
-                if user and user.get('derived_solana_address'):
-                    return {
-                        "address": user['derived_solana_address'],
-                        "user_id": user_id,
-                        "telegram_id": telegram_id
-                    }
-
-                # Generate new derived address
-                derived_info = wallet_derivation.derive_user_address(user_id, telegram_id)
-
-                if not derived_info:
-                    raise Exception("Failed to derive address")
-
-                # Save to database
-                await dbq.update_user_fields_by_telegram_id(
-                    telegram_id,
-                    {
-                        "derived_solana_address": derived_info["address"],
-                        "derivation_path": derived_info["derivation_path"]
-                    }
-                )
-                
-                logging.info(f"✅ Created derived address for user {telegram_id}: {derived_info['address']}")
-                return {"address": derived_info["address"], "user_id": user_id, "telegram_id": telegram_id}
-                
-            except Exception as e:
-                logging.error(f"Error getting/creating derived address: {e}")
-                return None
-
-        # Solana Payment Monitoring System
-        class PaymentMonitor:
-            def __init__(self):
-                self.client = AsyncClient(SOLANA_RPC_URL)
-                self.last_checked_signatures = {}  # Track last signature per address
-                self.monitoring = False
-                self.monitored_addresses = set()  # All derived addresses being monitored
-                
-            async def start_monitoring(self):
-                """Start monitoring Solana payments to derived addresses"""
-                if self.monitoring:
-                    return
-                    
-                self.monitoring = True
-                logging.info(f"🚀 Starting payment monitoring for derived addresses")
-                
-                # Load existing derived addresses
-                await self._load_derived_addresses()
-                
-                # Run monitoring in background
-                asyncio.create_task(self._monitor_payments())
-            
-            async def _load_derived_addresses(self):
-                """Load all derived addresses from database to monitor"""
-                try:
-                    users = await dbq.get_users_with_derived_address()
-                    
-                    for user in users:
-                        address = user.get('derived_solana_address')
-                        if address:
-                            self.monitored_addresses.add(address)
-                    
-                    logging.info(f"📍 Monitoring {len(self.monitored_addresses)} derived addresses")
-                    
-                except Exception as e:
-                    logging.error(f"Error loading derived addresses: {e}")
-            
-            async def add_address_to_monitor(self, address: str):
-                """Add a new derived address to monitoring"""
-                self.monitored_addresses.add(address)
-                logging.info(f"➕ Added derived address to monitoring: {address}")
-            
-            async def _monitor_payments(self):
-                """Monitor all derived addresses for incoming payments"""
-                try:
-                    while self.monitoring:
-                        await self._check_for_payments()
-                        await asyncio.sleep(10)  # Check every 10 seconds
-                        
-                except Exception as e:
-                    logging.error(f"Payment monitoring error: {e}")
-                    # Restart monitoring after error
-                    await asyncio.sleep(30)
-                    if self.monitoring:
-                        asyncio.create_task(self._monitor_payments())
-            
-            async def _check_for_payments(self):
-                """Check for new payments to all derived addresses"""
-                try:
-                    if not self.monitored_addresses:
-                        # No addresses to monitor yet
-                        return
-                        
-                    # Check each monitored address
-                    for address in list(self.monitored_addresses):  # Create copy to avoid modification during iteration
-                        await self._check_address_for_payments(address)
-                            
-                except Exception as e:
-                    logging.error(f"Error checking payments: {e}")
-            
-            async def _check_address_for_payments(self, address: str):
-                """Check a specific derived address for new payments"""
-                try:
-                    # Get wallet public key
-                    wallet_pubkey = Pubkey.from_string(address)
-                    
-                    # Get recent transactions
-                    last_sig = self.last_checked_signatures.get(address)
-                    response = await self.client.get_signatures_for_address(
-                        wallet_pubkey, 
-                        limit=5,
-                        before=last_sig if last_sig else None
-                    )
-                    
-                    if response.value:
-                        signatures = response.value
-                        
-                        # Process new transactions (most recent first)
-                        for sig_info in reversed(signatures):
-                            if last_sig and sig_info.signature == last_sig:
-                                break
-                                
-                            await self._process_transaction(sig_info.signature, address)
-                        
-                        # Update last checked signature for this address
-                        if signatures:
-                            self.last_checked_signatures[address] = signatures[0].signature
-                            
-                except Exception as e:
-                    logging.error(f"Error checking address {address}: {e}")
-            
-            async def _process_transaction(self, signature: str, receiving_address: str):
-                """Process a single transaction for payment detection using Derived Address System"""
-                try:
-                    # Get transaction details
-                    tx = await self.client.get_transaction(signature)
-                    if not tx.value or not tx.value.transaction:
-                        return
-                        
-                    transaction = tx.value.transaction
-                    meta = tx.value.transaction.meta
-                    
-                    if not meta or meta.err:
-                        return  # Skip failed transactions
-                    
-                    # Check if this is an incoming SOL transfer
-                    pre_balances = meta.pre_balances
-                    post_balances = meta.post_balances
-                    
-                    # Find receiving address in account keys
-                    account_keys = transaction.transaction.message.account_keys
-                    receiving_address_index = None
-                    
-                    for i, key in enumerate(account_keys):
-                        if str(key) == receiving_address:
-                            receiving_address_index = i
-                            break
-                    
-                    if receiving_address_index is None:
-                        return
-                    
-                    # Calculate SOL received (in lamports)
-                    if len(post_balances) > receiving_address_index and len(pre_balances) > receiving_address_index:
-                        balance_change = post_balances[receiving_address_index] - pre_balances[receiving_address_index]
-                        
-                        if balance_change > 0:  # Received SOL
-                            sol_amount = balance_change / 1_000_000_000  # Convert lamports to SOL
-                            
-                            logging.info(f"💰 Received {sol_amount} SOL in transaction {signature} to derived address {receiving_address}")
-                            
-                            # Credit tokens to user who owns this derived address
-                            await self._credit_tokens_for_derived_address(signature, sol_amount, receiving_address)
-                            
-                except Exception as e:
-                    logging.error(f"Error processing transaction {signature}: {e}")
-            
-            async def _credit_tokens_for_derived_address(self, signature: str, sol_amount: float, derived_address: str):
-                """Credit tokens to user who owns the derived address"""
-                try:
-                    # Find user by derived address
-                    all_users = await dbq.get_users_with_derived_address()
-                    user = next((u for u in all_users if u.get('derived_solana_address') == derived_address), None)
-                    
-                    if not user:
-                        logging.error(f"❌ No user found for derived address {derived_address}! Payment of {sol_amount} SOL lost!")
-                        return
-                    
-                    # Calculate tokens using real-time EUR price
-                    sol_price = await price_oracle.get_sol_eur_price()
-                    tokens_to_credit = price_oracle.calculate_tokens_from_sol(sol_amount, sol_price)
-                    
-                    # Credit tokens to user
-                    await self._credit_tokens_to_user(
-                        signature, 
-                        sol_amount, 
-                        tokens_to_credit, 
-                        user['telegram_id'],
-                        sol_price,
-                        derived_address
-                    )
-                        
-                except Exception as e:
-                    logging.error(f"Error crediting tokens for derived address: {e}")
-            
-            async def _credit_tokens_to_user(self, signature: str, sol_amount: float, tokens_to_credit: int, telegram_id: int, sol_eur_price: float, derived_address: str = None):
-                """Credit tokens to specific user account - PRODUCTION VERSION"""
-                try:
-                    if tokens_to_credit <= 0:
-                        logging.warning(f"Invalid token amount: {tokens_to_credit}")
-                        return
-                    
-                    # Production: Minimum payment validation (prevent dust payments)
-                    min_sol_amount = 0.001  # Minimum 0.001 SOL
-                    if sol_amount < min_sol_amount:
-                        logging.warning(f"Payment too small: {sol_amount} SOL (minimum: {min_sol_amount})")
-                        return
-                    
-                    # Find user by telegram_id
-                    user = await dbq.get_user_by_telegram_id(telegram_id)
-
-                    if not user:
-                        logging.error(f"❌ No user found for telegram_id {telegram_id}! Payment of {sol_amount} SOL lost!")
-                        return
-
-                    # Production: Check for duplicate transactions (payment_history field not in PG schema; skip)
-
-                    # Credit tokens to user
-                    result = await dbq.increment_user_tokens_by_telegram_id(telegram_id, tokens_to_credit)
-
-                    if result:
-                        logging.info(f"✅ Credited {tokens_to_credit} tokens to user {user['first_name']} for {sol_amount} SOL (€{sol_amount * sol_eur_price:.2f})")
-                        
-                        # Send notification to user
-                        if user.get('telegram_id'):
-                            await self._send_payment_confirmation(
-                                user['telegram_id'],
-                                user['first_name'],
-                                sol_amount,
-                                tokens_to_credit,
-                                sol_eur_price
-                            )
-                        
-                        # Broadcast token update to frontend
-                        await sio.emit('token_balance_updated', {
-                            'user_id': user['id'],
-                            'new_balance': user.get('token_balance', 0) + tokens_to_credit,
-                            'tokens_added': tokens_to_credit,
-                            'sol_received': sol_amount,
-                            'eur_value': sol_amount * sol_eur_price
-                        })
-                        
-                except Exception as e:
-                    logging.error(f"Error crediting tokens to user: {e}")
-            
-            async def _send_payment_confirmation(self, telegram_id: int, username: str, sol_amount: float, tokens_credited: int, sol_eur_price: float):
-                """Send payment confirmation to user via Telegram"""
-                try:
-                    eur_value = sol_amount * sol_eur_price
-                    
-                    message = "💰 <b>Payment Confirmed!</b>\n\n"
-                    message += f"Hello {username}!\n\n"
-                    message += f"✅ Received: <b>{sol_amount} SOL</b>\n"
-                    message += f"💶 EUR Value: <b>€{eur_value:.2f}</b> (1 SOL = €{sol_eur_price:.4f})\n"
-                    message += f"🎰 Credited: <b>{tokens_credited:,} Casino Tokens</b>\n\n"
-                    message += f"💡 <i>Rate: 1 EUR = 100 tokens</i>\n\n"
-                    message += "Your tokens are ready for battle! Good luck! 🎯"
-                    
-                    await send_telegram_message(telegram_id, message)
-                    logging.info(f"📨 Payment confirmation sent to {username}")
-                    
-                except Exception as e:
-                    logging.error(f"Error sending payment confirmation: {e}")
-
-        # Initialize payment monitor
-        payment_monitor = PaymentMonitor()
-
-        # Track user_id to socket_id mapping for room management
-        user_to_socket: Dict[str, str] = {}  # user_id -> sid
-        socket_to_user: Dict[str, str] = {}  # sid -> user_id
-
-        # Socket.IO events
-        @sio.event
-        async def connect(sid, environ, auth=None):
-            logging.info(f"🔌🔌🔌 NEW CLIENT CONNECTED 🔌🔌🔌")
-            logging.info(f"Socket ID: {sid}")
-            logging.info(f"Remote Address: {environ.get('REMOTE_ADDR', 'unknown')}")
-            logging.info(f"User Agent: {environ.get('HTTP_USER_AGENT', 'unknown')}")
-            
-            # Detect platform
-            user_agent = environ.get('HTTP_USER_AGENT', '').lower()
-            if 'telegram' in user_agent:
-                platform = 'Telegram WebView'
-            elif 'mobile' in user_agent or 'android' in user_agent or 'iphone' in user_agent:
-                platform = 'Mobile Browser'
-            else:
-                platform = 'Desktop Browser'
-            
-            logging.info(f"Platform: {platform}")
-            logging.info(f"Total active connections: {len(user_to_socket) + 1}")
-            token = _session_token_from_socket(environ, auth)
-            authenticated_user_id = verify_session_token(token) if token else None
-            if authenticated_user_id:
-                user_to_socket[authenticated_user_id] = sid
-                socket_to_user[sid] = authenticated_user_id
-                logging.info(f"Authenticated socket {sid[:8]} as user {authenticated_user_id}")
-            
-            await sio.emit('connected', {
-                'status': 'Connected to casino!',
-                'socket_id': sid,
-                'platform': platform,
-                'authenticated': bool(authenticated_user_id),
-            }, room=sid)
-            logging.info(f"✅ Sent 'connected' confirmation to {sid} ({platform})")
-
-        @sio.event
-        async def disconnect(sid):
-            logging.info(f"🔌 Client {sid} disconnected")
-            
-            # Get user_id before cleanup
-            user_id = socket_to_user.get(sid)
-            
-            # Get room_id from socket_rooms tracking
-            room_id = socket_rooms.socket_to_room.get(sid)
-            
-            # Clean up socket from rooms ONLY
-            socket_rooms.cleanup_socket(sid)
-            if user_id and user_to_socket.get(user_id) == sid:
-                user_to_socket.pop(user_id, None)
-            socket_to_user.pop(sid, None)
-            
-            # DON'T immediately clean up user mapping or remove from game room
-            # Give user 30 seconds to reconnect (Telegram browser often disconnects temporarily)
-            # User mapping and room removal will be handled on reconnect timeout or manual leave
-            logging.info(f"⏳ User {user_id} disconnected, keeping in room for potential reconnect")
-            
-            # DO NOT remove from active_rooms.players - let them stay in the game
-            # They can still receive events when they reconnect
-
-        @sio.event
-        async def register_user(sid, data):
-            """Register user_id to socket_id mapping for room-specific events"""
-            try:
-                logging.info(f"📥📥📥 REGISTER_USER EVENT RECEIVED 📥📥📥")
-                logging.info(f"Socket ID: {sid}")
-                logging.info(f"Data: {data}")
-                
-                user_id = await _authenticated_socket_user_id(sid, data)
-                platform = data.get('platform', 'unknown')
-                
-                if not user_id:
-                    logging.error(f"❌ No user_id provided in register_user event")
-                    return
-                
-                # Update mappings
-                user_to_socket[user_id] = sid
-                socket_to_user[sid] = user_id
-                
-                logging.info(f"✅ Registered user {user_id} to socket {sid[:8]}")
-                logging.info(f"📱 Platform: {platform}")
-                logging.info(f"📊 Total user mappings: {len(user_to_socket)}")
-                
-                # Send confirmation
-                await sio.emit('user_registered', {
-                    'user_id': user_id,
-                    'status': 'registered',
-                    'platform': platform
-                }, room=sid)
-                
-            except Exception as e:
-                logging.error(f"❌ Error in register_user: {e}")
-
-        @sio.event
-        async def join_game_room(sid, data):
-            """Join a game room via Socket.IO (called after successful REST API join)"""
-            try:
-                logging.info(f"📥📥📥 JOIN_GAME_ROOM EVENT RECEIVED 📥📥📥")
-                logging.info(f"Socket ID: {sid}")
-                logging.info(f"Data: {data}")
-                
-                room_id = data.get('room_id')
-                user_id = await _authenticated_socket_user_id(sid, data)
-                platform = data.get('platform', 'unknown')
-                
-                if not room_id or not user_id:
-                    logging.error(f"❌ Missing room_id or user_id in join_game_room event")
-                    logging.error(f"Received data: {data}")
-                    return
-                if not _user_is_in_room(room_id, user_id):
-                    logging.warning(f"Rejected socket room join for user {user_id}: not a member of room {room_id}")
-                    await sio.emit('room_joined_confirmed', {'room_id': room_id, 'status': 'forbidden'}, room=sid)
-                    return
-                
-                logging.info(f"📥 join_game_room: user={user_id}, room={room_id}, socket={sid[:8]}, platform={platform}")
-                
-                # Join the Socket.IO room
-                await socket_rooms.join_socket_room(sio, sid, room_id)
-                
-                # Update user mapping
-                user_to_socket[user_id] = sid
-                socket_to_user[sid] = user_id
-                
-                # Check current socket count in room
-                socket_count = socket_rooms.get_room_socket_count(room_id)
-                sockets_in_room = socket_rooms.room_to_sockets.get(room_id, set())
-                
-                logging.info(f"✅ User {user_id} ({platform}) joined room {room_id} via socket {sid[:8]}")
-                logging.info(f"📊 Room {room_id} now has {socket_count} socket(s) connected")
-                logging.info(f"📋 Socket IDs in room: {[s[:8] for s in sockets_in_room]}")
-                
-                # Send confirmation with full room info
-                await sio.emit('room_joined_confirmed', {
-                    'room_id': room_id,
-                    'socket_count': socket_count,
-                    'socket_id': sid,
-                    'platform': platform
-                }, room=sid)
-                logging.info(f"✅ Sent room_joined_confirmed to {sid[:8]} ({platform})")
-                
-            except Exception as e:
-                logging.error(f"❌ Error in join_game_room: {e}")
-                import traceback
-                logging.error(traceback.format_exc())
-
-        # Game logic functions
-        def calculate_win_probability(player_bet: int, total_pool: int) -> float:
-            """Calculate weighted probability based on bet amount"""
-            if total_pool == 0:
-                return 0
-            # Base probability + bonus for higher bets
-            base_prob = 0.1  # 10% base chance
-            bet_bonus = (player_bet / total_pool) * 0.9  # Up to 90% based on bet ratio
-            return min(base_prob + bet_bonus, 0.95)  # Cap at 95%
-
-        def select_winner(players: List[RoomPlayer]) -> RoomPlayer:
-            """Select winner using cryptographically secure weighted random — bigger bets = better odds."""
-            if not players:
-                raise ValueError("No players to select from")
-
-            total_pool = sum(p.bet_amount for p in players)
-
-            if total_pool == 0:
-                # Free room: all equal weight — pick uniformly
-                return players[secrets.randbelow(len(players))]
-
-            # secrets.randbelow gives a secure integer in [0, total_pool)
-            random_point = secrets.randbelow(total_pool)
-
-            cumulative = 0
-            for player in players:
-                cumulative += player.bet_amount
-                if random_point < cumulative:
-                    return player
-
-            return players[-1]  # unreachable safety fallback
-
-        @sio.event
-        async def send_reaction(sid, data):
-            """Broadcast an emoji reaction to all players in a room"""
-            room_id = data.get('room_id')
-            emoji = data.get('emoji', '🔥')
-            name = data.get('name', 'Player')
-            user_id = await _authenticated_socket_user_id(sid, data)
-            if not room_id:
-                return
-            if not user_id or not _user_is_in_room(room_id, user_id):
-                return
-            # Broadcast globally — client filters by room_id (same pattern as game events)
-            await sio.emit('reaction_received', {
-                'emoji': emoji,
-                'name': name,
-                'user_id': user_id,
-                'room_id': room_id,
-            })
-            logging.info(f"💬 Reaction {emoji} from {name} in room {room_id[:8]}")
-
-
-        # In-memory chat history per room (last 50 messages)
-        room_chat: dict = {}
-
-        @sio.event
-        async def lobby_message(sid, data):
-            """Send a chat message to all players in the lobby room."""
-            room_id = data.get('room_id')
-            user_id = await _authenticated_socket_user_id(sid, data)
-            name = data.get('name', 'Player')
-            text = (data.get('text') or '').strip()[:200]
-            is_anonymous = data.get('is_anonymous', False)
-
-            if not room_id or not text:
-                return
-            if not user_id or not _user_is_in_room(room_id, user_id):
-                return
-            if is_anonymous:
-                return  # Anonymous players cannot chat
-
-            msg = {
-                'user_id': user_id,
-                'name': name,
-                'text': text,
-                'ts': datetime.now(timezone.utc).isoformat(),
+        if user and user.get('derived_solana_address'):
+            return {
+                "address": user['derived_solana_address'],
+                "user_id": user_id,
+                "telegram_id": telegram_id
             }
-            room_chat.setdefault(room_id, [])
-            room_chat[room_id].append(msg)
-            if len(room_chat[room_id]) > 50:
-                room_chat[room_id] = room_chat[room_id][-50:]
 
-            payload = {'room_id': room_id, **msg}
-            await sio.emit('lobby_message', payload)
-            logging.info(f"💬 Chat [{room_id[:8]}] {name}: {text[:40]}")
+        # Generate new derived address
+        derived_info = wallet_derivation.derive_user_address(user_id, telegram_id)
 
+        if not derived_info:
+            raise Exception("Failed to derive address")
 
-        @sio.event
-        async def reveal_identity(sid, data):
-            """Player reveals their identity after joining anonymously"""
-            room_id = data.get('room_id')
-            user_id = await _authenticated_socket_user_id(sid, data)
-            if not room_id or not user_id:
-                return
-            if not _user_is_in_room(room_id, user_id):
-                return
-            room = active_rooms.get(room_id)
-            if not room:
-                return
-            for player in room.players:
-                if player.user_id == user_id:
-                    player.is_anonymous = False
-                    player.first_name = data.get('first_name', player.first_name)
-                    player.last_name = data.get('last_name', player.last_name)
-                    player.photo_url = data.get('photo_url', player.photo_url)
-                    player.username = data.get('username', player.username)
-                    break
-            serialized_players = []
-            for p in room.players:
-                pd = p.dict()
-                if 'joined_at' in pd and isinstance(pd['joined_at'], datetime):
-                    pd['joined_at'] = pd['joined_at'].isoformat()
-                serialized_players.append(pd)
-            await socket_rooms.broadcast_to_room(sio, room_id, 'players_updated', {
-                'room_id': room_id,
-                'players': serialized_players,
-            })
-            logging.info(f"🔓 Player {user_id} revealed identity in room {room_id[:8]}")
+        # Save to database
+        await dbq.update_user_fields_by_telegram_id(
+            telegram_id,
+            {
+                "derived_solana_address": derived_info["address"],
+                "derivation_path": derived_info["derivation_path"]
+            }
+        )
+        
+        logging.info(f"âœ… Created derived address for user {telegram_id}: {derived_info['address']}")
+        return {"address": derived_info["address"], "user_id": user_id, "telegram_id": telegram_id}
+        
+    except Exception as e:
+        logging.error(f"Error getting/creating derived address: {e}")
+        return None
 
-
-        @sio.event
-        async def catch_all(event, sid, data):
-            """Catch all events for debugging"""
-            logging.info(f"🎯 CATCH-ALL: Event '{event}' from {sid[:8]} with data: {data}")
-
-        async def broadcast_room_updates():
-            """Broadcast current room states to all connected clients"""
-            try:
-                room_data = []
-                for room in active_rooms.values():
-                    # Serialize player data with datetime conversion
-                    serialized_players = []
-                    for p in room.players:
-                        player_dict = p.dict()
-                        # Convert datetime fields to ISO format
-                        if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
-                            player_dict['joined_at'] = player_dict['joined_at'].isoformat()
-                        serialized_players.append(player_dict)
-                    
-                    room_info = {
-                        'id': room.id,
-                        'room_type': room.room_type,
-                        'players': serialized_players,
-                        'status': room.status,
-                        'prize_pool': room.prize_pool,
-                        'match_id': room.match_id,
-                        'arena_match_id': room.arena_match_id,
-                        'mode': 'duel' if room.arena_match_id else None,
-                        'round_number': room.round_number,
-                        'players_count': len(room.players),
-                        'max_players': room.max_players,
-                        'settings': ROOM_SETTINGS.get(room.room_type, ROOM_SETTINGS.get('bronze', {})),
-                        'is_locked': (room.room_type == RoomType.FREEROLL and freeroll_config.get('is_locked', False))
-                    }
-                    room_data.append(room_info)
+# Solana Payment Monitoring System
+class PaymentMonitor:
+    def __init__(self):
+        self.client = AsyncClient(SOLANA_RPC_URL)
+        self.last_checked_signatures = {}  # Track last signature per address
+        self.monitoring = False
+        self.monitored_addresses = set()  # All derived addresses being monitored
+        
+    async def start_monitoring(self):
+        """Start monitoring Solana payments to derived addresses"""
+        if self.monitoring:
+            return
+            
+        self.monitoring = True
+        logging.info(f"ðŸš€ Starting payment monitoring for derived addresses")
+        
+        # Load existing derived addresses
+        await self._load_derived_addresses()
+        
+        # Run monitoring in background
+        asyncio.create_task(self._monitor_payments())
+    
+    async def _load_derived_addresses(self):
+        """Load all derived addresses from database to monitor"""
+        try:
+            users = await dbq.get_users_with_derived_address()
+            
+            for user in users:
+                address = user.get('derived_solana_address')
+                if address:
+                    self.monitored_addresses.add(address)
+            
+            logging.info(f"ðŸ“ Monitoring {len(self.monitored_addresses)} derived addresses")
+            
+        except Exception as e:
+            logging.error(f"Error loading derived addresses: {e}")
+    
+    async def add_address_to_monitor(self, address: str):
+        """Add a new derived address to monitoring"""
+        self.monitored_addresses.add(address)
+        logging.info(f"âž• Added derived address to monitoring: {address}")
+    
+    async def _monitor_payments(self):
+        """Monitor all derived addresses for incoming payments"""
+        try:
+            while self.monitoring:
+                await self._check_for_payments()
+                await asyncio.sleep(10)  # Check every 10 seconds
                 
-                await sio.emit('rooms_updated', {
-                    'rooms': room_data,
-                    'maintenance_mode': maintenance_mode,
-                    'timestamp': datetime.now(timezone.utc).isoformat()
+        except Exception as e:
+            logging.error(f"Payment monitoring error: {e}")
+            # Restart monitoring after error
+            await asyncio.sleep(30)
+            if self.monitoring:
+                asyncio.create_task(self._monitor_payments())
+    
+    async def _check_for_payments(self):
+        """Check for new payments to all derived addresses"""
+        try:
+            if not self.monitored_addresses:
+                # No addresses to monitor yet
+                return
+                
+            # Check each monitored address
+            for address in list(self.monitored_addresses):  # Create copy to avoid modification during iteration
+                await self._check_address_for_payments(address)
+                    
+        except Exception as e:
+            logging.error(f"Error checking payments: {e}")
+    
+    async def _check_address_for_payments(self, address: str):
+        """Check a specific derived address for new payments"""
+        try:
+            # Get wallet public key
+            wallet_pubkey = Pubkey.from_string(address)
+            
+            # Get recent transactions
+            last_sig = self.last_checked_signatures.get(address)
+            response = await self.client.get_signatures_for_address(
+                wallet_pubkey, 
+                limit=5,
+                before=last_sig if last_sig else None
+            )
+            
+            if response.value:
+                signatures = response.value
+                
+                # Process new transactions (most recent first)
+                for sig_info in reversed(signatures):
+                    if last_sig and sig_info.signature == last_sig:
+                        break
+                        
+                    await self._process_transaction(sig_info.signature, address)
+                
+                # Update last checked signature for this address
+                if signatures:
+                    self.last_checked_signatures[address] = signatures[0].signature
+                    
+        except Exception as e:
+            logging.error(f"Error checking address {address}: {e}")
+    
+    async def _process_transaction(self, signature: str, receiving_address: str):
+        """Process a single transaction for payment detection using Derived Address System"""
+        try:
+            # Get transaction details
+            tx = await self.client.get_transaction(signature)
+            if not tx.value or not tx.value.transaction:
+                return
+                
+            transaction = tx.value.transaction
+            meta = tx.value.transaction.meta
+            
+            if not meta or meta.err:
+                return  # Skip failed transactions
+            
+            # Check if this is an incoming SOL transfer
+            pre_balances = meta.pre_balances
+            post_balances = meta.post_balances
+            
+            # Find receiving address in account keys
+            account_keys = transaction.transaction.message.account_keys
+            receiving_address_index = None
+            
+            for i, key in enumerate(account_keys):
+                if str(key) == receiving_address:
+                    receiving_address_index = i
+                    break
+            
+            if receiving_address_index is None:
+                return
+            
+            # Calculate SOL received (in lamports)
+            if len(post_balances) > receiving_address_index and len(pre_balances) > receiving_address_index:
+                balance_change = post_balances[receiving_address_index] - pre_balances[receiving_address_index]
+                
+                if balance_change > 0:  # Received SOL
+                    sol_amount = balance_change / 1_000_000_000  # Convert lamports to SOL
+                    
+                    logging.info(f"ðŸ’° Received {sol_amount} SOL in transaction {signature} to derived address {receiving_address}")
+                    
+                    # Credit tokens to user who owns this derived address
+                    await self._credit_tokens_for_derived_address(signature, sol_amount, receiving_address)
+                    
+        except Exception as e:
+            logging.error(f"Error processing transaction {signature}: {e}")
+    
+    async def _credit_tokens_for_derived_address(self, signature: str, sol_amount: float, derived_address: str):
+        """Credit tokens to user who owns the derived address"""
+        try:
+            # Find user by derived address
+            all_users = await dbq.get_users_with_derived_address()
+            user = next((u for u in all_users if u.get('derived_solana_address') == derived_address), None)
+            
+            if not user:
+                logging.error(f"âŒ No user found for derived address {derived_address}! Payment of {sol_amount} SOL lost!")
+                return
+            
+            # Calculate tokens using real-time EUR price
+            sol_price = await price_oracle.get_sol_eur_price()
+            tokens_to_credit = price_oracle.calculate_tokens_from_sol(sol_amount, sol_price)
+            
+            # Credit tokens to user
+            await self._credit_tokens_to_user(
+                signature, 
+                sol_amount, 
+                tokens_to_credit, 
+                user['telegram_id'],
+                sol_price,
+                derived_address
+            )
+                
+        except Exception as e:
+            logging.error(f"Error crediting tokens for derived address: {e}")
+    
+    async def _credit_tokens_to_user(self, signature: str, sol_amount: float, tokens_to_credit: int, telegram_id: int, sol_eur_price: float, derived_address: str = None):
+        """Credit tokens to specific user account - PRODUCTION VERSION"""
+        try:
+            if tokens_to_credit <= 0:
+                logging.warning(f"Invalid token amount: {tokens_to_credit}")
+                return
+            
+            # Production: Minimum payment validation (prevent dust payments)
+            min_sol_amount = 0.001  # Minimum 0.001 SOL
+            if sol_amount < min_sol_amount:
+                logging.warning(f"Payment too small: {sol_amount} SOL (minimum: {min_sol_amount})")
+                return
+            
+            # Find user by telegram_id
+            user = await dbq.get_user_by_telegram_id(telegram_id)
+
+            if not user:
+                logging.error(f"âŒ No user found for telegram_id {telegram_id}! Payment of {sol_amount} SOL lost!")
+                return
+
+            # Production: Check for duplicate transactions (payment_history field not in PG schema; skip)
+
+            # Credit tokens to user
+            result = await dbq.increment_user_tokens_by_telegram_id(telegram_id, tokens_to_credit)
+
+            if result:
+                logging.info(f"âœ… Credited {tokens_to_credit} tokens to user {user['first_name']} for {sol_amount} SOL (â‚¬{sol_amount * sol_eur_price:.2f})")
+                
+                # Send notification to user
+                if user.get('telegram_id'):
+                    await self._send_payment_confirmation(
+                        user['telegram_id'],
+                        user['first_name'],
+                        sol_amount,
+                        tokens_to_credit,
+                        sol_eur_price
+                    )
+                
+                # Broadcast token update to frontend
+                await sio.emit('token_balance_updated', {
+                    'user_id': user['id'],
+                    'new_balance': user.get('token_balance', 0) + tokens_to_credit,
+                    'tokens_added': tokens_to_credit,
+                    'sol_received': sol_amount,
+                    'eur_value': sol_amount * sol_eur_price
                 })
                 
-            except Exception as e:
-                logging.error(f"Error broadcasting room updates: {e}")
-                import traceback
-                logging.error(traceback.format_exc())
-
-
-        def is_arena_duel_room(room: GameRoom) -> bool:
-            return (
-                room.min_players == 2
-                and room.max_players == 2
-                and len(room.players) == 2
-                and all(not p.user_id.startswith("bot_") for p in room.players)
-                and room.players[0].bet_amount > 0
-                and room.players[1].bet_amount > 0
-            )
-
-
-        async def start_game_round(room: GameRoom):
-            """Start a game round when enough players have joined - with strict event sequence"""
-            async with room_locks[room.id]:
-                if room.status != "waiting" or len(room.players) < room.min_players:
-                    return
-                room.status = "starting"
-
-            if is_arena_duel_room(room):
-                room.status = "ready"
-                room.prize_pool = sum(p.bet_amount for p in room.players)
-                room.started_at = datetime.now(timezone.utc)
-                try:
-                    arena_match = await arena_repo.create_room_duel(
-                        room.players[0].user_id,
-                        room.players[1].user_id,
-                        room.players[0].bet_amount,
-                        room.id,
-                        room.room_type.value if hasattr(room.room_type, "value") else str(room.room_type),
-                        pot_amount=room.prize_pool,
-                    )
-                except Exception as exc:
-                    logging.error(f"Failed to create arena duel for room {room.id}: {exc}")
-                    refund_players = [p for p in room.players if not p.user_id.startswith("bot_") and p.bet_amount > 0]
-                    room.players = []
-                    room.prize_pool = 0
-                    room.status = "waiting"
-                    room.started_at = None
-                    for player in refund_players:
-                        try:
-                            result = await dbq.increment_user_tokens(player.user_id, player.bet_amount)
-                            sid = user_to_socket.get(player.user_id)
-                            if sid and result:
-                                await sio.emit(
-                                    "balance_updated",
-                                    {"user_id": player.user_id, "new_balance": result.get("token_balance", 0)},
-                                    room=sid,
-                                )
-                        except Exception as refund_exc:
-                            logging.error(f"Failed to refund arena start failure for {player.user_id}: {refund_exc}")
-                    await broadcast_room_updates()
-                    return
-
-                room.match_id = arena_match["id"]
-                room.arena_match_id = arena_match["id"]
-
-                serialized_players = []
-                for p in room.players:
-                    player_dict = p.dict()
-                    if "joined_at" in player_dict and isinstance(player_dict["joined_at"], datetime):
-                        player_dict["joined_at"] = player_dict["joined_at"].isoformat()
-                    serialized_players.append(player_dict)
-
-                payload = {
-                    "room_id": room.id,
-                    "room_type": room.room_type,
-                    "match_id": arena_match["id"],
-                    "arena_match_id": arena_match["id"],
-                    "mode": "duel",
-                    "players": serialized_players,
-                    "prize_pool": room.prize_pool,
-                    "stake_amount": room.players[0].bet_amount,
-                    "message": "Arena duel is ready",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-                await socket_rooms.broadcast_to_room(sio, room.id, "room_ready", payload)
-                await socket_rooms.broadcast_to_room(sio, room.id, "game_starting", payload)
-                asyncio.create_task(watch_arena_room_completion(room.id, arena_match["id"]))
-                await broadcast_room_updates()
-                logging.info(f"Arena duel bridge created match {arena_match['id']} for room {room.id}")
-                return
+        except Exception as e:
+            logging.error(f"Error crediting tokens to user: {e}")
+    
+    async def _send_payment_confirmation(self, telegram_id: int, username: str, sol_amount: float, tokens_credited: int, sol_eur_price: float):
+        """Send payment confirmation to user via Telegram"""
+        try:
+            eur_value = sol_amount * sol_eur_price
             
-            # Generate unique match ID for this game
-            match_id = str(uuid.uuid4())[:12]  # Short unique ID
-            room.match_id = match_id  # Store on room for polling clients
-            logging.info(f"🎮 Starting game round for room {room.id}, match_id: {match_id}")
-            logging.info(f"👥 Players in room: {[p.username for p in room.players]}")
+            message = "ðŸ’° <b>Payment Confirmed!</b>\n\n"
+            message += f"Hello {username}!\n\n"
+            message += f"âœ… Received: <b>{sol_amount} SOL</b>\n"
+            message += f"ðŸ’¶ EUR Value: <b>â‚¬{eur_value:.2f}</b> (1 SOL = â‚¬{sol_eur_price:.4f})\n"
+            message += f"ðŸŽ° Credited: <b>{tokens_credited:,} Casino Tokens</b>\n\n"
+            message += f"ðŸ’¡ <i>Rate: 1 EUR = 100 tokens</i>\n\n"
+            message += "Your tokens are ready for battle! Good luck! ðŸŽ¯"
+            
+            await send_telegram_message(telegram_id, message)
+            logging.info(f"ðŸ“¨ Payment confirmation sent to {username}")
+            
+        except Exception as e:
+            logging.error(f"Error sending payment confirmation: {e}")
 
-            # Set status IMMEDIATELY — polling clients detect this within 500ms
-            room.status = "ready"
-            room.prize_pool = sum(p.bet_amount for p in room.players)
+# Initialize payment monitor
+payment_monitor = PaymentMonitor()
 
-            # Serialize player data
+# Track user_id to socket_id mapping for room management
+user_to_socket: Dict[str, str] = {}  # user_id -> sid
+socket_to_user: Dict[str, str] = {}  # sid -> user_id
+
+# Socket.IO events
+@sio.event
+async def connect(sid, environ, auth=None):
+    logging.info(f"ðŸ”ŒðŸ”ŒðŸ”Œ NEW CLIENT CONNECTED ðŸ”ŒðŸ”ŒðŸ”Œ")
+    logging.info(f"Socket ID: {sid}")
+    logging.info(f"Remote Address: {environ.get('REMOTE_ADDR', 'unknown')}")
+    logging.info(f"User Agent: {environ.get('HTTP_USER_AGENT', 'unknown')}")
+    
+    # Detect platform
+    user_agent = environ.get('HTTP_USER_AGENT', '').lower()
+    if 'telegram' in user_agent:
+        platform = 'Telegram WebView'
+    elif 'mobile' in user_agent or 'android' in user_agent or 'iphone' in user_agent:
+        platform = 'Mobile Browser'
+    else:
+        platform = 'Desktop Browser'
+    
+    logging.info(f"Platform: {platform}")
+    logging.info(f"Total active connections: {len(user_to_socket) + 1}")
+    token = _session_token_from_socket(environ, auth)
+    authenticated_user_id = verify_session_token(token) if token else None
+    if authenticated_user_id:
+        user_to_socket[authenticated_user_id] = sid
+        socket_to_user[sid] = authenticated_user_id
+        logging.info(f"Authenticated socket {sid[:8]} as user {authenticated_user_id}")
+    
+    await sio.emit('connected', {
+        'status': 'Connected to casino!',
+        'socket_id': sid,
+        'platform': platform,
+        'authenticated': bool(authenticated_user_id),
+    }, room=sid)
+    logging.info(f"âœ… Sent 'connected' confirmation to {sid} ({platform})")
+
+@sio.event
+async def disconnect(sid):
+    logging.info(f"ðŸ”Œ Client {sid} disconnected")
+    
+    # Get user_id before cleanup
+    user_id = socket_to_user.get(sid)
+    
+    # Get room_id from socket_rooms tracking
+    room_id = socket_rooms.socket_to_room.get(sid)
+    
+    # Clean up socket from rooms ONLY
+    socket_rooms.cleanup_socket(sid)
+    if user_id and user_to_socket.get(user_id) == sid:
+        user_to_socket.pop(user_id, None)
+    socket_to_user.pop(sid, None)
+    
+    # DON'T immediately clean up user mapping or remove from game room
+    # Give user 30 seconds to reconnect (Telegram browser often disconnects temporarily)
+    # User mapping and room removal will be handled on reconnect timeout or manual leave
+    logging.info(f"â³ User {user_id} disconnected, keeping in room for potential reconnect")
+    
+    # DO NOT remove from active_rooms.players - let them stay in the game
+    # They can still receive events when they reconnect
+
+@sio.event
+async def register_user(sid, data):
+    """Register user_id to socket_id mapping for room-specific events"""
+    try:
+        logging.info(f"ðŸ“¥ðŸ“¥ðŸ“¥ REGISTER_USER EVENT RECEIVED ðŸ“¥ðŸ“¥ðŸ“¥")
+        logging.info(f"Socket ID: {sid}")
+        logging.info(f"Data: {data}")
+        
+        user_id = await _authenticated_socket_user_id(sid, data)
+        platform = data.get('platform', 'unknown')
+        
+        if not user_id:
+            logging.error(f"âŒ No user_id provided in register_user event")
+            return
+        
+        # Update mappings
+        user_to_socket[user_id] = sid
+        socket_to_user[sid] = user_id
+        
+        logging.info(f"âœ… Registered user {user_id} to socket {sid[:8]}")
+        logging.info(f"ðŸ“± Platform: {platform}")
+        logging.info(f"ðŸ“Š Total user mappings: {len(user_to_socket)}")
+        
+        # Send confirmation
+        await sio.emit('user_registered', {
+            'user_id': user_id,
+            'status': 'registered',
+            'platform': platform
+        }, room=sid)
+        
+    except Exception as e:
+        logging.error(f"âŒ Error in register_user: {e}")
+
+@sio.event
+async def join_game_room(sid, data):
+    """Join a game room via Socket.IO (called after successful REST API join)"""
+    try:
+        logging.info(f"ðŸ“¥ðŸ“¥ðŸ“¥ JOIN_GAME_ROOM EVENT RECEIVED ðŸ“¥ðŸ“¥ðŸ“¥")
+        logging.info(f"Socket ID: {sid}")
+        logging.info(f"Data: {data}")
+        
+        room_id = data.get('room_id')
+        user_id = await _authenticated_socket_user_id(sid, data)
+        platform = data.get('platform', 'unknown')
+        
+        if not room_id or not user_id:
+            logging.error(f"âŒ Missing room_id or user_id in join_game_room event")
+            logging.error(f"Received data: {data}")
+            return
+        if not _user_is_in_room(room_id, user_id):
+            logging.warning(f"Rejected socket room join for user {user_id}: not a member of room {room_id}")
+            await sio.emit('room_joined_confirmed', {'room_id': room_id, 'status': 'forbidden'}, room=sid)
+            return
+        
+        logging.info(f"ðŸ“¥ join_game_room: user={user_id}, room={room_id}, socket={sid[:8]}, platform={platform}")
+        
+        # Join the Socket.IO room
+        await socket_rooms.join_socket_room(sio, sid, room_id)
+        
+        # Update user mapping
+        user_to_socket[user_id] = sid
+        socket_to_user[sid] = user_id
+        
+        # Check current socket count in room
+        socket_count = socket_rooms.get_room_socket_count(room_id)
+        sockets_in_room = socket_rooms.room_to_sockets.get(room_id, set())
+        
+        logging.info(f"âœ… User {user_id} ({platform}) joined room {room_id} via socket {sid[:8]}")
+        logging.info(f"ðŸ“Š Room {room_id} now has {socket_count} socket(s) connected")
+        logging.info(f"ðŸ“‹ Socket IDs in room: {[s[:8] for s in sockets_in_room]}")
+        
+        # Send confirmation with full room info
+        await sio.emit('room_joined_confirmed', {
+            'room_id': room_id,
+            'socket_count': socket_count,
+            'socket_id': sid,
+            'platform': platform
+        }, room=sid)
+        logging.info(f"âœ… Sent room_joined_confirmed to {sid[:8]} ({platform})")
+        
+    except Exception as e:
+        logging.error(f"âŒ Error in join_game_room: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
+
+# Game logic functions
+def calculate_win_probability(player_bet: int, total_pool: int) -> float:
+    """Calculate weighted probability based on bet amount"""
+    if total_pool == 0:
+        return 0
+    # Base probability + bonus for higher bets
+    base_prob = 0.1  # 10% base chance
+    bet_bonus = (player_bet / total_pool) * 0.9  # Up to 90% based on bet ratio
+    return min(base_prob + bet_bonus, 0.95)  # Cap at 95%
+
+def select_winner(players: List[RoomPlayer]) -> RoomPlayer:
+    """Select winner using cryptographically secure weighted random â€” bigger bets = better odds."""
+    if not players:
+        raise ValueError("No players to select from")
+
+    total_pool = sum(p.bet_amount for p in players)
+
+    if total_pool == 0:
+        # Free room: all equal weight â€” pick uniformly
+        return players[secrets.randbelow(len(players))]
+
+    # secrets.randbelow gives a secure integer in [0, total_pool)
+    random_point = secrets.randbelow(total_pool)
+
+    cumulative = 0
+    for player in players:
+        cumulative += player.bet_amount
+        if random_point < cumulative:
+            return player
+
+    return players[-1]  # unreachable safety fallback
+
+@sio.event
+async def send_reaction(sid, data):
+    """Broadcast an emoji reaction to all players in a room"""
+    room_id = data.get('room_id')
+    emoji = data.get('emoji', 'ðŸ”¥')
+    name = data.get('name', 'Player')
+    user_id = await _authenticated_socket_user_id(sid, data)
+    if not room_id:
+        return
+    if not user_id or not _user_is_in_room(room_id, user_id):
+        return
+    # Broadcast globally â€” client filters by room_id (same pattern as game events)
+    await sio.emit('reaction_received', {
+        'emoji': emoji,
+        'name': name,
+        'user_id': user_id,
+        'room_id': room_id,
+    })
+    logging.info(f"ðŸ’¬ Reaction {emoji} from {name} in room {room_id[:8]}")
+
+
+# In-memory chat history per room (last 50 messages)
+room_chat: dict = {}
+
+@sio.event
+async def lobby_message(sid, data):
+    """Send a chat message to all players in the lobby room."""
+    room_id = data.get('room_id')
+    user_id = await _authenticated_socket_user_id(sid, data)
+    name = data.get('name', 'Player')
+    text = (data.get('text') or '').strip()[:200]
+    is_anonymous = data.get('is_anonymous', False)
+
+    if not room_id or not text:
+        return
+    if not user_id or not _user_is_in_room(room_id, user_id):
+        return
+    if is_anonymous:
+        return  # Anonymous players cannot chat
+
+    msg = {
+        'user_id': user_id,
+        'name': name,
+        'text': text,
+        'ts': datetime.now(timezone.utc).isoformat(),
+    }
+    room_chat.setdefault(room_id, [])
+    room_chat[room_id].append(msg)
+    if len(room_chat[room_id]) > 50:
+        room_chat[room_id] = room_chat[room_id][-50:]
+
+    payload = {'room_id': room_id, **msg}
+    await sio.emit('lobby_message', payload)
+    logging.info(f"ðŸ’¬ Chat [{room_id[:8]}] {name}: {text[:40]}")
+
+
+@sio.event
+async def reveal_identity(sid, data):
+    """Player reveals their identity after joining anonymously"""
+    room_id = data.get('room_id')
+    user_id = await _authenticated_socket_user_id(sid, data)
+    if not room_id or not user_id:
+        return
+    if not _user_is_in_room(room_id, user_id):
+        return
+    room = active_rooms.get(room_id)
+    if not room:
+        return
+    for player in room.players:
+        if player.user_id == user_id:
+            player.is_anonymous = False
+            player.first_name = data.get('first_name', player.first_name)
+            player.last_name = data.get('last_name', player.last_name)
+            player.photo_url = data.get('photo_url', player.photo_url)
+            player.username = data.get('username', player.username)
+            break
+    serialized_players = []
+    for p in room.players:
+        pd = p.dict()
+        if 'joined_at' in pd and isinstance(pd['joined_at'], datetime):
+            pd['joined_at'] = pd['joined_at'].isoformat()
+        serialized_players.append(pd)
+    await socket_rooms.broadcast_to_room(sio, room_id, 'players_updated', {
+        'room_id': room_id,
+        'players': serialized_players,
+    })
+    logging.info(f"ðŸ”“ Player {user_id} revealed identity in room {room_id[:8]}")
+
+
+@sio.event
+async def catch_all(event, sid, data):
+    """Catch all events for debugging"""
+    logging.info(f"ðŸŽ¯ CATCH-ALL: Event '{event}' from {sid[:8]} with data: {data}")
+
+async def broadcast_room_updates():
+    """Broadcast current room states to all connected clients"""
+    try:
+        room_data = []
+        for room in active_rooms.values():
+            # Serialize player data with datetime conversion
             serialized_players = []
             for p in room.players:
                 player_dict = p.dict()
+                # Convert datetime fields to ISO format
                 if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
                     player_dict['joined_at'] = player_dict['joined_at'].isoformat()
                 serialized_players.append(player_dict)
-
-            # Broadcast room_ready globally (socket fallback — polling is the primary mechanism)
-            room_ready_data = {
-                'room_id': room.id,
+            
+            room_info = {
+                'id': room.id,
                 'room_type': room.room_type,
-                'match_id': match_id,
                 'players': serialized_players,
+                'status': room.status,
                 'prize_pool': room.prize_pool,
-                'message': '🚀 GET READY FOR BATTLE!',
-            }
-            await sio.emit('room_ready', room_ready_data)
-            logging.info(f"✅ room_ready emitted globally, match {match_id}")
-
-            # Wait for roulette wheel animation (8 seconds to spin + show result)
-            await asyncio.sleep(8)
-            
-            # Select winner immediately after GET READY (no game_starting event needed)
-            room.status = "playing"
-            room.started_at = datetime.now(timezone.utc)
-            
-            # Select winner using weighted random selection
-            winner = select_winner(room.players)
-            room.winner = winner
-            room.status = "finished"
-            room.finished_at = datetime.now(timezone.utc)
-            
-            # Credit winner with the full prize pool (losers already had bets deducted on join)
-            # For freeroll rooms, credit the fixed house prize instead of prize_pool
-            FREE_ROOM_PRIZE = 100  # tokens winner gets in the free room
-            if room.room_type == RoomType.FREE:
-                credit_amount = FREE_ROOM_PRIZE
-            elif room.room_type == RoomType.FREEROLL:
-                credit_amount = freeroll_config['prize']
-            else:
-                credit_amount = room.prize_pool
-            room.prize_pool = credit_amount  # ensure prize_pool reflects actual credit for DB storage
-
-            if not winner.user_id.startswith('bot_'):
-                try:
-                    result = await dbq.increment_user_tokens(winner.user_id, credit_amount)
-                    if result:
-                        logging.info(f"💰 Credited {credit_amount} tokens to winner {winner.username} (new balance: {result.get('token_balance', 0)})")
-                        winner_sid = user_to_socket.get(winner.user_id)
-                        if winner_sid:
-                            await sio.emit('balance_updated', {'user_id': winner.user_id, 'new_balance': result.get('token_balance', 0)}, room=winner_sid)
-                    else:
-                        logging.error(f"❌ Winner user {winner.user_id} not found in DB — balance NOT credited")
-                except Exception as e:
-                    logging.error(f"❌ Failed to credit winner balance: {e}")
-
-            # Get the prize link for this room type
-            prize_link = PRIZE_LINKS[room.room_type]
-            room.prize_link = prize_link
-
-            # Store the winner's prize link in database for later retrieval
-            try:
-                await dbq.insert_winner_prize({
-                    "user_id": winner.user_id,
-                    "username": winner.username,
-                    "room_type": room.room_type.value if hasattr(room.room_type, 'value') else str(room.room_type).split('.')[-1].lower(),
-                    "prize_link": prize_link,
-                    "bet_amount": winner.bet_amount,
-                    "total_pool": room.prize_pool,
-                    "round_number": room.round_number,
-                    "won_at": room.finished_at
-                })
-                logging.info(f"Prize link stored for winner {winner.username}: {prize_link}")
-            except Exception as e:
-                logging.error(f"Failed to store winner prize: {e}")
-            
-            # EVENT 3: game_finished - Notify ROOM participants of the winner
-            logging.info(f"📤 Broadcasting game_finished to room {room.id}")
-            
-            # Serialize winner data
-            winner_dict = winner.dict()
-            if 'joined_at' in winner_dict and isinstance(winner_dict['joined_at'], datetime):
-                winner_dict['joined_at'] = winner_dict['joined_at'].isoformat()
-            
-            game_finished_data = {
-                'room_id': room.id,
-                'room_type': room.room_type,
-                'match_id': match_id,  # Unique match identifier
-                'winner': winner_dict,
-                'winner_name': f"{winner.first_name} {winner.last_name}".strip(),
-                'winner_id': winner.user_id,
-                'prize_pool': room.prize_pool,
-                'prize_link': prize_link,  # Include for winner screen
+                'match_id': room.match_id,
+                'arena_match_id': room.arena_match_id,
+                'mode': 'duel' if room.arena_match_id else None,
                 'round_number': room.round_number,
-                'has_prize': True,
-                'finished_at': room.finished_at.isoformat()
+                'players_count': len(room.players),
+                'max_players': room.max_players,
+                'settings': ROOM_SETTINGS.get(room.room_type, ROOM_SETTINGS.get('bronze', {})),
+                'is_locked': (room.room_type == RoomType.FREEROLL and freeroll_config.get('is_locked', False))
             }
-            # Broadcast game_finished to ALL clients - client filters by player list
-            await sio.emit('game_finished', game_finished_data)
-            logging.info(f"✅ Emitted game_finished globally, winner: {winner.username}, match_id: {match_id}")
+            room_data.append(room_info)
+        
+        await sio.emit('rooms_updated', {
+            'rooms': room_data,
+            'maintenance_mode': maintenance_mode,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logging.error(f"Error broadcasting room updates: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
 
-            # Wait for winner announcement screen (8 seconds so players can see it)
-            logging.info(f"⏱️ Waiting 8 seconds for winner announcement...")
-            await asyncio.sleep(8)
 
-            # EVENT 4: redirect_home - Redirect all players back to home screen
-            final_sockets = socket_rooms.room_to_sockets.get(room.id, set())
-            socket_count = len(final_sockets)
+def is_arena_duel_room(room: GameRoom) -> bool:
+    return (
+        room.min_players == 2
+        and room.max_players == 2
+        and len(room.players) == 2
+        and all(not p.user_id.startswith("bot_") for p in room.players)
+        and room.players[0].bet_amount > 0
+        and room.players[1].bet_amount > 0
+    )
 
-            logging.info(f"📤📤📤 BROADCASTING redirect_home to room {room.id}")
-            logging.info(f"🧩 Target sockets: {[sid[:8] for sid in final_sockets]}")
-            logging.info(f"📊 Socket count: {socket_count}")
 
-            redirect_home_data = {
-                'room_id': room.id,
-                'match_id': match_id,
-                'message': 'Returning to home screen...'
-            }
-            # Broadcast redirect_home to ALL clients - client filters by player list
-            await sio.emit('redirect_home', redirect_home_data)
-            logging.info(f"✅ Emitted redirect_home globally for match {match_id}")
-            
-            # EVENT 5: prize_won - Send prize link privately to the winner (using socket ID)
-            winner_sid = user_to_socket.get(winner.user_id)
-            if winner_sid:
-                await sio.emit('prize_won', {
-                    'prize_link': prize_link,
-                    'room_type': room.room_type,
-                    'match_id': match_id,
-                    'bet_amount': winner.bet_amount,
-                    'total_pool': room.prize_pool
-                }, room=winner_sid)
-                logging.info(f"🏆 Sent private prize_won event to winner {winner.username}, match_id: {match_id}")
+async def start_game_round(room: GameRoom):
+    """Start a game round when enough players have joined - with strict event sequence"""
+    async with room_locks[room.id]:
+        if room.status != "waiting" or len(room.players) < room.min_players:
+            return
+        room.status = "starting"
+
+    if is_arena_duel_room(room):
+        room.status = "ready"
+        room.prize_pool = sum(p.bet_amount for p in room.players)
+        room.started_at = datetime.now(timezone.utc)
+        try:
+            arena_match = await arena_repo.create_room_duel(
+                room.players[0].user_id,
+                room.players[1].user_id,
+                room.players[0].bet_amount,
+                room.id,
+                room.room_type.value if hasattr(room.room_type, "value") else str(room.room_type),
+                pot_amount=room.prize_pool,
+            )
+        except Exception as exc:
+            logging.error(f"Failed to create arena duel for room {room.id}: {exc}")
+            refund_players = [p for p in room.players if not p.user_id.startswith("bot_") and p.bet_amount > 0]
+            room.players = []
+            room.prize_pool = 0
+            room.status = "waiting"
+            room.started_at = None
+            for player in refund_players:
+                try:
+                    result = await dbq.increment_user_tokens(player.user_id, player.bet_amount)
+                    sid = user_to_socket.get(player.user_id)
+                    if sid and result:
+                        await sio.emit(
+                            "balance_updated",
+                            {"user_id": player.user_id, "new_balance": result.get("token_balance", 0)},
+                            room=sid,
+                        )
+                except Exception as refund_exc:
+                    logging.error(f"Failed to refund arena start failure for {player.user_id}: {refund_exc}")
+            await broadcast_room_updates()
+            return
+
+        room.match_id = arena_match["id"]
+        room.arena_match_id = arena_match["id"]
+
+        serialized_players = []
+        for p in room.players:
+            player_dict = p.dict()
+            if "joined_at" in player_dict and isinstance(player_dict["joined_at"], datetime):
+                player_dict["joined_at"] = player_dict["joined_at"].isoformat()
+            serialized_players.append(player_dict)
+
+        payload = {
+            "room_id": room.id,
+            "room_type": room.room_type,
+            "match_id": arena_match["id"],
+            "arena_match_id": arena_match["id"],
+            "mode": "duel",
+            "players": serialized_players,
+            "prize_pool": room.prize_pool,
+            "stake_amount": room.players[0].bet_amount,
+            "message": "Arena duel is ready",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        await socket_rooms.broadcast_to_room(sio, room.id, "room_ready", payload)
+        await socket_rooms.broadcast_to_room(sio, room.id, "game_starting", payload)
+        asyncio.create_task(watch_arena_room_completion(room.id, arena_match["id"]))
+        await broadcast_room_updates()
+        logging.info(f"Arena duel bridge created match {arena_match['id']} for room {room.id}")
+        return
+    
+    # Generate unique match ID for this game
+    match_id = str(uuid.uuid4())[:12]  # Short unique ID
+    room.match_id = match_id  # Store on room for polling clients
+    logging.info(f"ðŸŽ® Starting game round for room {room.id}, match_id: {match_id}")
+    logging.info(f"ðŸ‘¥ Players in room: {[p.username for p in room.players]}")
+
+    # Set status IMMEDIATELY â€” polling clients detect this within 500ms
+    room.status = "ready"
+    room.prize_pool = sum(p.bet_amount for p in room.players)
+
+    # Serialize player data
+    serialized_players = []
+    for p in room.players:
+        player_dict = p.dict()
+        if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
+            player_dict['joined_at'] = player_dict['joined_at'].isoformat()
+        serialized_players.append(player_dict)
+
+    # Broadcast room_ready globally (socket fallback â€” polling is the primary mechanism)
+    room_ready_data = {
+        'room_id': room.id,
+        'room_type': room.room_type,
+        'match_id': match_id,
+        'players': serialized_players,
+        'prize_pool': room.prize_pool,
+        'message': 'ðŸš€ GET READY FOR BATTLE!',
+    }
+    await sio.emit('room_ready', room_ready_data)
+    logging.info(f"âœ… room_ready emitted globally, match {match_id}")
+
+    # Wait for roulette wheel animation (8 seconds to spin + show result)
+    await asyncio.sleep(8)
+    
+    # Select winner immediately after GET READY (no game_starting event needed)
+    room.status = "playing"
+    room.started_at = datetime.now(timezone.utc)
+    
+    # Select winner using weighted random selection
+    winner = select_winner(room.players)
+    room.winner = winner
+    room.status = "finished"
+    room.finished_at = datetime.now(timezone.utc)
+    
+    # Credit winner with the full prize pool (losers already had bets deducted on join)
+    # For freeroll rooms, credit the fixed house prize instead of prize_pool
+    FREE_ROOM_PRIZE = 100  # tokens winner gets in the free room
+    if room.room_type == RoomType.FREE:
+        credit_amount = FREE_ROOM_PRIZE
+    elif room.room_type == RoomType.FREEROLL:
+        credit_amount = freeroll_config['prize']
+    else:
+        credit_amount = room.prize_pool
+    room.prize_pool = credit_amount  # ensure prize_pool reflects actual credit for DB storage
+
+    if not winner.user_id.startswith('bot_'):
+        try:
+            result = await dbq.increment_user_tokens(winner.user_id, credit_amount)
+            if result:
+                logging.info(f"ðŸ’° Credited {credit_amount} tokens to winner {winner.username} (new balance: {result.get('token_balance', 0)})")
+                winner_sid = user_to_socket.get(winner.user_id)
+                if winner_sid:
+                    await sio.emit('balance_updated', {'user_id': winner.user_id, 'new_balance': result.get('token_balance', 0)}, room=winner_sid)
             else:
-                logging.warning(f"⚠️ Could not find socket for winner {winner.user_id} to send prize_won event")
-            
-            # Save completed game to database
-            try:
-                game_doc = room.dict()
-                # Normalize enum to plain string value
-                rt = game_doc.get('room_type')
-                game_doc['room_type'] = rt.value if hasattr(rt, 'value') else str(rt).split('.')[-1].lower()
-                # Keep datetimes as objects — insert_completed_game uses _to_dt() helper
-                # (no need to call .isoformat() here; that caused the previous asyncpg bug)
-                
-                await dbq.insert_completed_game(game_doc)
+                logging.error(f"âŒ Winner user {winner.user_id} not found in DB â€” balance NOT credited")
+        except Exception as e:
+            logging.error(f"âŒ Failed to credit winner balance: {e}")
 
-                # Save pending result for all participants — cleared client-side on redirect_home if they were online
-                for participant in room.players:
-                    if not participant.user_id.startswith('bot_'):
-                        pending_doc = {
-                            'user_id': participant.user_id,
-                            'match_id': match_id,
-                            'winner': game_doc['winner'],
-                            'all_players': game_doc['players'],
-                            'room_type': game_doc['room_type'],
-                            'prize_pool': room.prize_pool,
-                            'prize_link': prize_link,
-                            'finished_at': game_doc['finished_at'],
-                        }
-                        await dbq.upsert_pending_result(participant.user_id, pending_doc)
+    # Get the prize link for this room type
+    prize_link = PRIZE_LINKS[room.room_type]
+    room.prize_link = prize_link
 
-                # Cleanup old game history (keep only 5 most recent)
-                await cleanup_old_game_history()
-            except Exception as e:
-                logging.error(f"Failed to save completed game: {e}")
-            
-            # Wait a moment before cleaning up room to ensure redirect_home is processed
-            await asyncio.sleep(0.5)
-            
-            # Remove room from active rooms
-            if room.id in active_rooms:
-                del active_rooms[room.id]
-            
-            # Create new room for next round
+    # Store the winner's prize link in database for later retrieval
+    try:
+        await dbq.insert_winner_prize({
+            "user_id": winner.user_id,
+            "username": winner.username,
+            "room_type": room.room_type.value if hasattr(room.room_type, 'value') else str(room.room_type).split('.')[-1].lower(),
+            "prize_link": prize_link,
+            "bet_amount": winner.bet_amount,
+            "total_pool": room.prize_pool,
+            "round_number": room.round_number,
+            "won_at": room.finished_at
+        })
+        logging.info(f"Prize link stored for winner {winner.username}: {prize_link}")
+    except Exception as e:
+        logging.error(f"Failed to store winner prize: {e}")
+    
+    # EVENT 3: game_finished - Notify ROOM participants of the winner
+    logging.info(f"ðŸ“¤ Broadcasting game_finished to room {room.id}")
+    
+    # Serialize winner data
+    winner_dict = winner.dict()
+    if 'joined_at' in winner_dict and isinstance(winner_dict['joined_at'], datetime):
+        winner_dict['joined_at'] = winner_dict['joined_at'].isoformat()
+    
+    game_finished_data = {
+        'room_id': room.id,
+        'room_type': room.room_type,
+        'match_id': match_id,  # Unique match identifier
+        'winner': winner_dict,
+        'winner_name': f"{winner.first_name} {winner.last_name}".strip(),
+        'winner_id': winner.user_id,
+        'prize_pool': room.prize_pool,
+        'prize_link': prize_link,  # Include for winner screen
+        'round_number': room.round_number,
+        'has_prize': True,
+        'finished_at': room.finished_at.isoformat()
+    }
+    # Broadcast game_finished to ALL clients - client filters by player list
+    await sio.emit('game_finished', game_finished_data)
+    logging.info(f"âœ… Emitted game_finished globally, winner: {winner.username}, match_id: {match_id}")
+
+    # Wait for winner announcement screen (8 seconds so players can see it)
+    logging.info(f"â±ï¸ Waiting 8 seconds for winner announcement...")
+    await asyncio.sleep(8)
+
+    # EVENT 4: redirect_home - Redirect all players back to home screen
+    final_sockets = socket_rooms.room_to_sockets.get(room.id, set())
+    socket_count = len(final_sockets)
+
+    logging.info(f"ðŸ“¤ðŸ“¤ðŸ“¤ BROADCASTING redirect_home to room {room.id}")
+    logging.info(f"ðŸ§© Target sockets: {[sid[:8] for sid in final_sockets]}")
+    logging.info(f"ðŸ“Š Socket count: {socket_count}")
+
+    redirect_home_data = {
+        'room_id': room.id,
+        'match_id': match_id,
+        'message': 'Returning to home screen...'
+    }
+    # Broadcast redirect_home to ALL clients - client filters by player list
+    await sio.emit('redirect_home', redirect_home_data)
+    logging.info(f"âœ… Emitted redirect_home globally for match {match_id}")
+    
+    # EVENT 5: prize_won - Send prize link privately to the winner (using socket ID)
+    winner_sid = user_to_socket.get(winner.user_id)
+    if winner_sid:
+        await sio.emit('prize_won', {
+            'prize_link': prize_link,
+            'room_type': room.room_type,
+            'match_id': match_id,
+            'bet_amount': winner.bet_amount,
+            'total_pool': room.prize_pool
+        }, room=winner_sid)
+        logging.info(f"ðŸ† Sent private prize_won event to winner {winner.username}, match_id: {match_id}")
+    else:
+        logging.warning(f"âš ï¸ Could not find socket for winner {winner.user_id} to send prize_won event")
+    
+    # Save completed game to database
+    try:
+        game_doc = room.dict()
+        # Normalize enum to plain string value
+        rt = game_doc.get('room_type')
+        game_doc['room_type'] = rt.value if hasattr(rt, 'value') else str(rt).split('.')[-1].lower()
+        # Keep datetimes as objects â€” insert_completed_game uses _to_dt() helper
+        # (no need to call .isoformat() here; that caused the previous asyncpg bug)
+        
+        await dbq.insert_completed_game(game_doc)
+
+        # Save pending result for all participants â€” cleared client-side on redirect_home if they were online
+        for participant in room.players:
+            if not participant.user_id.startswith('bot_'):
+                pending_doc = {
+                    'user_id': participant.user_id,
+                    'match_id': match_id,
+                    'winner': game_doc['winner'],
+                    'all_players': game_doc['players'],
+                    'room_type': game_doc['room_type'],
+                    'prize_pool': room.prize_pool,
+                    'prize_link': prize_link,
+                    'finished_at': game_doc['finished_at'],
+                }
+                await dbq.upsert_pending_result(participant.user_id, pending_doc)
+
+        # Cleanup old game history (keep only 5 most recent)
+        await cleanup_old_game_history()
+    except Exception as e:
+        logging.error(f"Failed to save completed game: {e}")
+    
+    # Wait a moment before cleaning up room to ensure redirect_home is processed
+    await asyncio.sleep(0.5)
+    
+    # Remove room from active rooms
+    if room.id in active_rooms:
+        del active_rooms[room.id]
+    
+    # Create new room for next round
+    new_room = GameRoom(
+        room_type=room.room_type,
+        round_number=room.round_number + 1
+    )
+    cfg = room_configs.get(room.room_type, {})
+    defaults = ROOM_SETTINGS.get(RoomType(room.room_type), {})
+    new_room.max_players = cfg.get('max_players', defaults.get('max_players', 3))
+    new_room.min_players = cfg.get('min_players', defaults.get('min_players', 2))
+    if room.room_type == 'freeroll':
+        new_room.max_players = freeroll_config['max_players']
+    active_rooms[new_room.id] = new_room
+
+    logging.info(f"ðŸ†• Created new {room.room_type} room {new_room.id}, round #{new_room.round_number}")
+
+    # Notify clients about new room (global broadcast)
+    await sio.emit('new_room_available', {
+        'room_id': new_room.id,
+        'room_type': new_room.room_type,
+        'round_number': new_room.round_number
+    })
+    
+    
+    # Broadcast updated room states (global broadcast)
+    await broadcast_room_updates()
+
+
+async def watch_arena_room_completion(room_id: str, arena_match_id: str):
+    last_round_seen = 1  # round 1 is open at match creation; only emit on advances
+    max_iterations = 3600  # safety cap: 30 min at 2 s/poll
+    iterations = 0
+    while iterations < max_iterations:
+        iterations += 1
+        await asyncio.sleep(2)
+        try:
+            match = await arena_repo.get_match(arena_match_id)
+        except Exception as exc:
+            logging.error(f"[Arena] Failed to watch match {arena_match_id}: {exc}")
+            continue
+
+        if not match:
+            logging.warning(f"[Arena] Match {arena_match_id} not found in DB, stopping watcher")
+            break
+
+        # Push round-advance notification so clients don't wait for the next poll
+        current_round = match.get("round_number", 1)
+        if current_round > last_round_seen and match.get("status") == "active":
+            last_round_seen = current_round
+            room = active_rooms.get(room_id)
+            if room and room.arena_match_id == arena_match_id:
+                await socket_rooms.broadcast_to_room(sio, room_id, "match_update", {
+                    "arena_match_id": arena_match_id,
+                    "room_id": room_id,
+                    "round_number": current_round,
+                    "player_one_hp": match.get("player_one_hp"),
+                    "player_two_hp": match.get("player_two_hp"),
+                    "status": "active",
+                })
+
+        if match.get("status") not in ("finished", "draw", "cancelled"):
+            continue
+
+        room = active_rooms.get(room_id)
+        if not room or room.arena_match_id != arena_match_id:
+            return
+
+        room.status = "finished"
+        room.finished_at = datetime.now(timezone.utc)
+        winner_user_id = match.get("winner_user_id")
+        if winner_user_id:
+            room.winner = next((p for p in room.players if p.user_id == winner_user_id), None)
+
+        _meta = match.get("metadata") or {}
+        if isinstance(_meta, str):
+            try: _meta = json.loads(_meta)
+            except Exception: _meta = {}
+        _streak_results = _meta.get("streak_results", {})
+        _winner_streak = _streak_results.get(str(winner_user_id), {}) if winner_user_id else {}
+
+        await socket_rooms.broadcast_to_room(sio, room_id, "arena_match_finished", {
+            "room_id": room.id,
+            "room_type": room.room_type,
+            "match_id": arena_match_id,
+            "arena_match_id": arena_match_id,
+            "mode": "duel",
+            "status": match.get("status"),
+            "winner_user_id": winner_user_id,
+            "payout_amount": match.get("payout_amount", 0),
+            "finished_at": room.finished_at.isoformat(),
+            "winner_streak": _winner_streak.get("streak", 0),
+            "streak_bonus": _winner_streak.get("bonus", 0),
+            "streak_is_record": _winner_streak.get("is_record", False),
+        })
+
+        # Persist arena result to completed_games so it shows in game history
+        try:
+            serialized_players = []
+            for p in room.players:
+                player_dict = p.dict()
+                if "joined_at" in player_dict and isinstance(player_dict["joined_at"], datetime):
+                    player_dict["joined_at"] = player_dict["joined_at"].isoformat()
+                serialized_players.append(player_dict)
+            room_type_str = (
+                room.room_type.value
+                if hasattr(room.room_type, "value")
+                else str(room.room_type).split(".")[-1].lower()
+            )
+            game_doc = {
+                "id": room.id,
+                "room_type": room_type_str,
+                "players": serialized_players,
+                "status": match.get("status", "finished"),
+                "prize_pool": room.prize_pool,
+                "winner": room.winner.dict() if room.winner else None,
+                "prize_link": None,
+                "match_id": arena_match_id,
+                "round_number": room.round_number,
+                "created_at": room.created_at,
+                "started_at": room.started_at,
+                "finished_at": room.finished_at,
+            }
+            await dbq.insert_completed_game(game_doc)
+        except Exception as exc:
+            logging.error(f"[Arena] Failed to save completed game: {exc}")
+
+        await asyncio.sleep(8)
+        current_room = active_rooms.get(room_id)
+        if current_room and current_room.arena_match_id == arena_match_id:
+            del active_rooms[room_id]
+
             new_room = GameRoom(
                 room_type=room.room_type,
-                round_number=room.round_number + 1
+                round_number=room.round_number + 1,
             )
             cfg = room_configs.get(room.room_type, {})
             defaults = ROOM_SETTINGS.get(RoomType(room.room_type), {})
-            new_room.max_players = cfg.get('max_players', defaults.get('max_players', 3))
-            new_room.min_players = cfg.get('min_players', defaults.get('min_players', 2))
-            if room.room_type == 'freeroll':
-                new_room.max_players = freeroll_config['max_players']
+            new_room.max_players = cfg.get("max_players", defaults.get("max_players", 3))
+            new_room.min_players = cfg.get("min_players", defaults.get("min_players", 2))
             active_rooms[new_room.id] = new_room
-
-            logging.info(f"🆕 Created new {room.room_type} room {new_room.id}, round #{new_room.round_number}")
-
-            # Notify clients about new room (global broadcast)
-            await sio.emit('new_room_available', {
-                'room_id': new_room.id,
-                'room_type': new_room.room_type,
-                'round_number': new_room.round_number
-            })
-            
-            
-            # Broadcast updated room states (global broadcast)
             await broadcast_room_updates()
-
-
-        async def watch_arena_room_completion(room_id: str, arena_match_id: str):
-            last_round_seen = 1  # round 1 is open at match creation; only emit on advances
-            max_iterations = 3600  # safety cap: 30 min at 2 s/poll
-            iterations = 0
-            while iterations < max_iterations:
-                iterations += 1
-                await asyncio.sleep(2)
-                try:
-                    match = await arena_repo.get_match(arena_match_id)
-                except Exception as exc:
-                    logging.error(f"[Arena] Failed to watch match {arena_match_id}: {exc}")
-                    continue
-
-                if not match:
-                    logging.warning(f"[Arena] Match {arena_match_id} not found in DB, stopping watcher")
-                    break
-
-                # Push round-advance notification so clients don't wait for the next poll
-                current_round = match.get("round_number", 1)
-                if current_round > last_round_seen and match.get("status") == "active":
-                    last_round_seen = current_round
-                    room = active_rooms.get(room_id)
-                    if room and room.arena_match_id == arena_match_id:
-                        await socket_rooms.broadcast_to_room(sio, room_id, "match_update", {
-                            "arena_match_id": arena_match_id,
-                            "room_id": room_id,
-                            "round_number": current_round,
-                            "player_one_hp": match.get("player_one_hp"),
-                            "player_two_hp": match.get("player_two_hp"),
-                            "status": "active",
-                        })
-
-                if match.get("status") not in ("finished", "draw", "cancelled"):
-                    continue
-
-                room = active_rooms.get(room_id)
-                if not room or room.arena_match_id != arena_match_id:
-                    return
-
-                room.status = "finished"
-                room.finished_at = datetime.now(timezone.utc)
-                winner_user_id = match.get("winner_user_id")
-                if winner_user_id:
-                    room.winner = next((p for p in room.players if p.user_id == winner_user_id), None)
-
-                _meta = match.get("metadata") or {}
-                if isinstance(_meta, str):
-                    try: _meta = json.loads(_meta)
-                    except Exception: _meta = {}
-                _streak_results = _meta.get("streak_results", {})
-                _winner_streak = _streak_results.get(str(winner_user_id), {}) if winner_user_id else {}
-
-                await socket_rooms.broadcast_to_room(sio, room_id, "arena_match_finished", {
-                    "room_id": room.id,
-                    "room_type": room.room_type,
-                    "match_id": arena_match_id,
-                    "arena_match_id": arena_match_id,
-                    "mode": "duel",
-                    "status": match.get("status"),
-                    "winner_user_id": winner_user_id,
-                    "payout_amount": match.get("payout_amount", 0),
-                    "finished_at": room.finished_at.isoformat(),
-                    "winner_streak": _winner_streak.get("streak", 0),
-                    "streak_bonus": _winner_streak.get("bonus", 0),
-                    "streak_is_record": _winner_streak.get("is_record", False),
-                })
-
-                # Persist arena result to completed_games so it shows in game history
-                try:
-                    serialized_players = []
-                    for p in room.players:
-                        player_dict = p.dict()
-                        if "joined_at" in player_dict and isinstance(player_dict["joined_at"], datetime):
-                            player_dict["joined_at"] = player_dict["joined_at"].isoformat()
-                        serialized_players.append(player_dict)
-                    room_type_str = (
-                        room.room_type.value
-                        if hasattr(room.room_type, "value")
-                        else str(room.room_type).split(".")[-1].lower()
-                    )
-                    game_doc = {
-                        "id": room.id,
-                        "room_type": room_type_str,
-                        "players": serialized_players,
-                        "status": match.get("status", "finished"),
-                        "prize_pool": room.prize_pool,
-                        "winner": room.winner.dict() if room.winner else None,
-                        "prize_link": None,
-                        "match_id": arena_match_id,
-                        "round_number": room.round_number,
-                        "created_at": room.created_at,
-                        "started_at": room.started_at,
-                        "finished_at": room.finished_at,
-                    }
-                    await dbq.insert_completed_game(game_doc)
-                except Exception as exc:
-                    logging.error(f"[Arena] Failed to save completed game: {exc}")
-
-                await asyncio.sleep(8)
-                current_room = active_rooms.get(room_id)
-                if current_room and current_room.arena_match_id == arena_match_id:
-                    del active_rooms[room_id]
-
-                    new_room = GameRoom(
-                        room_type=room.room_type,
-                        round_number=room.round_number + 1,
-                    )
-                    cfg = room_configs.get(room.room_type, {})
-                    defaults = ROOM_SETTINGS.get(RoomType(room.room_type), {})
-                    new_room.max_players = cfg.get("max_players", defaults.get("max_players", 3))
-                    new_room.min_players = cfg.get("min_players", defaults.get("min_players", 2))
-                    active_rooms[new_room.id] = new_room
-                    await broadcast_room_updates()
-                return
-            else:
-                logging.warning(
-                    f"[Arena] Watcher for match {arena_match_id} reached max_iterations limit "
+        return
+    else:
+        logging.warning(
+            f"[Arena] Watcher for match {arena_match_id} reached max_iterations limit "
                     f"({max_iterations} polls), stopping without resolution"
                 )
 
-        # Initialize rooms
-        async def initialize_rooms():
-            """Create initial rooms for all room types, applying DB room configs"""
-            from db_queries import get_all_room_configs
-            try:
-                configs = await get_all_room_configs()
-                for cfg in configs:
-                    room_configs[cfg['room_type']] = cfg
-                logging.info(f"✅ Loaded {len(configs)} room configs from DB")
-            except Exception as e:
-                logging.warning(f"⚠️ Could not load room configs from DB (using defaults): {e}")
 
-            room_types = ['free', 'bronze', 'silver', 'gold', 'freeroll']
-            for room_type in room_types:
-                cfg = room_configs.get(room_type, {})
-                defaults = ROOM_SETTINGS.get(RoomType(room_type), {})
-                room = GameRoom(room_type=room_type)
-                room.max_players = cfg.get('max_players', defaults.get('max_players', 3))
-                room.min_players = cfg.get('min_players', defaults.get('min_players', 2))
-                if room_type == 'freeroll':
-                    room.max_players = freeroll_config['max_players']
-                active_rooms[room.id] = room
-                logging.info(f"✅ Created {room_type} room {room.id} (min={room.min_players}, max={room.max_players})")
+# Initialize rooms
+async def initialize_rooms():
+    """Create initial rooms for all room types, applying DB room configs"""
+    from db_queries import get_all_room_configs
+    try:
+        configs = await get_all_room_configs()
+        for cfg in configs:
+            room_configs[cfg['room_type']] = cfg
+        logging.info(f"Loaded {len(configs)} room configs from DB")
+    except Exception as e:
+        logging.warning(f"Could not load room configs from DB (using defaults): {e}")
 
-        # API Routes
-        @api_router.get("/")
-        async def root():
-            return {"message": "Solana Casino Battle Royale API"}
+    room_types = ['free', 'bronze', 'silver', 'gold', 'freeroll']
+    for room_type in room_types:
+        cfg = room_configs.get(room_type, {})
+        defaults = ROOM_SETTINGS.get(RoomType(room_type), {})
+        room = GameRoom(room_type=room_type)
+        room.max_players = cfg.get('max_players', defaults.get('max_players', 3))
+        room.min_players = cfg.get('min_players', defaults.get('min_players', 2))
+        if room_type == 'freeroll':
+            room.max_players = freeroll_config['max_players']
+        active_rooms[room.id] = room
+        logging.info(f"Created {room_type} room {room.id} (min={room.min_players}, max={room.max_players})")
 
-        @api_router.get("/casino-wallet")
-        async def get_casino_wallet():
-            """Get casino wallet address for payments - DEPRECATED, use /user/{user_id}/wallet"""
-            return {
-                "wallet_address": "DEPRECATED - Use personal wallet endpoint",
-                "network": "devnet",
-                "conversion_rate": {
-                    "sol_to_tokens": 1000,
-                    "description": "1 SOL = 1,000 Casino Tokens"
-                },
-                "message": "This endpoint is deprecated. Each user now gets a personal wallet address."
+# API Routes
+@api_router.get("/")
+async def root():
+    return {"message": "Solana Casino Battle Royale API"}
+
+@api_router.get("/casino-wallet")
+async def get_casino_wallet():
+    """Get casino wallet address for payments - DEPRECATED, use /user/{user_id}/wallet"""
+    return {
+        "wallet_address": "DEPRECATED - Use personal wallet endpoint",
+        "network": "devnet",
+        "conversion_rate": {
+            "sol_to_tokens": 1000,
+            "description": "1 SOL = 1,000 Casino Tokens"
+        },
+        "message": "This endpoint is deprecated. Each user now gets a personal wallet address."
+    }
+
+@api_router.get("/user/{user_id}/derived-wallet")
+async def get_user_derived_wallet(user_id: str, http_request: Request):
+    """Get user's personal derived Solana address for payments"""
+    try:
+        authenticated_user_id = get_authenticated_user_id(http_request)
+        if str(user_id) != str(authenticated_user_id):
+            raise HTTPException(status_code=403, detail="Authenticated user mismatch")
+        # Find user by ID
+        user = await dbq.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Get or create derived address
+        derived_info = await get_or_create_derived_address(user_id, user['telegram_id'])
+        
+        if not derived_info:
+            raise HTTPException(status_code=500, detail="Failed to create derived address")
+        
+        # Add address to monitoring
+        await payment_monitor.add_address_to_monitor(derived_info["address"])
+        
+        # Get current SOL/EUR price for display
+        sol_eur_price = await price_oracle.get_sol_eur_price()
+        
+        return {
+            "derived_wallet_address": derived_info["address"],
+            "user_id": user_id,
+            "telegram_id": user['telegram_id'],
+            "network": "devnet",
+            "current_sol_eur_price": sol_eur_price,
+            "conversion_rate": {
+                "eur_to_tokens": 100,
+                "description": f"1 EUR = 100 tokens (1 SOL = â‚¬{sol_eur_price})"
+            },
+            "instructions": f"Send SOL to YOUR personal address above. Tokens credited automatically! 1 SOL = {int(sol_eur_price * 100)} tokens"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error getting derived wallet: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get derived wallet address")
+
+@api_router.get("/sol-eur-price")
+async def get_sol_eur_price():
+    """Get current SOL/EUR price"""
+    try:
+        price = await price_oracle.get_sol_eur_price()
+        return {
+            "sol_eur_price": price,
+            "last_updated": price_oracle.last_update,
+            "conversion_info": {
+                "1_eur": f"{1/price:.6f} SOL",
+                "100_tokens": f"{1/price:.6f} SOL",
+                "description": "1 EUR = 100 tokens"
             }
+        }
+    except Exception as e:
+        logging.error(f"Error getting SOL price: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get price")
 
-        @api_router.get("/user/{user_id}/derived-wallet")
-        async def get_user_derived_wallet(user_id: str, http_request: Request):
-            """Get user's personal derived Solana address for payments"""
-            try:
-                authenticated_user_id = get_authenticated_user_id(http_request)
-                if str(user_id) != str(authenticated_user_id):
-                    raise HTTPException(status_code=403, detail="Authenticated user mismatch")
-                # Find user by ID
-                user = await dbq.get_user_by_id(user_id)
-                if not user:
-                    raise HTTPException(status_code=404, detail="User not found")
+@api_router.get("/casino-wallet")
+async def get_casino_wallet():
+    """Get casino wallet address and current pricing"""
+    try:
+        sol_price = await price_oracle.get_sol_eur_price()
+        return {
+            "wallet_address": CASINO_WALLET_ADDRESS,
+            "network": "devnet",
+            "current_sol_eur_price": sol_price,
+            "conversion_rate": {
+                "eur_to_tokens": 100,
+                "description": "1 EUR = 100 Casino Tokens (real-time SOL pricing)"
+            },
+            "instructions": "Users get personal derived addresses for payments"
+        }
+    except Exception as e:
+        logging.error(f"Error getting casino wallet info: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get wallet info")
 
-                # Get or create derived address
-                derived_info = await get_or_create_derived_address(user_id, user['telegram_id'])
-                
-                if not derived_info:
-                    raise HTTPException(status_code=500, detail="Failed to create derived address")
-                
-                # Add address to monitoring
-                await payment_monitor.add_address_to_monitor(derived_info["address"])
-                
-                # Get current SOL/EUR price for display
-                sol_eur_price = await price_oracle.get_sol_eur_price()
-                
-                return {
-                    "derived_wallet_address": derived_info["address"],
-                    "user_id": user_id,
-                    "telegram_id": user['telegram_id'],
-                    "network": "devnet",
-                    "current_sol_eur_price": sol_eur_price,
-                    "conversion_rate": {
-                        "eur_to_tokens": 100,
-                        "description": f"1 EUR = 100 tokens (1 SOL = €{sol_eur_price})"
-                    },
-                    "instructions": f"Send SOL to YOUR personal address above. Tokens credited automatically! 1 SOL = {int(sol_eur_price * 100)} tokens"
-                }
-                
-            except HTTPException:
-                raise
-            except Exception as e:
-                logging.error(f"Error getting derived wallet: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get derived wallet address")
+@api_router.post("/admin/add-tokens")
+async def add_tokens_to_user(admin_key: str, username: str, tokens: int):
+    """Add tokens to a specific user by username"""
+    
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    try:
+        # Find user by username
+        user_doc = await dbq.get_user_by_username(username)
 
-        @api_router.get("/sol-eur-price")
-        async def get_sol_eur_price():
-            """Get current SOL/EUR price"""
-            try:
-                price = await price_oracle.get_sol_eur_price()
-                return {
-                    "sol_eur_price": price,
-                    "last_updated": price_oracle.last_update,
-                    "conversion_info": {
-                        "1_eur": f"{1/price:.6f} SOL",
-                        "100_tokens": f"{1/price:.6f} SOL",
-                        "description": "1 EUR = 100 tokens"
-                    }
-                }
-            except Exception as e:
-                logging.error(f"Error getting SOL price: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get price")
+        if user_doc:
+            # Update existing user
+            await dbq.increment_user_tokens(user_doc['id'], tokens)
 
-        @api_router.get("/casino-wallet")
-        async def get_casino_wallet():
-            """Get casino wallet address and current pricing"""
-            try:
-                sol_price = await price_oracle.get_sol_eur_price()
-                return {
-                    "wallet_address": CASINO_WALLET_ADDRESS,
-                    "network": "devnet",
-                    "current_sol_eur_price": sol_price,
-                    "conversion_rate": {
-                        "eur_to_tokens": 100,
-                        "description": "1 EUR = 100 Casino Tokens (real-time SOL pricing)"
-                    },
-                    "instructions": "Users get personal derived addresses for payments"
-                }
-            except Exception as e:
-                logging.error(f"Error getting casino wallet info: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get wallet info")
+            new_balance = user_doc.get('token_balance', 0) + tokens
 
-        @api_router.post("/admin/add-tokens")
-        async def add_tokens_to_user(admin_key: str, username: str, tokens: int):
-            """Add tokens to a specific user by username"""
-            
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            
-            try:
-                # Find user by username
-                user_doc = await dbq.get_user_by_username(username)
-
-                if user_doc:
-                    # Update existing user
-                    await dbq.increment_user_tokens(user_doc['id'], tokens)
-
-                    new_balance = user_doc.get('token_balance', 0) + tokens
-
-                    return {
-                        "status": "success",
-                        "message": f"Added {tokens} tokens to existing user {username}",
-                        "new_balance": new_balance,
-                        "user_id": user_doc.get('id')
-                    }
-                else:
-                    # Create new user with tokens
-                    new_user_id = str(uuid.uuid4())
-
-                    new_user = {
-                        "id": new_user_id,
-                        "telegram_id": -(abs(hash(username)) % 999_999_999 + 1),  # Negative ID — never conflicts with real Telegram IDs
-                        "first_name": username.replace("@", "").title(),
-                        "last_name": "",
-                        "username": username,
-                        "photo_url": "",
-                        "token_balance": tokens,
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                        "last_login": datetime.now(timezone.utc).isoformat(),
-                        "is_verified": True
-                    }
-
-                    await dbq.insert_user(new_user)
-                    
-                    return {
-                        "status": "success", 
-                        "message": f"Created new user {username} with {tokens} tokens",
-                        "new_balance": tokens,
-                        "user_id": new_user_id
-                    }
-                    
-            except Exception as e:
-                logging.error(f"Failed to add tokens: {e}")
-                raise HTTPException(status_code=500, detail="Failed to add tokens")
-
-        @api_router.post("/admin/add-tokens/{telegram_id}")
-        async def add_tokens_by_telegram_id(telegram_id: int, admin_key: str, tokens: int):
-            """Add tokens to a user by their Telegram ID - useful for testing"""
-            
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            
-            try:
-                # Find user by telegram_id
-                user_doc = await dbq.get_user_by_telegram_id(telegram_id)
-
-                if user_doc:
-                    # Update existing user's balance
-                    await dbq.increment_user_tokens_by_telegram_id(telegram_id, tokens)
-
-                    new_balance = user_doc.get('token_balance', 0) + tokens
-
-                    logging.info(f"✅ Added {tokens} tokens to Telegram user {telegram_id}. New balance: {new_balance}")
-                    
-                    return {
-                        "status": "success",
-                        "message": f"Added {tokens} tokens to Telegram user {telegram_id}",
-                        "new_balance": new_balance,
-                        "user_id": user_doc.get('id'),
-                        "username": user_doc.get('username', 'unknown')
-                    }
-                else:
-                    # User doesn't exist yet - they need to login first
-                    return {
-                        "status": "user_not_found",
-                        "message": f"User with Telegram ID {telegram_id} not found. Please login first via Telegram, then tokens can be added.",
-                        "telegram_id": telegram_id
-                    }
-                    
-            except Exception as e:
-                logging.error(f"Failed to add tokens by Telegram ID: {e}")
-                raise HTTPException(status_code=500, detail="Failed to add tokens")
-
-        @api_router.post("/admin/cleanup-database")
-        async def cleanup_database_for_production(admin_key: str):
-            """ADMIN ONLY: Clean database for production launch"""
-            try:
-                # Simple admin key check (in production, use proper authentication)
-                if not verify_admin_key(admin_key):
-                    raise HTTPException(status_code=403, detail="Unauthorized")
-                
-                # Clear ALL tables completely
-                delete_result = await dbq.delete_all_data()
-
-                logging.info("🧹 COMPLETE DATABASE WIPE FINISHED")
-                logging.info(f"Deleted: {delete_result.get('users', 0)} users")
-                logging.info(f"Deleted: {delete_result.get('completed_games', 0)} completed games")
-                logging.info(f"Deleted: {delete_result.get('winner_prizes', 0)} winner prizes")
-
-                return {
-                    "status": "success",
-                    "message": "Database cleaned for production",
-                    "deleted": {
-                        "users": delete_result.get('users', 0),
-                        "completed_games": delete_result.get('completed_games', 0),
-                        "winner_prizes": delete_result.get('winner_prizes', 0)
-                    }
-                }
-                
-            except Exception as e:
-                logging.error(f"Error cleaning database: {e}")
-                raise HTTPException(status_code=500, detail="Failed to clean database")
-
-
-        @api_router.get("/admin/reset-game-history")
-        async def reset_game_history(admin_key: str):
-            """ADMIN ONLY: Clear all game history and stats, keep user accounts"""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            try:
-                async with dbq.get_pool().acquire() as conn:
-                    r_games   = await conn.execute("DELETE FROM completed_games")
-                    r_prizes  = await conn.execute("DELETE FROM winner_prizes")
-                    r_pending = await conn.execute("DELETE FROM pending_results")
-                return {
-                    "status": "success",
-                    "deleted": {
-                        "completed_games": int(r_games.split()[-1]),
-                        "winner_prizes":   int(r_prizes.split()[-1]),
-                        "pending_results": int(r_pending.split()[-1]),
-                    }
-                }
-            except Exception as e:
-                logging.error(f"Error resetting game history: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
-
-        @api_router.post("/auth/telegram", response_model=User)
-        async def telegram_auth(user_data: UserCreate, response: Response):
-            """Authenticate user with Telegram data"""
-            telegram_data = user_data.telegram_auth_data
-            
-            # Log the incoming data for debugging
-            logging.info(f"🔐 Telegram auth attempt for user ID: {telegram_data.id}")
-            logging.info(f"📋 Full auth data: id={telegram_data.id}, first_name={telegram_data.first_name}, username={telegram_data.username}")
-            
-            # For Telegram Web App, be more permissive with authentication
-            # Basic validation - user must have ID and first name
-            if not telegram_data.id or not telegram_data.first_name:
-                raise HTTPException(status_code=400, detail="Missing required Telegram user data")
-            
-            if not verify_telegram_auth(telegram_data.dict(), TELEGRAM_BOT_TOKEN):
-                raise HTTPException(status_code=401, detail="Invalid Telegram authentication")
-
-            logging.info(f"🔍 Authenticating Telegram user: {telegram_data.first_name} (ID: {telegram_data.id})")
-            
-            # Check if user already exists
-            logging.info(f"🔎 Searching for existing user with telegram_id={telegram_data.id} in database")
-            existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
-            logging.info(f"🔎 Search result: {'FOUND' if existing_user else 'NOT FOUND'}")
-
-            if existing_user:
-                now_utc = datetime.now(timezone.utc)
-                last_login_raw = existing_user.get('last_login')
-                if isinstance(last_login_raw, str):
-                    last_login_raw = datetime.fromisoformat(last_login_raw)
-
-                # Award daily login XP if last login was on a previous calendar day
-                gave_daily_xp = False
-                if last_login_raw is None or last_login_raw.date() < now_utc.date():
-                    cur_xp = int(existing_user.get('xp') or 0)
-                    xp_res = _progression.award_xp_result(cur_xp, _progression.XP_DAILY_LOGIN)
-                    async with get_pool().acquire() as _conn:
-                        await _conn.execute(
-                            "UPDATE users SET xp = $2, level = $3, last_login = $4 WHERE telegram_id = $1",
-                            telegram_data.id, xp_res["new_xp"], xp_res["new_level"], now_utc,
-                        )
-                    gave_daily_xp = True
-                else:
-                    await dbq.update_user_fields_by_telegram_id(
-                        telegram_data.id,
-                        {"last_login": now_utc.isoformat()},
-                    )
-
-                existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
-
-                if isinstance(existing_user['created_at'], str):
-                    existing_user['created_at'] = datetime.fromisoformat(existing_user['created_at'])
-                if isinstance(existing_user['last_login'], str):
-                    existing_user['last_login'] = datetime.fromisoformat(existing_user['last_login'])
-
-                logging.info(
-                    f"✅ Returning existing user: {existing_user['first_name']} "
-                    f"balance={existing_user.get('token_balance', 0)} "
-                    f"xp={existing_user.get('xp', 0)} daily_xp={gave_daily_xp}"
-                )
-                async with get_pool().acquire() as _econn:
-                    energy_data = await _get_and_regen_energy(str(existing_user['id']), _econn)
-                user_payload = attach_session(response, existing_user)
-                user_payload.update(energy_data)
-                return User(**user_payload)
-            
-            # Create new user
-            user = User(
-                telegram_id=telegram_data.id,
-                first_name=telegram_data.first_name,
-                last_name=telegram_data.last_name,
-                telegram_username=telegram_data.username,
-                photo_url=telegram_data.photo_url,
-                is_verified=True
-            )
-            
-            user_dict = user.dict()
-            user_dict['created_at'] = user_dict['created_at'].isoformat()
-            user_dict['last_login'] = user_dict['last_login'].isoformat()
-            
-
-            try:
-                await dbq.insert_user(user_dict)
-            except Exception as insert_err:
-                logging.warning(
-                    "User with telegram_id %s may have been created concurrently (error: %s). Refreshing existing record.",
-                    telegram_data.id, insert_err
-                )
-
-                # Fetch the document that now exists and update the login timestamp (and admin tokens if applicable)
-                existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
-                if not existing_user:
-                    logging.error(
-                        "Duplicate user detected for telegram_id %s but document could not be reloaded.",
-                        telegram_data.id
-                    )
-                    raise HTTPException(status_code=500, detail="Failed to finalize Telegram authentication")
-
-                update_fields = {"last_login": datetime.now(timezone.utc).isoformat()}
-
-                await dbq.update_user_fields_by_telegram_id(telegram_data.id, update_fields)
-                existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
-
-                if isinstance(existing_user.get('created_at'), str):
-                    existing_user['created_at'] = datetime.fromisoformat(existing_user['created_at'])
-                if isinstance(existing_user.get('last_login'), str):
-                    existing_user['last_login'] = datetime.fromisoformat(existing_user['last_login'])
-
-                logging.info(
-                    "✅ Returning concurrently created user %s (telegram_id: %s) with balance %s",
-                    existing_user.get('first_name', ''),
-                    telegram_data.id,
-                    existing_user.get('token_balance', 0)
-                )
-
-                return User(**attach_session(response, existing_user))
-
-            logging.info(f"🆕 Created new user: {user.first_name} (telegram_id: {user.telegram_id})")
-
-            return User(**attach_session(response, user.dict()))
-
-        # Solana Token Purchase Endpoints
-        class TokenPurchaseRequest(BaseModel):
-            token_amount: int = Field(gt=0, description="Number of tokens to purchase")
-
-        @api_router.post("/purchase-tokens")
-        async def initiate_token_purchase(request: TokenPurchaseRequest, http_request: Request):
-            """
-            Create a unique wallet address for token purchase
-            Returns wallet address and payment instructions
-            """
-            try:
-                user_id = get_authenticated_user_id(http_request)
-                # Validate user exists
-                user = await dbq.get_user_by_id(user_id)
-                if not user:
-                    raise HTTPException(status_code=404, detail="User not found")
-
-                # Validate token amount (min 10, max 10000)
-                if request.token_amount < 10:
-                    raise HTTPException(status_code=400, detail="Minimum purchase is 10 tokens")
-                if request.token_amount > 10000:
-                    raise HTTPException(status_code=400, detail="Maximum purchase is 10,000 tokens")
-                
-                # Create payment wallet using Solana processor
-                processor = get_processor(None)
-                payment_info = await processor.create_payment_wallet(
-                    user_id=user_id,
-                    token_amount=request.token_amount
-                )
-                
-                logging.info(f"Token purchase initiated: {user_id} -> {request.token_amount} tokens")
-                
-                return {
-                    "status": "success",
-                    "message": "Payment wallet created successfully",
-                    "payment_info": payment_info
-                }
-                
-            except HTTPException:
-                raise
-            except Exception as e:
-                logging.error(f"Failed to initiate token purchase: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to create payment wallet: {str(e)}")
-
-        @api_router.get("/purchase-status/{user_id}/{wallet_address}")
-        async def get_purchase_status(user_id: str, wallet_address: str, http_request: Request):
-            """
-            Get the status of a token purchase
-            Shows payment detection, token crediting, and forwarding status
-            """
-            try:
-                authenticated_user_id = get_authenticated_user_id(http_request)
-                if str(user_id) != str(authenticated_user_id):
-                    raise HTTPException(status_code=403, detail="Authenticated user mismatch")
-                # Get purchase status from Solana processor
-                processor = get_processor(None)
-                status_info = await processor.get_purchase_status(user_id, wallet_address)
-                
-                return {
-                    "status": "success",
-                    "purchase_status": status_info
-                }
-                
-            except HTTPException:
-                raise
-            except Exception as e:
-                logging.error(f"Failed to get purchase status: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to get purchase status: {str(e)}")
-
-        @api_router.get("/purchase-history/{user_id}")
-        async def get_purchase_history(user_id: str, http_request: Request, limit: int = 5, offset: int = 0):
-            """Get token purchase history for a user with pagination"""
-            try:
-                authenticated_user_id = get_authenticated_user_id(http_request)
-                if str(user_id) != str(authenticated_user_id):
-                    raise HTTPException(status_code=403, detail="Authenticated user mismatch")
-                user = await dbq.get_user_by_id(user_id)
-                if not user:
-                    raise HTTPException(status_code=404, detail="User not found")
-
-                purchases, total = await dbq.get_token_purchases(user_id, limit=limit, offset=offset)
-
-                return {
-                    "status": "success",
-                    "purchases": purchases,
-                    "total": total
-                }
-
-            except HTTPException:
-                raise
-            except Exception as e:
-                logging.error(f"Failed to get purchase history: {str(e)}")
-                raise HTTPException(status_code=500, detail="Failed to get purchase history")
-
-        @api_router.post("/admin/update-user-name/{telegram_id}")
-        async def update_user_name(telegram_id: int, first_name: str, username: str = "", photo_url: str = "", admin_key: str = ""):
-            """Update user name, username and photo"""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Invalid admin key")
-            
-            # Update user data
-            update_data = {
-                "first_name": first_name,
-                "telegram_username": username
-            }
-            
-            # Add photo_url if provided
-            if photo_url:
-                update_data["photo_url"] = photo_url
-            
-            updated = await dbq.update_user_fields_by_telegram_id(telegram_id, update_data)
-
-            if not updated:
-                raise HTTPException(status_code=404, detail="User not found")
-            
             return {
                 "status": "success",
-                "message": f"Updated user {telegram_id} name to {first_name}",
-                "telegram_id": telegram_id,
-                "first_name": first_name,
+                "message": f"Added {tokens} tokens to existing user {username}",
+                "new_balance": new_balance,
+                "user_id": user_doc.get('id')
+            }
+        else:
+            # Create new user with tokens
+            new_user_id = str(uuid.uuid4())
+
+            new_user = {
+                "id": new_user_id,
+                "telegram_id": -(abs(hash(username)) % 999_999_999 + 1),  # Negative ID â€” never conflicts with real Telegram IDs
+                "first_name": username.replace("@", "").title(),
+                "last_name": "",
                 "username": username,
-                "photo_url": photo_url
+                "photo_url": "",
+                "token_balance": tokens,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "last_login": datetime.now(timezone.utc).isoformat(),
+                "is_verified": True
             }
 
-        @api_router.post("/admin/process-payment")
-        async def manually_process_payment(wallet_address: str, signature: str, admin_key: str = ""):
-            """ADMIN ONLY: Manually trigger payment processing for a specific transaction"""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Invalid admin key")
-            
-            try:
-                # Get Solana processor
-                from solana_integration import get_processor
-                processor = get_processor(None)
-                
-                logging.info(f"🔧 [Admin] Manually processing payment for wallet {wallet_address}")
-                logging.info(f"🔧 [Admin] Transaction signature: {signature}")
-                
-                # Trigger payment processing
-                await processor.process_detected_payment(wallet_address, signature)
-                
-                # Check result
-                wallet_doc = await dbq.get_temporary_wallet(wallet_address)
-                
-                return {
-                    "status": "success",
-                    "message": "Payment processing triggered",
-                    "wallet_address": wallet_address,
-                    "signature": signature,
-                    "payment_detected": wallet_doc.get("payment_detected") if wallet_doc else False,
-                    "tokens_credited": wallet_doc.get("tokens_credited") if wallet_doc else False,
-                    "sol_forwarded": wallet_doc.get("sol_forwarded") if wallet_doc else False,
-                    "wallet_status": wallet_doc.get("status") if wallet_doc else "not_found"
-                }
-                
-            except Exception as e:
-                logging.error(f"Error manually processing payment: {str(e)}")
-                import traceback
-                logging.error(traceback.format_exc())
-                raise HTTPException(status_code=500, detail=f"Failed to process payment: {str(e)}")
-
-        @api_router.post("/admin/manual-credit")
-        async def manual_credit_tokens(
-            telegram_id: int,
-            amount: int,
-            reason: str,
-            transaction_signature: Optional[str] = None,
-            admin_key: str = ""
-        ):
-            """
-            ADMIN ONLY: Manually credit tokens to a user with full logging
-            
-            Args:
-                telegram_id: User's Telegram ID
-                amount: Tokens to credit
-                reason: Reason for manual credit
-                transaction_signature: Optional Solana transaction signature
-                admin_key: Admin authentication key
-            """
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Invalid admin key")
-            
-            result = await credit_tokens_manually(
-                db=None,
-                telegram_id=telegram_id,
-                amount=amount,
-                reason=reason,
-                transaction_signature=transaction_signature
-            )
-            
-            return result
-
-        @api_router.get("/admin/recovery-status")
-        async def get_recovery_status(admin_key: str = ""):
-            """ADMIN ONLY: Get payment recovery system status"""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Invalid admin key")
-            
-            # Get RPC health status
-            rpc_health = rpc_alert_system.get_health_report()
-            
-            # Get recent manual credits
-            credit_logger = ManualCreditLogger(None)
-            recent_credits = await credit_logger.get_recent_manual_credits(limit=10)
+            await dbq.insert_user(new_user)
             
             return {
-                "rpc_health": rpc_health,
-                "recent_manual_credits": [
-                    {
-                        "telegram_id": c.get("telegram_id"),
-                        "amount": c.get("tokens_credited"),
-                        "reason": c.get("reason"),
-                        "timestamp": c.get("timestamp").isoformat() if c.get("timestamp") else None
-                    }
-                    for c in recent_credits
-                ],
-                "monitoring_active": True
+                "status": "success", 
+                "message": f"Created new user {username} with {tokens} tokens",
+                "new_balance": tokens,
+                "user_id": new_user_id
             }
-
-        @api_router.post("/admin/rescan-payments")
-        async def rescan_payments(admin_key: str = "", wallet_address: Optional[str] = None):
-            """
-            ADMIN ONLY: Manually trigger payment rescan
-            If wallet_address provided, scans only that wallet
-            Otherwise scans all pending wallets
-            """
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Invalid admin key")
             
-            try:
-                from solana_integration import get_processor
-                processor = get_processor(None)
-                
-                if wallet_address:
-                    logging.info(f"🔧 [Admin] Manual rescan for wallet: {wallet_address}")
-                    
-                    # Get specific wallet
-                    wallet_doc = await dbq.get_temporary_wallet(wallet_address)
-                    if not wallet_doc:
-                        raise HTTPException(status_code=404, detail=f"Wallet {wallet_address} not found")
-                    
-                    # Check balance
-                    from solders.pubkey import Pubkey
-                    from decimal import Decimal
-                    from solana.rpc.commitment import Confirmed
-                    from solana_integration import SOLANA_RPC_URL
-                    
-                    logging.info(f"🔧 [Admin] Using RPC URL: {SOLANA_RPC_URL}")
-                    logging.info(f"🔧 [Admin] Processor client: {processor.client._provider.endpoint_uri}")
-                    
-                    pubkey = Pubkey.from_string(wallet_address)
-                    balance_response = await processor.client.get_balance(pubkey, commitment=Confirmed)
-                    balance_lamports = balance_response.value if balance_response.value else 0
-                    
-                    logging.info(f"🔧 [Admin] Balance response: {balance_response}")
-                    logging.info(f"🔧 [Admin] Balance lamports: {balance_lamports}")
-                    
-                    balance_sol = Decimal(balance_lamports) / Decimal(1000000000)
-                    
-                    expected_sol = Decimal(str(wallet_doc["required_sol"]))
-                    
-                    result = {
-                        "wallet_address": wallet_address,
-                        "current_balance": str(balance_sol),
-                        "expected_amount": str(expected_sol),
-                        "status": wallet_doc.get("status"),
-                        "payment_detected": wallet_doc.get("payment_detected", False),
-                        "tokens_credited": wallet_doc.get("tokens_credited", False),
-                        "user_id": wallet_doc.get("user_id")
-                    }
-                    
-                    # If payment found, process it
-                    tolerance = Decimal("0.001")
-                    if balance_sol >= (expected_sol - tolerance) and not wallet_doc.get("tokens_credited"):
-                        logging.info(f"💰 [Admin] Processing payment for wallet {wallet_address}")
-                        
-                        # Mark as detected
-                        await dbq.update_temporary_wallet(
-                            wallet_address,
-                            {"payment_detected": True, "status": "manual_rescan", "detected_at": datetime.now(timezone.utc).isoformat()}
-                        )
-                        
-                        # Credit tokens
-                        await processor.credit_tokens_to_user(wallet_doc, balance_sol)
-                        
-                        # Forward SOL
-                        await processor.forward_sol_to_main_wallet(wallet_address, wallet_doc["private_key"], balance_lamports)
-                        
-                        result["action"] = "payment_processed"
-                    else:
-                        result["action"] = "no_action_needed"
-                    
-                    return result
-                else:
-                    # Scan all pending wallets
-                    logging.info("🔧 [Admin] Manual rescan of all pending payments")
-                    await processor.rescan_pending_payments()
-                    
-                    # Get stats
-                    pending_count = await dbq.count_pending_wallets()
-                    
-                    return {
-                        "status": "success",
-                        "message": "Rescan completed",
-                        "pending_wallets_checked": pending_count
-                    }
-                
-            except HTTPException:
-                raise
-            except Exception as e:
-                logging.error(f"Error in payment rescan: {str(e)}")
-                import traceback
-                logging.error(traceback.format_exc())
-                raise HTTPException(status_code=500, detail=f"Failed to rescan payments: {str(e)}")
+    except Exception as e:
+        logging.error(f"Failed to add tokens: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add tokens")
 
-        @api_router.post("/admin/reset-processor")
-        async def reset_solana_processor(admin_key: str = ""):
-            """ADMIN ONLY: Force reset Solana processor (for RPC URL changes)"""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Invalid admin key")
+@api_router.post("/admin/add-tokens/{telegram_id}")
+async def add_tokens_by_telegram_id(telegram_id: int, admin_key: str, tokens: int):
+    """Add tokens to a user by their Telegram ID - useful for testing"""
+    
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    try:
+        # Find user by telegram_id
+        user_doc = await dbq.get_user_by_telegram_id(telegram_id)
+
+        if user_doc:
+            # Update existing user's balance
+            await dbq.increment_user_tokens_by_telegram_id(telegram_id, tokens)
+
+            new_balance = user_doc.get('token_balance', 0) + tokens
+
+            logging.info(f"âœ… Added {tokens} tokens to Telegram user {telegram_id}. New balance: {new_balance}")
             
-            try:
-                from solana_integration import reset_processor, SOLANA_RPC_URL
-                
-                logging.info("🔄 [Admin] Forcing processor reset...")
-                reset_processor()
-                logging.info(f"✅ [Admin] Processor reset complete")
-                logging.info(f"🌐 [Admin] Current RPC URL: {SOLANA_RPC_URL}")
-                
-                return {
-                    "status": "success",
-                    "message": "Processor reset successfully",
-                    "rpc_url": SOLANA_RPC_URL
-                }
-                
-            except Exception as e:
-                logging.error(f"Error resetting processor: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to reset processor: {str(e)}")
-
-        @api_router.get("/me")
-        async def get_current_user(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            user_doc = await dbq.get_user_by_id(user_id)
-            if not user_doc:
-                raise HTTPException(status_code=404, detail="User not found")
-            return {
-                "id": user_doc.get("id"),
-                "telegram_id": user_doc.get("telegram_id"),
-                "first_name": user_doc.get("first_name"),
-                "last_name": user_doc.get("last_name", ""),
-                "username": user_doc.get("telegram_username", ""),
-                "photo_url": user_doc.get("photo_url", ""),
-                "token_balance": user_doc.get("token_balance", 0),
-                "xp": user_doc.get("xp", 0),
-                "level": user_doc.get("level", 1),
-                "class_name": user_doc.get("class_name"),
-                "is_admin": user_doc.get("is_admin", False),
-                "is_owner": user_doc.get("is_owner", False),
-                "role": user_doc.get("role", "user"),
-            }
-
-        def _is_admin_user_doc(user_doc: Optional[Dict[str, Any]]) -> bool:
-            return bool(
-                user_doc
-                and (
-                    user_doc.get("is_admin")
-                    or user_doc.get("is_owner")
-                    or user_doc.get("role") in ("admin", "owner")
-                )
-            )
-
-
-        async def _require_self_or_admin(http_request: Request, target_user_id: str) -> Dict[str, Any]:
-            authenticated_user_id = get_authenticated_user_id(http_request)
-            requester = await dbq.get_user_by_id(authenticated_user_id)
-            if str(authenticated_user_id) != str(target_user_id) and not _is_admin_user_doc(requester):
-                raise HTTPException(status_code=403, detail="Authenticated user mismatch")
-            return requester or {}
-
-
-        @api_router.get("/users/{user_id}", response_model=User)
-        async def get_user(user_id: str, http_request: Request):
-            await _require_self_or_admin(http_request, user_id)
-            user_doc = await dbq.get_user_by_id(user_id)
-            if not user_doc:
-                raise HTTPException(status_code=404, detail="User not found")
-
-            if isinstance(user_doc['created_at'], str):
-                user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
-
-            return User(**user_doc)
-
-
-        @api_router.get("/rooms")
-        async def get_active_rooms():
-            """Get all active rooms with their current status"""
-            rooms_data = []
-
-            for room in active_rooms.values():
-                room_data = {
-                    "id": room.id,
-                    "room_type": room.room_type,
-                    "players_count": len(room.players),
-                    "max_players": room.max_players,
-                    "status": room.status,
-                    "prize_pool": room.prize_pool,
-                    "match_id": room.match_id,
-                    "arena_match_id": room.arena_match_id,
-                    "mode": "duel" if room.arena_match_id else None,
-                    "round_number": room.round_number,
-                    "settings": ROOM_SETTINGS.get(room.room_type, ROOM_SETTINGS["bronze"]),
-                    "is_locked": (room.room_type == RoomType.FREEROLL and freeroll_config.get('is_locked', False))
-                }
-                rooms_data.append(room_data)
-
-            return {"rooms": rooms_data, "maintenance_mode": maintenance_mode}
-
-        @api_router.get("/user-room-status/{user_id}")
-        async def get_user_room_status(user_id: str, http_request: Request):
-            """Check if user is currently in any active rooms (can be multiple)"""
-            try:
-                authenticated_user_id = get_authenticated_user_id(http_request)
-                if str(user_id) != str(authenticated_user_id):
-                    raise HTTPException(status_code=403, detail="Authenticated user mismatch")
-                # Collect ALL rooms user is in
-                user_rooms = []
-
-                # Check all active rooms for this user
-                for room in active_rooms.values():
-                    for player in room.players:
-                        if player.user_id == user_id:
-                            # User is in this room - add to list
-                            serialized_players = []
-                            for p in room.players:
-                                player_dict = p.dict()
-                                if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
-                                    player_dict['joined_at'] = player_dict['joined_at'].isoformat()
-                                serialized_players.append(player_dict)
-
-                            user_rooms.append({
-                                "room_id": room.id,
-                                "room_type": room.room_type,
-                                "status": room.status,
-                                "players": serialized_players,
-                                "players_count": len(room.players),
-                                "prize_pool": room.prize_pool,
-                                "match_id": room.match_id,
-                                "arena_match_id": room.arena_match_id,
-                                "mode": "duel" if room.arena_match_id else None,
-                                "min_players": room.min_players,
-                                "max_players": room.max_players,
-                                "position": next((i+1 for i, p in enumerate(room.players) if p.user_id == user_id), 0)
-                            })
-                            break  # Found user in this room, move to next room
-
-                # Return all rooms user is in
-                if len(user_rooms) > 0:
-                    return {
-                        "in_room": True,
-                        "rooms": user_rooms,
-                        "total_rooms": len(user_rooms)
-                    }
-                else:
-                    return {
-                        "in_room": False,
-                        "rooms": [],
-                        "total_rooms": 0
-                    }
-            except HTTPException:
-                raise
-            except Exception as e:
-                logging.error(f"Error checking user room status: {e}")
-                raise HTTPException(status_code=500, detail="Failed to check room status")
-
-        @api_router.post("/join-room")
-        async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks, http_request: Request):
-            """Join a room with a bet"""
-            logging.info(f"Join room request: {request.dict()}")
-            authenticated_user_id = get_authenticated_user_id(http_request)
-            if str(request.user_id) != str(authenticated_user_id):
-                raise HTTPException(status_code=403, detail="Authenticated user mismatch")
-            
-            # Find room of the requested type
-            target_room = None
-            for room in active_rooms.values():
-                if room.room_type == request.room_type and room.status == "waiting":
-                    target_room = room
-                    break
-            
-            if not target_room:
-                logging.error(f"No available room of type {request.room_type}")
-                raise HTTPException(status_code=404, detail="No available room of this type")
-
-            # Freeroll lock check
-            if target_room.room_type == RoomType.FREEROLL and freeroll_config.get('is_locked'):
-                raise HTTPException(status_code=423, detail="Free Roll room is currently locked.")
-
-            # Validate bet amount (skip range check for freeroll)
-            settings = ROOM_SETTINGS[request.room_type]
-            if request.room_type != RoomType.FREEROLL:
-                if request.bet_amount < settings["min_bet"] or request.bet_amount > settings["max_bet"]:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Bet amount must be between {settings['min_bet']} and {settings['max_bet']} tokens"
-                    )
-
-            # Check if user exists and has enough tokens
-            user_doc = await dbq.get_user_by_id(request.user_id)
-            if not user_doc:
-                logging.error(f"User not found: {request.user_id}")
-                raise HTTPException(status_code=404, detail="User not found")
-
-            if user_doc.get("is_banned"):
-                raise HTTPException(status_code=403, detail="Your account has been banned.")
-
-            if maintenance_mode:
-                raise HTTPException(status_code=503, detail="🔧 Maintenance in progress. Please try again later.")
-
-            logging.info(f"User balance: {user_doc.get('token_balance', 0)}, Bet amount: {request.bet_amount}")
-
-            if request.bet_amount > 0 and user_doc.get('token_balance', 0) < request.bet_amount:
-                raise HTTPException(status_code=400, detail="Insufficient token balance")
-
-            # Check if user is already in the room
-            if any(p.user_id == request.user_id for p in target_room.players):
-                raise HTTPException(status_code=400, detail="You are already in this room")
-
-            # Check if room is full
-            if len(target_room.players) >= target_room.max_players:
-                raise HTTPException(status_code=400, detail="Room is full")
-
-            if (
-                target_room.players
-                and target_room.min_players == 2
-                and target_room.max_players == 2
-                and request.bet_amount > 0
-                and target_room.players[0].bet_amount != request.bet_amount
-            ):
-                raise HTTPException(status_code=400, detail="Arena duel players must use the same bet amount")
-
-            # Deduct tokens from user balance (skip for freeroll / 0-bet)
-            # increment_user_tokens with negative amount guards against going below 0
-            if request.bet_amount > 0:
-                updated = await dbq.increment_user_tokens(request.user_id, -request.bet_amount)
-                if not updated:
-                    raise HTTPException(status_code=400, detail="Insufficient token balance")
-            new_balance_after_join = user_doc.get('token_balance', 0) - request.bet_amount
-            joining_sid = user_to_socket.get(request.user_id)
-            if joining_sid:
-                await sio.emit('balance_updated', {'user_id': request.user_id, 'new_balance': new_balance_after_join}, room=joining_sid)
-            
-            equipped = await _fetch_equipped_snapshot(request.user_id)
-
-            # Add player to room with full Telegram info
-            if request.is_anonymous:
-                anon_count = sum(1 for p in target_room.players if p.is_anonymous)
-                anon_name = "Anonymous" if anon_count == 0 else f"Anonymous-{anon_count + 1}"
-                player = RoomPlayer(
-                    user_id=request.user_id,
-                    username='',
-                    first_name=anon_name,
-                    last_name='',
-                    photo_url='',
-                    bet_amount=request.bet_amount,
-                    is_anonymous=True,
-                    level=int(user_doc.get('level') or 1),
-                    class_name=user_doc.get('class_name'),
-                    weapon=equipped.get('weapon'),
-                    armor=equipped.get('armor'),
-                    ability=equipped.get('ability'),
-                )
-            else:
-                player = RoomPlayer(
-                    user_id=request.user_id,
-                    username=user_doc.get('telegram_username', ''),  # @username
-                    first_name=user_doc.get('first_name', 'Player'),
-                    last_name=user_doc.get('last_name', ''),
-                    photo_url=user_doc.get('photo_url', ''),
-                    bet_amount=request.bet_amount,
-                    is_anonymous=False,
-                    level=int(user_doc.get('level') or 1),
-                    class_name=user_doc.get('class_name'),
-                    weapon=equipped.get('weapon'),
-                    armor=equipped.get('armor'),
-                    ability=equipped.get('ability'),
-                )
-            target_room.players.append(player)
-            target_room.prize_pool += request.bet_amount
-            
-            # Notify ROOM participants about new player - ALWAYS send FULL participant list
-            # Serialize player data with datetime conversion
-            serialized_players = []
-            for p in target_room.players:
-                player_dict = p.dict()
-                if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
-                    player_dict['joined_at'] = player_dict['joined_at'].isoformat()
-                serialized_players.append(player_dict)
-            
-            # Serialize single player data
-            player_dict = player.dict()
-            if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
-                player_dict['joined_at'] = player_dict['joined_at'].isoformat()
-            
-            logging.info(f"👤 Player {player.username} joined room {target_room.id} ({len(target_room.players)}/{target_room.max_players})")
-            logging.info(f"📋 Full participant list: {[p['username'] for p in serialized_players]}")
-
-            await socket_rooms.broadcast_to_room(sio, target_room.id, 'player_joined', {
-                'room_id': target_room.id,
-                'room_type': target_room.room_type,
-                'player': player_dict,
-                'players_count': len(target_room.players),
-                'prize_pool': target_room.prize_pool,
-                'all_players': serialized_players,  # FULL participant list - REPLACE, don't append
-                'room_status': 'filling' if len(target_room.players) < target_room.max_players else 'full',
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            })
-            logging.info(f"✅ Emitted player_joined to room {target_room.id} with {len(serialized_players)} players")
-
-            # Broadcast updated room states to all clients (global lobby update)
-            await broadcast_room_updates()
-
-            # Check if enough players to start game
-            if len(target_room.players) >= target_room.min_players:
-                logging.info(f"🚀 Enough players! Room {target_room.id} has {len(target_room.players)}/{target_room.min_players} players, starting game sequence...")
-
-                # Emit room_full event to all participants in THIS room only
-                await socket_rooms.broadcast_to_room(sio, target_room.id, 'room_full', {
-                    'room_id': target_room.id,
-                    'room_type': target_room.room_type,
-                    'players': serialized_players,
-                    'players_count': len(target_room.players),
-                    'message': '🚀 GAME IS STARTING! GET READY FOR THE BATTLE!',
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
-                logging.info(f"✅ Emitted room_full to room {target_room.id}")
-
-                # Start the game sequence (will emit room_ready, game_starting, game_finished in order)
-                background_tasks.add_task(start_game_round, target_room)
-
-            return {
-                "status": "joined",
-                "success": True,
-                "room_id": target_room.id,
-                "position": len(target_room.players),
-                "players_needed": target_room.max_players - len(target_room.players),
-                "min_players": target_room.min_players,
-                "max_players": target_room.max_players,
-                "new_balance": user_doc.get('token_balance', 0) - request.bet_amount
-            }
-
-        class LeaveRoomRequest(BaseModel):
-            room_id: str
-            user_id: str
-
-        @api_router.post("/leave-room")
-        async def leave_room(request: LeaveRoomRequest, http_request: Request):
-            """Remove player from a waiting room and refund their bet"""
-            authenticated_user_id = get_authenticated_user_id(http_request)
-            if str(request.user_id) != str(authenticated_user_id):
-                raise HTTPException(status_code=403, detail="Authenticated user mismatch")
-            async with room_locks[request.room_id]:
-                room = active_rooms.get(request.room_id)
-                if not room:
-                    raise HTTPException(status_code=404, detail="Room not found")
-                if room.status != "waiting":
-                    raise HTTPException(status_code=400, detail="Cannot leave a room that is already in progress")
-
-                player = next((p for p in room.players if p.user_id == request.user_id), None)
-                if not player:
-                    raise HTTPException(status_code=404, detail="Player not in this room")
-
-                refund = player.bet_amount
-                room.players = [p for p in room.players if p.user_id != request.user_id]
-                room.prize_pool = max(0, room.prize_pool - refund)
-
-                # Refund tokens
-                result = await dbq.increment_user_tokens(request.user_id, refund)
-                new_balance = result.get("token_balance", 0) if result else 0
-                serialized_players = []
-                for p in room.players:
-                    pd = p.dict()
-                    if isinstance(pd.get("joined_at"), datetime):
-                        pd["joined_at"] = pd["joined_at"].isoformat()
-                    serialized_players.append(pd)
-
-            # Notify socket
-            sid = user_to_socket.get(request.user_id)
-            if sid:
-                await sio.emit("balance_updated", {"user_id": request.user_id, "new_balance": new_balance}, room=sid)
-
-            # Broadcast updated room list to all clients
-            await broadcast_room_updates()
-
-            await sio.emit("player_left", {
-                "room_type": room.room_type,
-                "player": {"first_name": player.first_name, "username": player.username},
-                "players_count": len(room.players),
-                "all_players": serialized_players,
-            })
-
-            logging.info(f"👋 Player {player.username or player.first_name} left room {room.id}, refunded {refund} tokens")
-            return {"status": "left", "refund": refund, "new_balance": new_balance}
-
-        @api_router.get("/pending-result/{user_id}")
-        async def get_pending_result(user_id: str, http_request: Request):
-            """Return and delete all missed game results for this user"""
-            authenticated_user_id = get_authenticated_user_id(http_request)
-            if str(user_id) != str(authenticated_user_id):
-                raise HTTPException(status_code=403, detail="Authenticated user mismatch")
-            results = await dbq.get_and_delete_pending_result(user_id)
-            return {"results": results or []}
-
-        @api_router.get("/room-participants/{room_type}")
-        async def get_room_participants_by_type(room_type: str):
-            """Get current participants in a room by type - for lobby updates"""
-            # Find the active room of this type
-            target_room = None
-            for room in active_rooms.values():
-                if room.room_type == room_type and room.status == "waiting":
-                    target_room = room
-                    break
-            
-            if not target_room:
-                return {
-                    "room_type": room_type,
-                    "players": [],
-                    "count": 0
-                }
-            
-            return {
-                "room_type": room_type,
-                "room_id": target_room.id,
-                "players": [p.dict() for p in target_room.players],
-                "count": len(target_room.players),
-                "status": target_room.status,
-                "min_players": target_room.min_players,
-                "max_players": target_room.max_players,
-            }
-
-        @api_router.get("/room-chat/{room_id}")
-        async def get_room_chat(room_id: str):
-            """Get chat history for a room"""
-            return {"messages": room_chat.get(room_id, [])}
-
-        @api_router.post("/room-chat/{room_id}")
-        async def post_room_chat(room_id: str, http_request: Request, text: str = ""):
-            """Post a chat message to a room (REST fallback when socket unreliable)"""
-            text = text.strip()[:200]
-            if not text or not room_id:
-                raise HTTPException(status_code=400, detail="Missing room_id or text")
-            user_id = get_authenticated_user_id(http_request)
-            room = active_rooms.get(room_id)
-            player = next((p for p in room.players if p.user_id == user_id), None) if room else None
-            if not player:
-                raise HTTPException(status_code=403, detail="Player is not in this room")
-            if player.is_anonymous:
-                raise HTTPException(status_code=403, detail="Anonymous players cannot chat")
-            name = player.first_name or player.username or "Player"
-            msg = {
-                'user_id': user_id,
-                'name': name,
-                'text': text,
-                'ts': datetime.now(timezone.utc).isoformat(),
-            }
-            room_chat.setdefault(room_id, [])
-            room_chat[room_id].append(msg)
-            if len(room_chat[room_id]) > 50:
-                room_chat[room_id] = room_chat[room_id][-50:]
-            payload = {'room_id': room_id, **msg}
-            await sio.emit('lobby_message', payload)
-            logging.info(f"💬 REST Chat [{room_id[:8]}] {name}: {text[:40]}")
-            return {"ok": True, "message": msg}
-
-        @api_router.get("/room/{room_id}")
-        async def get_room_details(room_id: str):
-            """Get detailed information about a specific room"""
-            room = active_rooms.get(room_id)
-            if not room:
-                raise HTTPException(status_code=404, detail="Room not found")
-
-            def serialize_player(p):
-                d = p.dict()
-                if 'joined_at' in d and isinstance(d['joined_at'], datetime):
-                    d['joined_at'] = d['joined_at'].isoformat()
-                return d
-
-            return {
-                "id": room.id,
-                "room_type": room.room_type,
-                "players": [serialize_player(p) for p in room.players],
-                "status": room.status,
-                "prize_pool": room.prize_pool,
-                "match_id": room.match_id,
-                "arena_match_id": room.arena_match_id,
-                "mode": "duel" if room.arena_match_id else None,
-                "round_number": room.round_number,
-                "settings": ROOM_SETTINGS[room.room_type],
-                "winner": serialize_player(room.winner) if room.winner else None,
-                "finished_at": room.finished_at.isoformat() if room.finished_at else None,
-            }
-
-        @api_router.get("/leaderboard/my-rank")
-        async def get_my_rank(request: Request):
-            user_id = get_authenticated_user_id(request)
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Not authenticated")
-            async with get_pool().acquire() as conn:
-                coins_rank = await conn.fetchval("""
-                    SELECT COUNT(*)+1 FROM users
-                    WHERE token_balance > (SELECT token_balance FROM users WHERE id=$1)
-                """, user_id)
-                wins_rank = await conn.fetchval("""
-                    SELECT COUNT(*)+1 FROM (
-                        SELECT u.id, COUNT(am.id) FILTER (WHERE am.winner_user_id = u.id) AS wins
-                        FROM users u
-                        LEFT JOIN arena_matches am ON am.status='finished'
-                             AND (am.player_one_id=u.id OR am.player_two_id=u.id)
-                        GROUP BY u.id
-                    ) sub
-                    WHERE wins > (
-                        SELECT COUNT(am2.id) FILTER (WHERE am2.winner_user_id=$1)
-                        FROM arena_matches am2
-                        WHERE am2.status='finished'
-                          AND (am2.player_one_id=$1 OR am2.player_two_id=$1)
-                    )
-                """, user_id)
-                level_rank = await conn.fetchval("""
-                    SELECT COUNT(*)+1 FROM users
-                    WHERE xp > (SELECT xp FROM users WHERE id=$1)
-                """, user_id)
-            return {
-                "coins_rank": int(coins_rank or 1),
-                "wins_rank": int(wins_rank or 1),
-                "level_rank": int(level_rank or 1),
-            }
-
-
-        @api_router.get("/leaderboard")
-        async def get_leaderboard(tab: str = "coins"):
-            if tab not in ("coins", "wins", "level"):
-                tab = "coins"
-            leaderboard = await dbq.get_leaderboard(tab=tab, limit=20)
-            return {"leaderboard": leaderboard, "tab": tab}
-
-
-        @api_router.get("/daily-quests")
-        async def get_daily_quests(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            quests = await _daily_quests.get_quests_for_user(user_id)
-            return {"quests": quests, **_daily_quests.quest_timing()}
-
-
-        @api_router.post("/daily-quests/{quest_key}/claim")
-        async def claim_daily_quest(quest_key: str, http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            try:
-                async with get_pool().acquire() as conn:
-                    async with conn.transaction():
-                        return await _daily_quests.claim_quest_in_transaction(conn, user_id, quest_key)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-
-
-        @api_router.get("/daily-chest")
-        async def get_daily_chest(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                return await _daily_chest.get_daily_chest_state(conn, user_id)
-
-
-        @api_router.post("/daily-chest/claim")
-        async def claim_daily_chest(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            try:
-                async with get_pool().acquire() as conn:
-                    async with conn.transaction():
-                        return await _daily_chest.claim_daily_chest_in_transaction(conn, user_id)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-
-
-        @api_router.get("/game-history")
-        async def get_game_history(http_request: Request, limit: int = 10, user_id: str = ""):
-            """Get recent completed games. If user_id given, returns only that user's games."""
-            if limit > 20:
-                limit = 20
-            if user_id:
-                await _require_self_or_admin(http_request, user_id)
-                games = await dbq.get_user_completed_games(user_id, limit)
-            else:
-                games = await dbq.get_recent_completed_games(limit)
-            return {"games": games}
-
-        @api_router.get("/user-stats/{user_id}")
-        async def get_user_stats_endpoint(user_id: str, http_request: Request):
-            """Return play statistics for a user (games played, win rate, profit, etc.)"""
-            await _require_self_or_admin(http_request, user_id)
-            try:
-                stats = await dbq.get_user_stats(user_id)
-                return stats
-            except Exception as e:
-                logging.error(f"get_user_stats error: {e}", exc_info=True)
-                raise HTTPException(status_code=500, detail=str(e))
-
-
-        @api_router.get("/version")
-        async def get_version():
-            """Get current build version for verification"""
-            return {
-                "version": "8.0-WINNER-FIX-20250114",
-                "build_timestamp": "1736864000",
-                "environment": "production",
-                "status": "healthy",
-                "features": {
-                    "winner_message_fixed": True,
-                    "version_label_removed": True,
-                    "prize_visibility_fixed": True,
-                    "history_badge_fixed": True
-                }
-            }
-
-        @api_router.get("/health")
-        async def health_check():
-            """Health check endpoint"""
-            return {
-                "status": "healthy",
-                "version": "8.0-WINNER-FIX-20250114",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-
-        @api_router.get("/users/telegram/{telegram_id}")
-        async def get_user_by_telegram_id(telegram_id: int, http_request: Request):
-            """Find user by Telegram ID. Returns 404 if not found, never 500 for missing user."""
-            # DB query is isolated so HTTPException(404) is never caught as a generic error
-            try:
-                user_doc = await dbq.get_user_by_telegram_id(telegram_id)
-            except Exception as e:
-                logging.error(f"DB error looking up telegram_id={telegram_id}: {e}")
-                raise HTTPException(status_code=500, detail="Database error")
-
-            if not user_doc:
-                logging.info(f"User not found for telegram_id={telegram_id}")
-                raise HTTPException(status_code=404, detail="User not found")
-
-            await _require_self_or_admin(http_request, user_doc.get("id"))
-
-            return {
-                "id": user_doc.get('id'),
-                "telegram_id": user_doc.get('telegram_id'),
-                "first_name": user_doc.get('first_name'),
-                "last_name": user_doc.get('last_name', ''),
-                "username": user_doc.get('telegram_username', ''),
-                "photo_url": user_doc.get('photo_url', ''),
-                "token_balance": user_doc.get('token_balance', 0),
-                "xp": user_doc.get('xp', 0),
-                "level": user_doc.get('level', 1),
-                "class_name": user_doc.get('class_name'),
-                "created_at": user_doc.get('created_at'),
-                "last_login": user_doc.get('last_login'),
-                "last_daily_claim": user_doc.get('last_daily_claim'),
-                "is_verified": user_doc.get('is_verified', False),
-                "is_admin": user_doc.get('is_admin', False),
-                "is_owner": user_doc.get('is_owner', False),
-                "role": user_doc.get('role', 'user'),
-                "current_win_streak": user_doc.get('current_win_streak', 0),
-                "max_win_streak": user_doc.get('max_win_streak', 0),
-            }
-
-        class ClassUpdateBody(BaseModel):
-            class_name: str
-
-        @api_router.post("/me/class")
-        async def set_my_class(body: ClassUpdateBody, http_request: Request):
-            """Update the authenticated user's class (warrior / mage / rogue)."""
-            valid_classes = {"warrior", "mage", "rogue"}
-            if body.class_name not in valid_classes:
-                raise HTTPException(status_code=400, detail="class_name must be warrior, mage, or rogue")
-            user_id = get_authenticated_user_id(http_request)
-            if any(any(player.user_id == user_id for player in room.players) for room in active_rooms.values()):
-                raise HTTPException(status_code=409, detail="Cannot change class while in a room")
-            async with get_pool().acquire() as conn:
-                active_match = await conn.fetchval(
-                    """
-                    SELECT 1 FROM arena_matches
-                    WHERE status = 'active'
-                      AND (player_one_id = $1 OR player_two_id = $1)
-                    LIMIT 1
-                    """,
-                    user_id,
-                )
-                if active_match:
-                    raise HTTPException(status_code=409, detail="Cannot change class during an active arena match")
-                await conn.execute(
-                    "UPDATE users SET class_name = $2 WHERE id = $1",
-                    user_id, body.class_name,
-                )
-            user_doc = await dbq.get_user_by_id(user_id)
-            if not user_doc:
-                raise HTTPException(status_code=404, detail="User not found")
-            return {
-                "id": user_doc.get("id"),
-                "class_name": user_doc.get("class_name"),
-                "message": f"Class updated to {body.class_name}",
-            }
-
-
-        @api_router.get("/user/{user_id}")
-        async def get_user_data(user_id: str, http_request: Request):
-            """Get user data including current balance"""
-            await _require_self_or_admin(http_request, user_id)
-            try:
-                user_doc = await dbq.get_user_by_id(user_id)
-                if not user_doc:
-                    raise HTTPException(status_code=404, detail="User not found")
-
-                async with get_pool().acquire() as conn:
-                    energy_data = await _get_and_regen_energy(str(user_id), conn)
-
-                return {
-                    "id": user_doc.get('id'),
-                    "telegram_id": user_doc.get('telegram_id'),
-                    "first_name": user_doc.get('first_name'),
-                    "last_name": user_doc.get('last_name', ''),
-                    "username": user_doc.get('telegram_username', ''),
-                    "photo_url": user_doc.get('photo_url', ''),
-                    "token_balance": user_doc.get('token_balance', 0),
-                    "xp": user_doc.get('xp', 0),
-                    "level": user_doc.get('level', 1),
-                    "class_name": user_doc.get('class_name'),
-                    "created_at": user_doc.get('created_at'),
-                    "last_login": user_doc.get('last_login'),
-                    "is_verified": user_doc.get('is_verified', False),
-                    "is_admin": user_doc.get('is_admin', False),
-                    "is_owner": user_doc.get('is_owner', False),
-                    "role": user_doc.get('role', 'user'),
-                    "current_win_streak": user_doc.get('current_win_streak', 0),
-                    "max_win_streak": user_doc.get('max_win_streak', 0),
-                    "energy": energy_data["energy"],
-                    "max_energy": energy_data["max_energy"],
-                    "next_energy_at": energy_data["next_energy_at"],
-                }
-            except Exception as e:
-                logging.error(f"Failed to get user data: {e}")
-                raise HTTPException(status_code=500, detail="Failed to get user data")
-
-        _DEFAULT_SETTINGS = {
-            "notifications": {"battle": True, "daily_chest": True, "quests": True},
-            "gameplay": {"remember_bet": True},
-            "privacy": {"show_leaderboard": True, "show_stats": True},
-            "responsible": {"daily_limit": 0, "session_reminder": "off"},
-        }
-
-        def _merge_settings(stored: dict) -> dict:
-            result = copy.deepcopy(_DEFAULT_SETTINGS)
-            for section, defaults in _DEFAULT_SETTINGS.items():
-                if section in stored and isinstance(stored[section], dict):
-                    result[section].update(stored[section])
-            return result
-
-        @api_router.get("/me/settings")
-        async def get_my_settings(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Not authenticated")
-            async with get_pool().acquire() as conn:
-                row = await conn.fetchrow("SELECT settings FROM users WHERE id = $1", user_id)
-                if not row:
-                    raise HTTPException(status_code=404, detail="User not found")
-                raw = row["settings"] or {}
-                if isinstance(raw, str):
-                    try: raw = json.loads(raw)
-                    except Exception: raw = {}
-            return _merge_settings(raw)
-
-        class SettingsUpdateBody(BaseModel):
-            notifications: Optional[Dict[str, Any]] = None
-            gameplay: Optional[Dict[str, Any]] = None
-            privacy: Optional[Dict[str, Any]] = None
-            responsible: Optional[Dict[str, Any]] = None
-
-        @api_router.post("/me/settings")
-        async def update_my_settings(body: SettingsUpdateBody, http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Not authenticated")
-            async with get_pool().acquire() as conn:
-                row = await conn.fetchrow("SELECT settings FROM users WHERE id = $1", user_id)
-                if not row:
-                    raise HTTPException(status_code=404, detail="User not found")
-                raw = row["settings"] or {}
-                if isinstance(raw, str):
-                    try: raw = json.loads(raw)
-                    except Exception: raw = {}
-                merged = _merge_settings(raw)
-                patch = body.dict(exclude_none=True)
-                for section, values in patch.items():
-                    if section in merged and isinstance(values, dict):
-                        merged[section].update(values)
-                await conn.execute(
-                    "UPDATE users SET settings = $2 WHERE id = $1",
-                    user_id, json.dumps(merged),
-                )
-            return merged
-
-        @api_router.get("/me/progress")
-        async def get_my_progress(http_request: Request):
-            """Return the authenticated user's XP and level progression."""
-            user_id = get_authenticated_user_id(http_request)
-            user_doc = await dbq.get_user_by_id(user_id)
-            if not user_doc:
-                raise HTTPException(status_code=404, detail="User not found")
-            xp = int(user_doc.get('xp') or 0)
-            level = int(user_doc.get('level') or 1)
-            return {
-                "user_id": user_id,
-                "xp": xp,
-                "level": level,
-                "xp_to_next_level": _progression.xp_to_next_level(xp),
-                "xp_for_current_level": _progression.xp_for_level(level),
-            }
-
-
-        @api_router.get("/user/{user_id}/prizes")
-        async def get_user_prizes(user_id: str):
-            """Get all prize links won by a specific user"""
-            prizes = await dbq.get_user_prizes(user_id)
-            return {"prizes": prizes}
-
-
-        # ─────────────────────────────────────────────────────────────────
-        # Shop endpoints
-        # ─────────────────────────────────────────────────────────────────
-
-        _TIER_ORDER = {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5}
-
-
-        def _serialize_item_row(row: Any) -> Dict[str, Any]:
-            item = dict(row)
-            item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
-            item["item_id"] = item.get("item_id") or item.get("id")
-            item["rarity"] = tier_to_rarity(item.get("tier"))
-            item["stats"] = stat_preview(item)
-            item.update(item_stat_payload(item))
-            return item
-
-
-        def _serialize_inventory_row(row: Any) -> Dict[str, Any]:
-            item = dict(row)
-            item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
-            item["inventory_id"] = item["id"]
-            item["item_id"] = item["catalog_item_id"]
-            item["type"] = item["slot"]
-            item["category"] = item["slot"]
-            item["rarity"] = tier_to_rarity(item.get("tier"))
-            item["stats"] = stat_preview(item)
-            item.update(item_stat_payload(item))
-            return item
-
-
-        def _serialize_equipped_row(row: Any) -> Dict[str, Any]:
-            item = _serialize_item_row(row)
-            item["inventory_id"] = item.get("inventory_id")
-            item["id"] = item.get("inventory_id") or item["item_id"]
-            return item
-
-
-        @api_router.get("/shop/items")
-        async def get_shop_items():
-            async with get_pool().acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT * FROM items
-                    WHERE tier IN ('common', 'uncommon', 'rare')
-                    ORDER BY
-                        CASE tier
-                            WHEN 'common'    THEN 1
-                            WHEN 'uncommon'  THEN 2
-                            WHEN 'rare'      THEN 3
-                            WHEN 'epic'      THEN 4
-                            WHEN 'legendary' THEN 5
-                            ELSE 6 END,
-                        class_name,
-                        slot
-                """)
-                return {"items": [_serialize_item_row(r) for r in rows]}
-
-
-        class ShopBuyBody(BaseModel):
-            item_id: int
-
-
-        class ScrollBuyBody(BaseModel):
-            scroll_type: str
-            quantity: int = Field(default=1, ge=1, le=100)
-
-
-        @api_router.post("/shop/buy")
-        async def buy_shop_item(body: ShopBuyBody, http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                async with conn.transaction():
-                    item = await conn.fetchrow(
-                        "SELECT * FROM items WHERE id = $1", body.item_id
-                    )
-                    if not item or not is_shop_tier(item["tier"]):
-                        raise HTTPException(status_code=404, detail="Item not found or not purchasable")
-                    user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
-                    if not user_row or not can_user_equip_item(user_row["class_name"], item["class_name"]):
-                        raise HTTPException(status_code=400, detail="Item class does not match your class")
-                    updated = await conn.fetchrow(
-                        "UPDATE users SET token_balance = token_balance - $2 "
-                        "WHERE id = $1 AND token_balance >= $2 RETURNING id",
-                        user_id, item["price"],
-                    )
-                    if not updated:
-                        raise HTTPException(status_code=400, detail="Insufficient token balance")
-                    rarity = tier_to_rarity(item["tier"])
-                    await conn.execute(
-                        """
-                        INSERT INTO inventory
-                            (id, user_id, item_type, item_name, item_rarity, equipped, item_id, source, acquired_at)
-                        VALUES ($1, $2, $3, $4, $5, FALSE, $6, 'shop', NOW())
-                        """,
-                        str(uuid.uuid4()), user_id, item["slot"], item["name"], rarity, item["id"],
-                    )
-                    new_balance = await conn.fetchval("SELECT token_balance FROM users WHERE id = $1", user_id)
-                    return {"success": True, "item": _serialize_item_row(item), "new_balance": int(new_balance or 0)}
-
-
-        @api_router.get("/shop/scrolls")
-        async def get_scroll_shop():
-            return {"scrolls": [dict(scroll) for scroll in SCROLL_SHOP.values() if scroll["purchasable"]]}
-
-
-        @api_router.post("/shop/scrolls/buy")
-        async def buy_scroll(body: ScrollBuyBody, http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            scroll = SCROLL_SHOP.get(body.scroll_type)
-            if not scroll or not scroll["purchasable"]:
-                raise HTTPException(status_code=404, detail="Scroll not found or not purchasable")
-            total_price = scroll["price"] * body.quantity
-            async with get_pool().acquire() as conn:
-                async with conn.transaction():
-                    updated = await conn.fetchrow(
-                        "UPDATE users SET token_balance = token_balance - $2 WHERE id = $1 AND token_balance >= $2 RETURNING token_balance",
-                        user_id,
-                        total_price,
-                    )
-                    if not updated:
-                        raise HTTPException(status_code=400, detail="Insufficient token balance")
-                    row = await conn.fetchrow(
-                        """
-                        INSERT INTO item_scrolls (user_id, scroll_type, quantity, updated_at)
-                        VALUES ($1, $2, $3, NOW())
-                        ON CONFLICT (user_id, scroll_type) DO UPDATE
-                            SET quantity = item_scrolls.quantity + EXCLUDED.quantity,
-                                updated_at = NOW()
-                        RETURNING quantity
-                        """,
-                        user_id,
-                        body.scroll_type,
-                        body.quantity,
-                    )
-                    return {
-                        "success": True,
-                        "scroll_type": body.scroll_type,
-                        "quantity": int(row["quantity"]),
-                        "new_balance": int(updated["token_balance"]),
-                    }
-
-
-        @api_router.get("/me/scrolls")
-        async def get_my_scrolls(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT scroll_type, quantity FROM item_scrolls WHERE user_id = $1",
-                    user_id,
-                )
-            by_type = {row["scroll_type"]: int(row["quantity"]) for row in rows}
-            return {"scrolls": {scroll_type: by_type.get(scroll_type, 0) for scroll_type in sorted(SCROLL_TYPES)}}
-
-
-        @api_router.get("/me/upgrade")
-        async def get_upgrade_state(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                inventory_rows = await conn.fetch(
-                    """
-                    SELECT inv.id, inv.user_id, inv.item_type, inv.item_name, inv.item_rarity, inv.source, inv.acquired_at,
-                           inv.enchant_level,
-                           inv.item_id AS catalog_item_id,
-                           i.name, i.description, i.class_name, i.slot, i.tier, i.price,
-                           i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
-                           i.risk_win_chance, i.passive_type, i.passive_value, i.image_path
-                    FROM inventory inv
-                    JOIN items i ON i.id = inv.item_id
-                    WHERE inv.user_id = $1 AND i.slot IN ('weapon', 'armor')
-                    ORDER BY inv.acquired_at DESC, inv.id DESC
-                    """,
-                    user_id,
-                )
-                equipped_rows = await conn.fetch(
-                    "SELECT user_id, slot, inventory_id, item_id FROM equipped_items WHERE user_id = $1",
-                    user_id,
-                )
-                scroll_rows = await conn.fetch(
-                    "SELECT scroll_type, quantity FROM item_scrolls WHERE user_id = $1",
-                    user_id,
-                )
-            scrolls = {row["scroll_type"]: int(row["quantity"]) for row in scroll_rows}
-            equipped_inventory_ids = resolve_effective_equipped_inventory_ids(
-                [dict(row) for row in inventory_rows],
-                [dict(row) for row in equipped_rows],
-            )
-            items = []
-            for row in inventory_rows:
-                item = _serialize_inventory_row({**dict(row), "equipped": row["id"] in equipped_inventory_ids})
-                item["max_enchant"] = max_enchant_for_tier(item["tier"])
-                item["normal_success_chance"] = enchant_success_chance(item["tier"], item["enchant_level"], "normal_scroll")
-                item["blessed_success_chance"] = enchant_success_chance(item["tier"], item["enchant_level"], "blessed_scroll")
-                item["next_enchant_preview"] = {
-                    "normal_scroll": next_enchant_preview(item, "normal_scroll"),
-                    "blessed_scroll": next_enchant_preview(item, "blessed_scroll"),
-                }
-                items.append(item)
-            return {
-                "items": items,
-                "scrolls": {scroll_type: scrolls.get(scroll_type, 0) for scroll_type in sorted(SCROLL_TYPES)},
-            }
-
-
-        @api_router.get("/inventory")
-        @api_router.get("/me/inventory")
-        async def get_my_inventory(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT inv.id, inv.user_id, inv.item_type, inv.item_name, inv.item_rarity, inv.source, inv.acquired_at,
-                           inv.enchant_level,
-                           inv.item_id AS catalog_item_id,
-                           i.name, i.description, i.class_name, i.slot, i.tier, i.price,
-                           i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
-                           i.risk_win_chance, i.passive_type, i.passive_value, i.image_path
-                    FROM inventory inv
-                    LEFT JOIN items i ON i.id = inv.item_id
-                    WHERE inv.user_id = $1
-                    ORDER BY inv.acquired_at DESC, inv.id DESC
-                    """,
-                    user_id,
-                )
-                equipped_rows = await conn.fetch(
-                    "SELECT user_id, slot, inventory_id, item_id FROM equipped_items WHERE user_id = $1",
-                    user_id,
-                )
-                equipped_inventory_ids = resolve_effective_equipped_inventory_ids(
-                    [dict(row) for row in rows],
-                    [dict(row) for row in equipped_rows],
-                )
-                return {
-                    "items": [
-                        _serialize_inventory_row({**dict(row), "equipped": row["id"] in equipped_inventory_ids})
-                        for row in rows
-                    ]
-                }
-
-
-        # ─────────────────────────────────────────────────────────────────
-        # Equipment endpoints
-        # ─────────────────────────────────────────────────────────────────
-
-        @api_router.get("/me/equipped")
-        async def get_my_equipped(http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT ei.slot, COALESCE(inv.id, ei.inventory_id) AS inventory_id,
-                           COALESCE(inv.enchant_level, 0) AS enchant_level, i.*
-                    FROM equipped_items ei
-                    JOIN items i ON i.id = ei.item_id
-                    JOIN users u ON u.id = ei.user_id AND i.class_name = u.class_name
-                    LEFT JOIN LATERAL (
-                        SELECT id, enchant_level
-                        FROM inventory
-                        WHERE user_id = ei.user_id
-                          AND item_id = ei.item_id
-                          AND (ei.inventory_id IS NULL OR id = ei.inventory_id)
-                        ORDER BY
-                            CASE WHEN id = ei.inventory_id THEN 0 ELSE 1 END,
-                            acquired_at ASC,
-                            id ASC
-                        LIMIT 1
-                    ) inv ON TRUE
-                    WHERE ei.user_id = $1
-                    """,
-                    user_id,
-                )
-                equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None}
-                equipped_items: List[Dict[str, Any]] = []
-                for row in rows:
-                    slot = row["slot"]
-                    item = _serialize_equipped_row(row)
-                    if slot in equipped:
-                        equipped[slot] = item
-                    equipped_items.append({
-                        "id": row["inventory_id"] or row["id"],
-                        "inventory_id": row["inventory_id"],
-                        "item_id": row["id"],
-                        "slot": row["slot"],
-                    })
-                return {
-                    "equipped": equipped,
-                    "equipped_items": equipped_items,
-                    "loadout_effective_stats": modifiers_to_dict(aggregate_item_modifiers([dict(row) for row in rows])),
-                }
-
-
-        class EquipBody(BaseModel):
-            item_id: Optional[int] = None
-            inventory_id: Optional[str] = None
-
-
-        class EnchantBody(BaseModel):
-            inventory_id: str
-            scroll_type: str
-
-
-        @api_router.post("/me/equip")
-        async def equip_item(body: EquipBody, http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                inv_row = None
-                if body.inventory_id:
-                    inv_row = await conn.fetchrow(
-                        """
-                        SELECT inv.id AS inventory_id, inv.item_id, i.*
-                        FROM inventory inv
-                        JOIN items i ON i.id = inv.item_id
-                        WHERE inv.user_id = $1 AND inv.id = $2
-                        """,
-                        user_id,
-                        body.inventory_id,
-                    )
-                elif body.item_id is not None:
-                    inv_rows = await conn.fetch(
-                        """
-                        SELECT inv.id AS inventory_id, inv.item_id, i.*
-                        FROM inventory inv
-                        JOIN items i ON i.id = inv.item_id
-                        WHERE inv.user_id = $1 AND inv.item_id = $2
-                        ORDER BY inv.acquired_at ASC, inv.id ASC
-                        """,
-                        user_id,
-                        body.item_id,
-                    )
-                    try:
-                        inv_row = choose_inventory_copy_for_equip([dict(row) for row in inv_rows])
-                    except LookupError:
-                        inv_row = None
-                    except ValueError as exc:
-                        raise HTTPException(status_code=400, detail=str(exc)) from exc
-                if not inv_row:
-                    raise HTTPException(status_code=404, detail="Item not in your inventory")
-                user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
-                if not user_row or not can_user_equip_item(user_row["class_name"], inv_row["class_name"]):
-                    raise HTTPException(status_code=400, detail="Item class does not match your class")
-                await conn.execute(
-                    """
-                    INSERT INTO equipped_items (user_id, slot, inventory_id, item_id, equipped_at)
-                    VALUES ($1, $2, $3, $4, NOW())
-                    ON CONFLICT (user_id, slot) DO UPDATE
-                        SET inventory_id = EXCLUDED.inventory_id,
-                            item_id = EXCLUDED.item_id,
-                            equipped_at = NOW()
-                    """,
-                    user_id, inv_row["slot"], inv_row["inventory_id"], inv_row["item_id"],
-                )
-                return {"success": True, "equipped_slot": inv_row["slot"], "item_id": inv_row["item_id"], "inventory_id": inv_row["inventory_id"]}
-
-
-        @api_router.post("/me/enchant")
-        async def enchant_item(body: EnchantBody, http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            if body.scroll_type not in SCROLL_TYPES:
-                raise HTTPException(status_code=400, detail="Invalid scroll type")
-
-            async with get_pool().acquire() as conn:
-                async with conn.transaction():
-                    row = await conn.fetchrow(
-                        """
-                        SELECT inv.id AS inventory_id, inv.user_id, inv.item_id, inv.enchant_level,
-                               i.name, i.class_name, i.slot, i.tier
-                        FROM inventory inv
-                        JOIN items i ON i.id = inv.item_id
-                        WHERE inv.user_id = $1 AND inv.id = $2
-                        FOR UPDATE OF inv
-                        """,
-                        user_id,
-                        body.inventory_id,
-                    )
-                    if not row:
-                        raise HTTPException(status_code=404, detail="Item not in your inventory")
-                    if not is_enchantable_slot(row["slot"]):
-                        raise HTTPException(status_code=400, detail="Only weapon and armor items can be enchanted")
-
-                    user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
-                    if not user_row or not can_user_equip_item(user_row["class_name"], row["class_name"]):
-                        raise HTTPException(status_code=400, detail="Item class does not match your class")
-
-                    current_level = int(row["enchant_level"] or 0)
-                    max_level = max_enchant_for_tier(row["tier"])
-                    if current_level >= max_level:
-                        raise HTTPException(status_code=400, detail="Item is already at max enchant")
-
-                    scroll_row = await conn.fetchrow(
-                        """
-                        SELECT quantity
-                        FROM item_scrolls
-                        WHERE user_id = $1 AND scroll_type = $2
-                        FOR UPDATE
-                        """,
-                        user_id,
-                        body.scroll_type,
-                    )
-                    if not scroll_row or int(scroll_row["quantity"] or 0) <= 0:
-                        raise HTTPException(status_code=400, detail="Scroll unavailable")
-
-                    await conn.execute(
-                        """
-                        UPDATE item_scrolls
-                        SET quantity = quantity - 1,
-                            updated_at = NOW()
-                        WHERE user_id = $1 AND scroll_type = $2
-                        """,
-                        user_id,
-                        body.scroll_type,
-                    )
-
-                    roll = random.SystemRandom().random()
-                    result = resolve_enchant_attempt(row["tier"], current_level, body.scroll_type, roll)
-
-                    if result["success"]:
-                        await conn.execute(
-                            "UPDATE inventory SET enchant_level = $3 WHERE user_id = $1 AND id = $2",
-                            user_id,
-                            body.inventory_id,
-                            result["new_enchant_level"],
-                        )
-                    elif result["destroyed"]:
-                        await conn.execute(
-                            """
-                            DELETE FROM equipped_items
-                            WHERE user_id = $1
-                              AND (
-                                  inventory_id = $2
-                                  OR (inventory_id IS NULL AND item_id = $3)
-                              )
-                            """,
-                            user_id,
-                            body.inventory_id,
-                            row["item_id"],
-                        )
-                        await conn.execute(
-                            "DELETE FROM inventory WHERE user_id = $1 AND id = $2",
-                            user_id,
-                            body.inventory_id,
-                        )
-
-                    remaining_scrolls = await conn.fetchval(
-                        "SELECT quantity FROM item_scrolls WHERE user_id = $1 AND scroll_type = $2",
-                        user_id,
-                        body.scroll_type,
-                    )
-
-                    return {
-                        "success": result["success"],
-                        "destroyed": result["destroyed"],
-                        "inventory_id": body.inventory_id,
-                        "item_id": row["item_id"],
-                        "slot": row["slot"],
-                        "tier": row["tier"],
-                        "scroll_type": body.scroll_type,
-                        "previous_enchant_level": result["previous_enchant_level"],
-                        "new_enchant_level": result["new_enchant_level"],
-                        "max_enchant": max_level,
-                        "success_chance": result["success_chance"],
-                        "roll": result["roll"],
-                        "remaining_scrolls": int(remaining_scrolls or 0),
-                    }
-
-
-        class UnequipBody(BaseModel):
-            slot: str
-
-
-        SELL_PRICES = {
-            "common": 5,
-            "uncommon": 100,
-            "rare": 300,
-            "epic": 500,
-            "legendary": 1200,
-        }
-
-
-        class SellBody(BaseModel):
-            inventory_id: str
-
-
-        @api_router.post("/me/unequip")
-        async def unequip_item(body: UnequipBody, http_request: Request):
-            if body.slot not in ("weapon", "armor", "ability"):
-                raise HTTPException(status_code=400, detail="slot must be weapon, armor, or ability")
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                await conn.execute(
-                    "DELETE FROM equipped_items WHERE user_id = $1 AND slot = $2",
-                    user_id, body.slot,
-                )
-            return {"success": True}
-
-
-        @api_router.post("/me/sell")
-        async def sell_item(body: SellBody, http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                async with conn.transaction():
-                    # 1. Fetch inventory row (lock for update)
-                    row = await conn.fetchrow(
-                        """
-                        SELECT inv.id AS inventory_id, inv.user_id, inv.item_id,
-                               i.name AS item_name, i.tier
-                        FROM inventory inv
-                        JOIN items i ON i.id = inv.item_id
-                        WHERE inv.user_id = $1 AND inv.id = $2
-                        FOR UPDATE OF inv
-                        """,
-                        user_id, body.inventory_id,
-                    )
-                    if not row:
-                        raise HTTPException(status_code=404, detail="Item not in your inventory")
-
-                    # 2. Check not equipped
-                    equipped = await conn.fetchval(
-                        "SELECT 1 FROM equipped_items WHERE user_id = $1 AND inventory_id = $2",
-                        user_id, body.inventory_id,
-                    )
-                    if equipped:
-                        raise HTTPException(status_code=400, detail="Cannot sell an equipped item — unequip it first")
-
-                    # 3. Sell price
-                    tier = (row["tier"] or "common").lower()
-                    sell_price = SELL_PRICES.get(tier, 5)
-
-                    # 4. Credit tokens
-                    new_balance = await conn.fetchval(
-                        "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1 RETURNING token_balance",
-                        user_id, sell_price,
-                    )
-
-                    # 5. Delete from inventory
-                    await conn.execute(
-                        "DELETE FROM inventory WHERE user_id = $1 AND id = $2",
-                        user_id, body.inventory_id,
-                    )
-
-                    return {"new_balance": int(new_balance or 0), "sell_price": sell_price, "item_name": row["item_name"]}
-
-
-        # ─────────────────────────────────────────────────────────────────
-        # Admin: give items
-        # ─────────────────────────────────────────────────────────────────
-
-        @api_router.post("/admin/give-all-items")
-        async def admin_give_all_items(admin_key: str, telegram_id: int):
-            """ADMIN: Insert every item from the catalog into a user's inventory (once per item)."""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            async with get_pool().acquire() as conn:
-                user_row = await conn.fetchrow(
-                    "SELECT id FROM users WHERE telegram_id = $1", telegram_id
-                )
-                if not user_row:
-                    raise HTTPException(status_code=404, detail="User not found")
-                user_id = user_row["id"]
-                all_items = await conn.fetch("SELECT id, slot, name, tier FROM items ORDER BY id")
-                added = 0
-                for item in all_items:
-                    rarity = {"common": "Common", "uncommon": "Uncommon", "rare": "Rare",
-                              "epic": "Epic", "legendary": "Legendary"}.get(
-                        (item["tier"] or "common").lower(), "Common"
-                    )
-                    await conn.execute(
-                        """
-                        INSERT INTO inventory (id, user_id, item_type, item_name, item_rarity, source, item_id, acquired_at)
-                        VALUES ($1, $2, $3, $4, $5, 'admin_grant', $6, NOW())
-                        """,
-                        str(uuid.uuid4()), user_id, item["slot"], item["name"], rarity, item["id"],
-                    )
-                    added += 1
-                return {"added": added, "user_id": user_id, "telegram_id": telegram_id}
-
-
-        # ─────────────────────────────────────────────────────────────────
-        # Starter items
-        # ─────────────────────────────────────────────────────────────────
-
-        @api_router.get("/me/starter-items")
-        async def get_starter_items(http_request: Request):
-            """Give the 3 common items for the user's class if not already in inventory."""
-            user_id = get_authenticated_user_id(http_request)
-            async with get_pool().acquire() as conn:
-                user_row = await conn.fetchrow(
-                    "SELECT class_name FROM users WHERE id = $1", user_id
-                )
-                if not user_row or not user_row["class_name"]:
-                    raise HTTPException(status_code=400, detail="Set your class before claiming starter items")
-                class_name = user_row["class_name"]
-                starter_items = await conn.fetch(
-                    "SELECT * FROM items WHERE class_name = $1 AND tier = 'common' ORDER BY slot ASC", class_name
-                )
-                given = []
-                for item in starter_items:
-                    already = await conn.fetchval(
-                        "SELECT 1 FROM inventory WHERE user_id = $1 AND item_id = $2",
-                        user_id, item["id"],
-                    )
-                    if not already:
-                        await conn.execute(
-                            """
-                            INSERT INTO inventory
-                                (id, user_id, item_type, item_name, item_rarity, equipped, item_id, source, acquired_at)
-                            VALUES ($1, $2, $3, $4, $5, FALSE, $6, 'starter', NOW())
-                            """,
-                            str(uuid.uuid4()), user_id, item["slot"], item["name"], tier_to_rarity(item["tier"]), item["id"],
-                        )
-                        given.append(_serialize_item_row(item))
-                return {"given": given, "class_name": class_name}
-
-        @api_router.get("/check-winner/{user_id}")
-        async def check_if_winner(user_id: str):
-            """Check if user has any unclaimed prizes"""
-            recent_prizes = await dbq.get_user_prizes(user_id)
-            return {"recent_prizes": recent_prizes[:5]}
-
-
-        @api_router.post("/admin/adjust-tokens/{telegram_id}")
-        async def adjust_tokens(telegram_id: int, tokens: int, admin_key: str = ""):
-            """Add or remove tokens from a user by Telegram ID. Use negative tokens to remove."""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            try:
-                user_doc = await dbq.get_user_by_telegram_id(telegram_id)
-                if not user_doc:
-                    raise HTTPException(status_code=404, detail="User not found")
-                current = user_doc.get('token_balance', 0)
-                new_balance = max(0, current + tokens)
-                await dbq.update_user_fields_by_telegram_id(telegram_id, {"token_balance": new_balance})
-                action = "Added" if tokens >= 0 else "Removed"
-                logging.info(f"Admin {action} {abs(tokens)} tokens for user {telegram_id}. New balance: {new_balance}")
-                return {
-                    "status": "success",
-                    "telegram_id": telegram_id,
-                    "username": user_doc.get('telegram_username', ''),
-                    "first_name": user_doc.get('first_name', ''),
-                    "previous_balance": current,
-                    "tokens_changed": tokens,
-                    "new_balance": new_balance
-                }
-            except HTTPException:
-                raise
-            except Exception as e:
-                logging.error(f"Failed to adjust tokens: {e}")
-                raise HTTPException(status_code=500, detail="Failed to adjust tokens")
-
-
-        @api_router.post("/admin/remove-fake-player")
-        async def remove_fake_player(room_type: str, admin_key: str = ""):
-            """Remove the last bot player from a waiting room."""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            target_room = None
-            for room in active_rooms.values():
-                if room.room_type == room_type and room.status == "waiting":
-                    target_room = room
-                    break
-            if not target_room:
-                raise HTTPException(status_code=404, detail=f"No waiting {room_type} room found")
-            bot_players = [p for p in target_room.players if p.user_id.startswith("bot_")]
-            if not bot_players:
-                raise HTTPException(status_code=404, detail="No bot players in this room")
-            bot = bot_players[-1]
-            target_room.players = [p for p in target_room.players if p.user_id != bot.user_id]
-            target_room.prize_pool = max(0, target_room.prize_pool - bot.bet_amount)
-            serialized_players = []
-            for p in target_room.players:
-                pd = p.dict()
-                if 'joined_at' in pd and isinstance(pd['joined_at'], datetime):
-                    pd['joined_at'] = pd['joined_at'].isoformat()
-                serialized_players.append(pd)
-            await socket_rooms.broadcast_to_room(sio, target_room.id, 'player_left', {
-                'room_id': target_room.id,
-                'players': serialized_players,
-                'players_count': len(target_room.players),
-                'prize_pool': target_room.prize_pool,
-            })
-            return {"status": "success", "message": f"Bot removed from {room_type}", "players_count": len(target_room.players)}
-
-
-        @api_router.post("/admin/add-fake-player")
-        async def add_fake_player(room_type: str, player_name: str, bet_amount: int, admin_key: str = "", background_tasks: BackgroundTasks = None):
-            """Add a fake/bot player to a room to fill it up."""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-
-            room_type_enum = None
-            for rt in RoomType:
-                if rt.value == room_type:
-                    room_type_enum = rt
-                    break
-            if room_type_enum is None:
-                raise HTTPException(status_code=400, detail=f"Invalid room type: {room_type}")
-
-            settings = ROOM_SETTINGS[room_type_enum]
-            if bet_amount < settings["min_bet"] or bet_amount > settings["max_bet"]:
-                raise HTTPException(status_code=400, detail=f"Bet must be between {settings['min_bet']} and {settings['max_bet']}")
-
-            target_room = None
-            for room in active_rooms.values():
-                if room.room_type == room_type and room.status == "waiting":
-                    target_room = room
-                    break
-            if not target_room:
-                raise HTTPException(status_code=404, detail=f"No waiting room found for {room_type}")
-            if len(target_room.players) >= target_room.max_players:
-                raise HTTPException(status_code=400, detail="Room is already full")
-
-            bot_seed = str(uuid.uuid4())[:8]
-            anon_num = str(hash(bot_seed) % 9000 + 1000)
-            fake_player = RoomPlayer(
-                user_id=f"bot_{bot_seed}",
-                username="",
-                first_name="Anonymous",
-                last_name="",
-                photo_url="",
-                bet_amount=bet_amount,
-                is_anonymous=True
-            )
-            target_room.players.append(fake_player)
-            target_room.prize_pool += bet_amount
-
-            serialized_players = []
-            for p in target_room.players:
-                pd = p.dict()
-                if 'joined_at' in pd and isinstance(pd['joined_at'], datetime):
-                    pd['joined_at'] = pd['joined_at'].isoformat()
-                serialized_players.append(pd)
-
-            fake_dict = fake_player.dict()
-            if 'joined_at' in fake_dict and isinstance(fake_dict['joined_at'], datetime):
-                fake_dict['joined_at'] = fake_dict['joined_at'].isoformat()
-
-            await socket_rooms.broadcast_to_room(sio, target_room.id, 'player_joined', {
-                'room_id': target_room.id,
-                'room_type': target_room.room_type,
-                'player': fake_dict,
-                'players_count': len(target_room.players),
-                'prize_pool': target_room.prize_pool,
-                'all_players': serialized_players,
-                'room_status': 'filling' if len(target_room.players) < target_room.max_players else 'full',
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            })
-            await broadcast_room_updates()
-
-            if len(target_room.players) >= target_room.min_players:
-                await socket_rooms.broadcast_to_room(sio, target_room.id, 'room_full', {
-                    'room_id': target_room.id,
-                    'room_type': target_room.room_type,
-                    'players': serialized_players,
-                    'players_count': len(target_room.players),
-                    'message': '🚀 GAME IS STARTING! GET READY FOR THE BATTLE!',
-                    'timestamp': datetime.now(timezone.utc).isoformat()
-                })
-                if background_tasks:
-                    background_tasks.add_task(start_game_round, target_room)
-
             return {
                 "status": "success",
-                "message": f"Anonymous player added to {room_type} room",
-                "room_id": target_room.id,
-                "players_count": len(target_room.players),
-                "prize_pool": target_room.prize_pool
+                "message": f"Added {tokens} tokens to Telegram user {telegram_id}",
+                "new_balance": new_balance,
+                "user_id": user_doc.get('id'),
+                "username": user_doc.get('username', 'unknown')
+            }
+        else:
+            # User doesn't exist yet - they need to login first
+            return {
+                "status": "user_not_found",
+                "message": f"User with Telegram ID {telegram_id} not found. Please login first via Telegram, then tokens can be added.",
+                "telegram_id": telegram_id
+            }
+            
+    except Exception as e:
+        logging.error(f"Failed to add tokens by Telegram ID: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add tokens")
+
+@api_router.post("/admin/cleanup-database")
+async def cleanup_database_for_production(admin_key: str):
+    """ADMIN ONLY: Clean database for production launch"""
+    try:
+        # Simple admin key check (in production, use proper authentication)
+        if not verify_admin_key(admin_key):
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Clear ALL tables completely
+        delete_result = await dbq.delete_all_data()
+
+        logging.info("ðŸ§¹ COMPLETE DATABASE WIPE FINISHED")
+        logging.info(f"Deleted: {delete_result.get('users', 0)} users")
+        logging.info(f"Deleted: {delete_result.get('completed_games', 0)} completed games")
+        logging.info(f"Deleted: {delete_result.get('winner_prizes', 0)} winner prizes")
+
+        return {
+            "status": "success",
+            "message": "Database cleaned for production",
+            "deleted": {
+                "users": delete_result.get('users', 0),
+                "completed_games": delete_result.get('completed_games', 0),
+                "winner_prizes": delete_result.get('winner_prizes', 0)
+            }
+        }
+        
+    except Exception as e:
+        logging.error(f"Error cleaning database: {e}")
+        raise HTTPException(status_code=500, detail="Failed to clean database")
+
+
+@api_router.get("/admin/reset-game-history")
+async def reset_game_history(admin_key: str):
+    """ADMIN ONLY: Clear all game history and stats, keep user accounts"""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        async with dbq.get_pool().acquire() as conn:
+            r_games   = await conn.execute("DELETE FROM completed_games")
+            r_prizes  = await conn.execute("DELETE FROM winner_prizes")
+            r_pending = await conn.execute("DELETE FROM pending_results")
+        return {
+            "status": "success",
+            "deleted": {
+                "completed_games": int(r_games.split()[-1]),
+                "winner_prizes":   int(r_prizes.split()[-1]),
+                "pending_results": int(r_pending.split()[-1]),
+            }
+        }
+    except Exception as e:
+        logging.error(f"Error resetting game history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/auth/telegram", response_model=User)
+async def telegram_auth(user_data: UserCreate, response: Response):
+    """Authenticate user with Telegram data"""
+    telegram_data = user_data.telegram_auth_data
+    
+    # Log the incoming data for debugging
+    logging.info(f"ðŸ” Telegram auth attempt for user ID: {telegram_data.id}")
+    logging.info(f"ðŸ“‹ Full auth data: id={telegram_data.id}, first_name={telegram_data.first_name}, username={telegram_data.username}")
+    
+    # For Telegram Web App, be more permissive with authentication
+    # Basic validation - user must have ID and first name
+    if not telegram_data.id or not telegram_data.first_name:
+        raise HTTPException(status_code=400, detail="Missing required Telegram user data")
+    
+    if not verify_telegram_auth(telegram_data.dict(), TELEGRAM_BOT_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid Telegram authentication")
+
+    logging.info(f"ðŸ” Authenticating Telegram user: {telegram_data.first_name} (ID: {telegram_data.id})")
+    
+    # Check if user already exists
+    logging.info(f"ðŸ”Ž Searching for existing user with telegram_id={telegram_data.id} in database")
+    existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
+    logging.info(f"ðŸ”Ž Search result: {'FOUND' if existing_user else 'NOT FOUND'}")
+
+    if existing_user:
+        now_utc = datetime.now(timezone.utc)
+        last_login_raw = existing_user.get('last_login')
+        if isinstance(last_login_raw, str):
+            last_login_raw = datetime.fromisoformat(last_login_raw)
+
+        # Award daily login XP if last login was on a previous calendar day
+        gave_daily_xp = False
+        if last_login_raw is None or last_login_raw.date() < now_utc.date():
+            cur_xp = int(existing_user.get('xp') or 0)
+            xp_res = _progression.award_xp_result(cur_xp, _progression.XP_DAILY_LOGIN)
+            async with get_pool().acquire() as _conn:
+                await _conn.execute(
+                    "UPDATE users SET xp = $2, level = $3, last_login = $4 WHERE telegram_id = $1",
+                    telegram_data.id, xp_res["new_xp"], xp_res["new_level"], now_utc,
+                )
+            gave_daily_xp = True
+        else:
+            await dbq.update_user_fields_by_telegram_id(
+                telegram_data.id,
+                {"last_login": now_utc.isoformat()},
+            )
+
+        existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
+
+        if isinstance(existing_user['created_at'], str):
+            existing_user['created_at'] = datetime.fromisoformat(existing_user['created_at'])
+        if isinstance(existing_user['last_login'], str):
+            existing_user['last_login'] = datetime.fromisoformat(existing_user['last_login'])
+
+        logging.info(
+            f"âœ… Returning existing user: {existing_user['first_name']} "
+            f"balance={existing_user.get('token_balance', 0)} "
+            f"xp={existing_user.get('xp', 0)} daily_xp={gave_daily_xp}"
+        )
+        async with get_pool().acquire() as _econn:
+            energy_data = await _get_and_regen_energy(str(existing_user['id']), _econn)
+        user_payload = attach_session(response, existing_user)
+        user_payload.update(energy_data)
+        return User(**user_payload)
+    
+    # Create new user
+    user = User(
+        telegram_id=telegram_data.id,
+        first_name=telegram_data.first_name,
+        last_name=telegram_data.last_name,
+        telegram_username=telegram_data.username,
+        photo_url=telegram_data.photo_url,
+        is_verified=True
+    )
+    
+    user_dict = user.dict()
+    user_dict['created_at'] = user_dict['created_at'].isoformat()
+    user_dict['last_login'] = user_dict['last_login'].isoformat()
+    
+
+    try:
+        await dbq.insert_user(user_dict)
+    except Exception as insert_err:
+        logging.warning(
+            "User with telegram_id %s may have been created concurrently (error: %s). Refreshing existing record.",
+            telegram_data.id, insert_err
+        )
+
+        # Fetch the document that now exists and update the login timestamp (and admin tokens if applicable)
+        existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
+        if not existing_user:
+            logging.error(
+                "Duplicate user detected for telegram_id %s but document could not be reloaded.",
+                telegram_data.id
+            )
+            raise HTTPException(status_code=500, detail="Failed to finalize Telegram authentication")
+
+        update_fields = {"last_login": datetime.now(timezone.utc).isoformat()}
+
+        await dbq.update_user_fields_by_telegram_id(telegram_data.id, update_fields)
+        existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
+
+        if isinstance(existing_user.get('created_at'), str):
+            existing_user['created_at'] = datetime.fromisoformat(existing_user['created_at'])
+        if isinstance(existing_user.get('last_login'), str):
+            existing_user['last_login'] = datetime.fromisoformat(existing_user['last_login'])
+
+        logging.info(
+            "âœ… Returning concurrently created user %s (telegram_id: %s) with balance %s",
+            existing_user.get('first_name', ''),
+            telegram_data.id,
+            existing_user.get('token_balance', 0)
+        )
+        async with get_pool().acquire() as _econn2:
+            energy_data2 = await _get_and_regen_energy(str(existing_user['id']), _econn2)
+        user_payload2 = attach_session(response, existing_user)
+        user_payload2.update(energy_data2)
+        return User(**user_payload2)
+
+    logging.info(f"ðŸ†• Created new user: {user.first_name} (telegram_id: {user.telegram_id})")
+
+    new_user_payload = attach_session(response, user.dict())
+    new_user_payload.update({"energy": 10, "max_energy": 10, "next_energy_at": None})
+    return User(**new_user_payload)
+
+# Solana Token Purchase Endpoints
+class TokenPurchaseRequest(BaseModel):
+    token_amount: int = Field(gt=0, description="Number of tokens to purchase")
+
+@api_router.post("/purchase-tokens")
+async def initiate_token_purchase(request: TokenPurchaseRequest, http_request: Request):
+    """
+    Create a unique wallet address for token purchase
+    Returns wallet address and payment instructions
+    """
+    try:
+        user_id = get_authenticated_user_id(http_request)
+        # Validate user exists
+        user = await dbq.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Validate token amount (min 10, max 10000)
+        if request.token_amount < 10:
+            raise HTTPException(status_code=400, detail="Minimum purchase is 10 tokens")
+        if request.token_amount > 10000:
+            raise HTTPException(status_code=400, detail="Maximum purchase is 10,000 tokens")
+        
+        # Create payment wallet using Solana processor
+        processor = get_processor(None)
+        payment_info = await processor.create_payment_wallet(
+            user_id=user_id,
+            token_amount=request.token_amount
+        )
+        
+        logging.info(f"Token purchase initiated: {user_id} -> {request.token_amount} tokens")
+        
+        return {
+            "status": "success",
+            "message": "Payment wallet created successfully",
+            "payment_info": payment_info
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to initiate token purchase: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create payment wallet: {str(e)}")
+
+@api_router.get("/purchase-status/{user_id}/{wallet_address}")
+async def get_purchase_status(user_id: str, wallet_address: str, http_request: Request):
+    """
+    Get the status of a token purchase
+    Shows payment detection, token crediting, and forwarding status
+    """
+    try:
+        authenticated_user_id = get_authenticated_user_id(http_request)
+        if str(user_id) != str(authenticated_user_id):
+            raise HTTPException(status_code=403, detail="Authenticated user mismatch")
+        # Get purchase status from Solana processor
+        processor = get_processor(None)
+        status_info = await processor.get_purchase_status(user_id, wallet_address)
+        
+        return {
+            "status": "success",
+            "purchase_status": status_info
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to get purchase status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get purchase status: {str(e)}")
+
+@api_router.get("/purchase-history/{user_id}")
+async def get_purchase_history(user_id: str, http_request: Request, limit: int = 5, offset: int = 0):
+    """Get token purchase history for a user with pagination"""
+    try:
+        authenticated_user_id = get_authenticated_user_id(http_request)
+        if str(user_id) != str(authenticated_user_id):
+            raise HTTPException(status_code=403, detail="Authenticated user mismatch")
+        user = await dbq.get_user_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        purchases, total = await dbq.get_token_purchases(user_id, limit=limit, offset=offset)
+
+        return {
+            "status": "success",
+            "purchases": purchases,
+            "total": total
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to get purchase history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get purchase history")
+
+@api_router.post("/admin/update-user-name/{telegram_id}")
+async def update_user_name(telegram_id: int, first_name: str, username: str = "", photo_url: str = "", admin_key: str = ""):
+    """Update user name, username and photo"""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+    
+    # Update user data
+    update_data = {
+        "first_name": first_name,
+        "telegram_username": username
+    }
+    
+    # Add photo_url if provided
+    if photo_url:
+        update_data["photo_url"] = photo_url
+    
+    updated = await dbq.update_user_fields_by_telegram_id(telegram_id, update_data)
+
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {
+        "status": "success",
+        "message": f"Updated user {telegram_id} name to {first_name}",
+        "telegram_id": telegram_id,
+        "first_name": first_name,
+        "username": username,
+        "photo_url": photo_url
+    }
+
+@api_router.post("/admin/process-payment")
+async def manually_process_payment(wallet_address: str, signature: str, admin_key: str = ""):
+    """ADMIN ONLY: Manually trigger payment processing for a specific transaction"""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+    
+    try:
+        # Get Solana processor
+        from solana_integration import get_processor
+        processor = get_processor(None)
+        
+        logging.info(f"ðŸ”§ [Admin] Manually processing payment for wallet {wallet_address}")
+        logging.info(f"ðŸ”§ [Admin] Transaction signature: {signature}")
+        
+        # Trigger payment processing
+        await processor.process_detected_payment(wallet_address, signature)
+        
+        # Check result
+        wallet_doc = await dbq.get_temporary_wallet(wallet_address)
+        
+        return {
+            "status": "success",
+            "message": "Payment processing triggered",
+            "wallet_address": wallet_address,
+            "signature": signature,
+            "payment_detected": wallet_doc.get("payment_detected") if wallet_doc else False,
+            "tokens_credited": wallet_doc.get("tokens_credited") if wallet_doc else False,
+            "sol_forwarded": wallet_doc.get("sol_forwarded") if wallet_doc else False,
+            "wallet_status": wallet_doc.get("status") if wallet_doc else "not_found"
+        }
+        
+    except Exception as e:
+        logging.error(f"Error manually processing payment: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to process payment: {str(e)}")
+
+@api_router.post("/admin/manual-credit")
+async def manual_credit_tokens(
+    telegram_id: int,
+    amount: int,
+    reason: str,
+    transaction_signature: Optional[str] = None,
+    admin_key: str = ""
+):
+    """
+    ADMIN ONLY: Manually credit tokens to a user with full logging
+    
+    Args:
+        telegram_id: User's Telegram ID
+        amount: Tokens to credit
+        reason: Reason for manual credit
+        transaction_signature: Optional Solana transaction signature
+        admin_key: Admin authentication key
+    """
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+    
+    result = await credit_tokens_manually(
+        db=None,
+        telegram_id=telegram_id,
+        amount=amount,
+        reason=reason,
+        transaction_signature=transaction_signature
+    )
+    
+    return result
+
+@api_router.get("/admin/recovery-status")
+async def get_recovery_status(admin_key: str = ""):
+    """ADMIN ONLY: Get payment recovery system status"""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+    
+    # Get RPC health status
+    rpc_health = rpc_alert_system.get_health_report()
+    
+    # Get recent manual credits
+    credit_logger = ManualCreditLogger(None)
+    recent_credits = await credit_logger.get_recent_manual_credits(limit=10)
+    
+    return {
+        "rpc_health": rpc_health,
+        "recent_manual_credits": [
+            {
+                "telegram_id": c.get("telegram_id"),
+                "amount": c.get("tokens_credited"),
+                "reason": c.get("reason"),
+                "timestamp": c.get("timestamp").isoformat() if c.get("timestamp") else None
+            }
+            for c in recent_credits
+        ],
+        "monitoring_active": True
+    }
+
+@api_router.post("/admin/rescan-payments")
+async def rescan_payments(admin_key: str = "", wallet_address: Optional[str] = None):
+    """
+    ADMIN ONLY: Manually trigger payment rescan
+    If wallet_address provided, scans only that wallet
+    Otherwise scans all pending wallets
+    """
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+    
+    try:
+        from solana_integration import get_processor
+        processor = get_processor(None)
+        
+        if wallet_address:
+            logging.info(f"ðŸ”§ [Admin] Manual rescan for wallet: {wallet_address}")
+            
+            # Get specific wallet
+            wallet_doc = await dbq.get_temporary_wallet(wallet_address)
+            if not wallet_doc:
+                raise HTTPException(status_code=404, detail=f"Wallet {wallet_address} not found")
+            
+            # Check balance
+            from solders.pubkey import Pubkey
+            from decimal import Decimal
+            from solana.rpc.commitment import Confirmed
+            from solana_integration import SOLANA_RPC_URL
+            
+            logging.info(f"ðŸ”§ [Admin] Using RPC URL: {SOLANA_RPC_URL}")
+            logging.info(f"ðŸ”§ [Admin] Processor client: {processor.client._provider.endpoint_uri}")
+            
+            pubkey = Pubkey.from_string(wallet_address)
+            balance_response = await processor.client.get_balance(pubkey, commitment=Confirmed)
+            balance_lamports = balance_response.value if balance_response.value else 0
+            
+            logging.info(f"ðŸ”§ [Admin] Balance response: {balance_response}")
+            logging.info(f"ðŸ”§ [Admin] Balance lamports: {balance_lamports}")
+            
+            balance_sol = Decimal(balance_lamports) / Decimal(1000000000)
+            
+            expected_sol = Decimal(str(wallet_doc["required_sol"]))
+            
+            result = {
+                "wallet_address": wallet_address,
+                "current_balance": str(balance_sol),
+                "expected_amount": str(expected_sol),
+                "status": wallet_doc.get("status"),
+                "payment_detected": wallet_doc.get("payment_detected", False),
+                "tokens_credited": wallet_doc.get("tokens_credited", False),
+                "user_id": wallet_doc.get("user_id")
+            }
+            
+            # If payment found, process it
+            tolerance = Decimal("0.001")
+            if balance_sol >= (expected_sol - tolerance) and not wallet_doc.get("tokens_credited"):
+                logging.info(f"ðŸ’° [Admin] Processing payment for wallet {wallet_address}")
+                
+                # Mark as detected
+                await dbq.update_temporary_wallet(
+                    wallet_address,
+                    {"payment_detected": True, "status": "manual_rescan", "detected_at": datetime.now(timezone.utc).isoformat()}
+                )
+                
+                # Credit tokens
+                await processor.credit_tokens_to_user(wallet_doc, balance_sol)
+                
+                # Forward SOL
+                await processor.forward_sol_to_main_wallet(wallet_address, wallet_doc["private_key"], balance_lamports)
+                
+                result["action"] = "payment_processed"
+            else:
+                result["action"] = "no_action_needed"
+            
+            return result
+        else:
+            # Scan all pending wallets
+            logging.info("ðŸ”§ [Admin] Manual rescan of all pending payments")
+            await processor.rescan_pending_payments()
+            
+            # Get stats
+            pending_count = await dbq.count_pending_wallets()
+            
+            return {
+                "status": "success",
+                "message": "Rescan completed",
+                "pending_wallets_checked": pending_count
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error in payment rescan: {str(e)}")
+        import traceback
+        logging.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to rescan payments: {str(e)}")
+
+@api_router.post("/admin/reset-processor")
+async def reset_solana_processor(admin_key: str = ""):
+    """ADMIN ONLY: Force reset Solana processor (for RPC URL changes)"""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+    
+    try:
+        from solana_integration import reset_processor, SOLANA_RPC_URL
+        
+        logging.info("ðŸ”„ [Admin] Forcing processor reset...")
+        reset_processor()
+        logging.info(f"âœ… [Admin] Processor reset complete")
+        logging.info(f"ðŸŒ [Admin] Current RPC URL: {SOLANA_RPC_URL}")
+        
+        return {
+            "status": "success",
+            "message": "Processor reset successfully",
+            "rpc_url": SOLANA_RPC_URL
+        }
+        
+    except Exception as e:
+        logging.error(f"Error resetting processor: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset processor: {str(e)}")
+
+@api_router.get("/me")
+async def get_current_user(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": user_doc.get("id"),
+        "telegram_id": user_doc.get("telegram_id"),
+        "first_name": user_doc.get("first_name"),
+        "last_name": user_doc.get("last_name", ""),
+        "username": user_doc.get("telegram_username", ""),
+        "photo_url": user_doc.get("photo_url", ""),
+        "token_balance": user_doc.get("token_balance", 0),
+        "xp": user_doc.get("xp", 0),
+        "level": user_doc.get("level", 1),
+        "class_name": user_doc.get("class_name"),
+        "is_admin": user_doc.get("is_admin", False),
+        "is_owner": user_doc.get("is_owner", False),
+        "role": user_doc.get("role", "user"),
+    }
+
+def _is_admin_user_doc(user_doc: Optional[Dict[str, Any]]) -> bool:
+    return bool(
+        user_doc
+        and (
+            user_doc.get("is_admin")
+            or user_doc.get("is_owner")
+            or user_doc.get("role") in ("admin", "owner")
+        )
+    )
+
+
+async def _require_self_or_admin(http_request: Request, target_user_id: str) -> Dict[str, Any]:
+    authenticated_user_id = get_authenticated_user_id(http_request)
+    requester = await dbq.get_user_by_id(authenticated_user_id)
+    if str(authenticated_user_id) != str(target_user_id) and not _is_admin_user_doc(requester):
+        raise HTTPException(status_code=403, detail="Authenticated user mismatch")
+    return requester or {}
+
+
+@api_router.get("/users/{user_id}", response_model=User)
+async def get_user(user_id: str, http_request: Request):
+    await _require_self_or_admin(http_request, user_id)
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if isinstance(user_doc['created_at'], str):
+        user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
+
+    return User(**user_doc)
+
+
+@api_router.get("/rooms")
+async def get_active_rooms():
+    """Get all active rooms with their current status"""
+    rooms_data = []
+
+    for room in active_rooms.values():
+        room_data = {
+            "id": room.id,
+            "room_type": room.room_type,
+            "players_count": len(room.players),
+            "max_players": room.max_players,
+            "status": room.status,
+            "prize_pool": room.prize_pool,
+            "match_id": room.match_id,
+            "arena_match_id": room.arena_match_id,
+            "mode": "duel" if room.arena_match_id else None,
+            "round_number": room.round_number,
+            "settings": ROOM_SETTINGS.get(room.room_type, ROOM_SETTINGS["bronze"]),
+            "is_locked": (room.room_type == RoomType.FREEROLL and freeroll_config.get('is_locked', False))
+        }
+        rooms_data.append(room_data)
+
+    return {"rooms": rooms_data, "maintenance_mode": maintenance_mode}
+
+@api_router.get("/user-room-status/{user_id}")
+async def get_user_room_status(user_id: str, http_request: Request):
+    """Check if user is currently in any active rooms (can be multiple)"""
+    try:
+        authenticated_user_id = get_authenticated_user_id(http_request)
+        if str(user_id) != str(authenticated_user_id):
+            raise HTTPException(status_code=403, detail="Authenticated user mismatch")
+        # Collect ALL rooms user is in
+        user_rooms = []
+
+        # Check all active rooms for this user
+        for room in active_rooms.values():
+            for player in room.players:
+                if player.user_id == user_id:
+                    # User is in this room - add to list
+                    serialized_players = []
+                    for p in room.players:
+                        player_dict = p.dict()
+                        if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
+                            player_dict['joined_at'] = player_dict['joined_at'].isoformat()
+                        serialized_players.append(player_dict)
+
+                    user_rooms.append({
+                        "room_id": room.id,
+                        "room_type": room.room_type,
+                        "status": room.status,
+                        "players": serialized_players,
+                        "players_count": len(room.players),
+                        "prize_pool": room.prize_pool,
+                        "match_id": room.match_id,
+                        "arena_match_id": room.arena_match_id,
+                        "mode": "duel" if room.arena_match_id else None,
+                        "min_players": room.min_players,
+                        "max_players": room.max_players,
+                        "position": next((i+1 for i, p in enumerate(room.players) if p.user_id == user_id), 0)
+                    })
+                    break  # Found user in this room, move to next room
+
+        # Return all rooms user is in
+        if len(user_rooms) > 0:
+            return {
+                "in_room": True,
+                "rooms": user_rooms,
+                "total_rooms": len(user_rooms)
+            }
+        else:
+            return {
+                "in_room": False,
+                "rooms": [],
+                "total_rooms": 0
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error checking user room status: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check room status")
+
+@api_router.post("/join-room")
+async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks, http_request: Request):
+    """Join a room with a bet"""
+    logging.info(f"Join room request: {request.dict()}")
+    authenticated_user_id = get_authenticated_user_id(http_request)
+    if str(request.user_id) != str(authenticated_user_id):
+        raise HTTPException(status_code=403, detail="Authenticated user mismatch")
+    
+    # Find room of the requested type
+    target_room = None
+    for room in active_rooms.values():
+        if room.room_type == request.room_type and room.status == "waiting":
+            target_room = room
+            break
+    
+    if not target_room:
+        logging.error(f"No available room of type {request.room_type}")
+        raise HTTPException(status_code=404, detail="No available room of this type")
+
+    # Freeroll lock check
+    if target_room.room_type == RoomType.FREEROLL and freeroll_config.get('is_locked'):
+        raise HTTPException(status_code=423, detail="Free Roll room is currently locked.")
+
+    # Validate bet amount (skip range check for freeroll)
+    settings = ROOM_SETTINGS[request.room_type]
+    if request.room_type != RoomType.FREEROLL:
+        if request.bet_amount < settings["min_bet"] or request.bet_amount > settings["max_bet"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bet amount must be between {settings['min_bet']} and {settings['max_bet']} tokens"
+            )
+
+    # Check if user exists and has enough tokens
+    user_doc = await dbq.get_user_by_id(request.user_id)
+    if not user_doc:
+        logging.error(f"User not found: {request.user_id}")
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user_doc.get("is_banned"):
+        raise HTTPException(status_code=403, detail="Your account has been banned.")
+
+    if maintenance_mode:
+        raise HTTPException(status_code=503, detail="ðŸ”§ Maintenance in progress. Please try again later.")
+
+    logging.info(f"User balance: {user_doc.get('token_balance', 0)}, Bet amount: {request.bet_amount}")
+
+    if request.bet_amount > 0 and user_doc.get('token_balance', 0) < request.bet_amount:
+        raise HTTPException(status_code=400, detail="Insufficient token balance")
+
+    # Check if user is already in the room
+    if any(p.user_id == request.user_id for p in target_room.players):
+        raise HTTPException(status_code=400, detail="You are already in this room")
+
+    # Check if room is full
+    if len(target_room.players) >= target_room.max_players:
+        raise HTTPException(status_code=400, detail="Room is full")
+
+    if (
+        target_room.players
+        and target_room.min_players == 2
+        and target_room.max_players == 2
+        and request.bet_amount > 0
+        and target_room.players[0].bet_amount != request.bet_amount
+    ):
+        raise HTTPException(status_code=400, detail="Arena duel players must use the same bet amount")
+
+    # Deduct tokens from user balance (skip for freeroll / 0-bet)
+    # increment_user_tokens with negative amount guards against going below 0
+    if request.bet_amount > 0:
+        updated = await dbq.increment_user_tokens(request.user_id, -request.bet_amount)
+        if not updated:
+            raise HTTPException(status_code=400, detail="Insufficient token balance")
+    new_balance_after_join = user_doc.get('token_balance', 0) - request.bet_amount
+    joining_sid = user_to_socket.get(request.user_id)
+    if joining_sid:
+        await sio.emit('balance_updated', {'user_id': request.user_id, 'new_balance': new_balance_after_join}, room=joining_sid)
+    
+    equipped = await _fetch_equipped_snapshot(request.user_id)
+
+    # Add player to room with full Telegram info
+    if request.is_anonymous:
+        anon_count = sum(1 for p in target_room.players if p.is_anonymous)
+        anon_name = "Anonymous" if anon_count == 0 else f"Anonymous-{anon_count + 1}"
+        player = RoomPlayer(
+            user_id=request.user_id,
+            username='',
+            first_name=anon_name,
+            last_name='',
+            photo_url='',
+            bet_amount=request.bet_amount,
+            is_anonymous=True,
+            level=int(user_doc.get('level') or 1),
+            class_name=user_doc.get('class_name'),
+            weapon=equipped.get('weapon'),
+            armor=equipped.get('armor'),
+            ability=equipped.get('ability'),
+        )
+    else:
+        player = RoomPlayer(
+            user_id=request.user_id,
+            username=user_doc.get('telegram_username', ''),  # @username
+            first_name=user_doc.get('first_name', 'Player'),
+            last_name=user_doc.get('last_name', ''),
+            photo_url=user_doc.get('photo_url', ''),
+            bet_amount=request.bet_amount,
+            is_anonymous=False,
+            level=int(user_doc.get('level') or 1),
+            class_name=user_doc.get('class_name'),
+            weapon=equipped.get('weapon'),
+            armor=equipped.get('armor'),
+            ability=equipped.get('ability'),
+        )
+    target_room.players.append(player)
+    target_room.prize_pool += request.bet_amount
+    
+    # Notify ROOM participants about new player - ALWAYS send FULL participant list
+    # Serialize player data with datetime conversion
+    serialized_players = []
+    for p in target_room.players:
+        player_dict = p.dict()
+        if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
+            player_dict['joined_at'] = player_dict['joined_at'].isoformat()
+        serialized_players.append(player_dict)
+    
+    # Serialize single player data
+    player_dict = player.dict()
+    if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
+        player_dict['joined_at'] = player_dict['joined_at'].isoformat()
+    
+    logging.info(f"ðŸ‘¤ Player {player.username} joined room {target_room.id} ({len(target_room.players)}/{target_room.max_players})")
+    logging.info(f"ðŸ“‹ Full participant list: {[p['username'] for p in serialized_players]}")
+
+    await socket_rooms.broadcast_to_room(sio, target_room.id, 'player_joined', {
+        'room_id': target_room.id,
+        'room_type': target_room.room_type,
+        'player': player_dict,
+        'players_count': len(target_room.players),
+        'prize_pool': target_room.prize_pool,
+        'all_players': serialized_players,  # FULL participant list - REPLACE, don't append
+        'room_status': 'filling' if len(target_room.players) < target_room.max_players else 'full',
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
+    logging.info(f"âœ… Emitted player_joined to room {target_room.id} with {len(serialized_players)} players")
+
+    # Broadcast updated room states to all clients (global lobby update)
+    await broadcast_room_updates()
+
+    # Check if enough players to start game
+    if len(target_room.players) >= target_room.min_players:
+        logging.info(f"ðŸš€ Enough players! Room {target_room.id} has {len(target_room.players)}/{target_room.min_players} players, starting game sequence...")
+
+        # Emit room_full event to all participants in THIS room only
+        await socket_rooms.broadcast_to_room(sio, target_room.id, 'room_full', {
+            'room_id': target_room.id,
+            'room_type': target_room.room_type,
+            'players': serialized_players,
+            'players_count': len(target_room.players),
+            'message': 'ðŸš€ GAME IS STARTING! GET READY FOR THE BATTLE!',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        logging.info(f"âœ… Emitted room_full to room {target_room.id}")
+
+        # Start the game sequence (will emit room_ready, game_starting, game_finished in order)
+        background_tasks.add_task(start_game_round, target_room)
+
+    return {
+        "status": "joined",
+        "success": True,
+        "room_id": target_room.id,
+        "position": len(target_room.players),
+        "players_needed": target_room.max_players - len(target_room.players),
+        "min_players": target_room.min_players,
+        "max_players": target_room.max_players,
+        "new_balance": user_doc.get('token_balance', 0) - request.bet_amount
+    }
+
+class LeaveRoomRequest(BaseModel):
+    room_id: str
+    user_id: str
+
+@api_router.post("/leave-room")
+async def leave_room(request: LeaveRoomRequest, http_request: Request):
+    """Remove player from a waiting room and refund their bet"""
+    authenticated_user_id = get_authenticated_user_id(http_request)
+    if str(request.user_id) != str(authenticated_user_id):
+        raise HTTPException(status_code=403, detail="Authenticated user mismatch")
+    async with room_locks[request.room_id]:
+        room = active_rooms.get(request.room_id)
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
+        if room.status != "waiting":
+            raise HTTPException(status_code=400, detail="Cannot leave a room that is already in progress")
+
+        player = next((p for p in room.players if p.user_id == request.user_id), None)
+        if not player:
+            raise HTTPException(status_code=404, detail="Player not in this room")
+
+        refund = player.bet_amount
+        room.players = [p for p in room.players if p.user_id != request.user_id]
+        room.prize_pool = max(0, room.prize_pool - refund)
+
+        # Refund tokens
+        result = await dbq.increment_user_tokens(request.user_id, refund)
+        new_balance = result.get("token_balance", 0) if result else 0
+        serialized_players = []
+        for p in room.players:
+            pd = p.dict()
+            if isinstance(pd.get("joined_at"), datetime):
+                pd["joined_at"] = pd["joined_at"].isoformat()
+            serialized_players.append(pd)
+
+    # Notify socket
+    sid = user_to_socket.get(request.user_id)
+    if sid:
+        await sio.emit("balance_updated", {"user_id": request.user_id, "new_balance": new_balance}, room=sid)
+
+    # Broadcast updated room list to all clients
+    await broadcast_room_updates()
+
+    await sio.emit("player_left", {
+        "room_type": room.room_type,
+        "player": {"first_name": player.first_name, "username": player.username},
+        "players_count": len(room.players),
+        "all_players": serialized_players,
+    })
+
+    logging.info(f"ðŸ‘‹ Player {player.username or player.first_name} left room {room.id}, refunded {refund} tokens")
+    return {"status": "left", "refund": refund, "new_balance": new_balance}
+
+@api_router.get("/pending-result/{user_id}")
+async def get_pending_result(user_id: str, http_request: Request):
+    """Return and delete all missed game results for this user"""
+    authenticated_user_id = get_authenticated_user_id(http_request)
+    if str(user_id) != str(authenticated_user_id):
+        raise HTTPException(status_code=403, detail="Authenticated user mismatch")
+    results = await dbq.get_and_delete_pending_result(user_id)
+    return {"results": results or []}
+
+@api_router.get("/room-participants/{room_type}")
+async def get_room_participants_by_type(room_type: str):
+    """Get current participants in a room by type - for lobby updates"""
+    # Find the active room of this type
+    target_room = None
+    for room in active_rooms.values():
+        if room.room_type == room_type and room.status == "waiting":
+            target_room = room
+            break
+    
+    if not target_room:
+        return {
+            "room_type": room_type,
+            "players": [],
+            "count": 0
+        }
+    
+    return {
+        "room_type": room_type,
+        "room_id": target_room.id,
+        "players": [p.dict() for p in target_room.players],
+        "count": len(target_room.players),
+        "status": target_room.status,
+        "min_players": target_room.min_players,
+        "max_players": target_room.max_players,
+    }
+
+@api_router.get("/room-chat/{room_id}")
+async def get_room_chat(room_id: str):
+    """Get chat history for a room"""
+    return {"messages": room_chat.get(room_id, [])}
+
+@api_router.post("/room-chat/{room_id}")
+async def post_room_chat(room_id: str, http_request: Request, text: str = ""):
+    """Post a chat message to a room (REST fallback when socket unreliable)"""
+    text = text.strip()[:200]
+    if not text or not room_id:
+        raise HTTPException(status_code=400, detail="Missing room_id or text")
+    user_id = get_authenticated_user_id(http_request)
+    room = active_rooms.get(room_id)
+    player = next((p for p in room.players if p.user_id == user_id), None) if room else None
+    if not player:
+        raise HTTPException(status_code=403, detail="Player is not in this room")
+    if player.is_anonymous:
+        raise HTTPException(status_code=403, detail="Anonymous players cannot chat")
+    name = player.first_name or player.username or "Player"
+    msg = {
+        'user_id': user_id,
+        'name': name,
+        'text': text,
+        'ts': datetime.now(timezone.utc).isoformat(),
+    }
+    room_chat.setdefault(room_id, [])
+    room_chat[room_id].append(msg)
+    if len(room_chat[room_id]) > 50:
+        room_chat[room_id] = room_chat[room_id][-50:]
+    payload = {'room_id': room_id, **msg}
+    await sio.emit('lobby_message', payload)
+    logging.info(f"ðŸ’¬ REST Chat [{room_id[:8]}] {name}: {text[:40]}")
+    return {"ok": True, "message": msg}
+
+@api_router.get("/room/{room_id}")
+async def get_room_details(room_id: str):
+    """Get detailed information about a specific room"""
+    room = active_rooms.get(room_id)
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
+    def serialize_player(p):
+        d = p.dict()
+        if 'joined_at' in d and isinstance(d['joined_at'], datetime):
+            d['joined_at'] = d['joined_at'].isoformat()
+        return d
+
+    return {
+        "id": room.id,
+        "room_type": room.room_type,
+        "players": [serialize_player(p) for p in room.players],
+        "status": room.status,
+        "prize_pool": room.prize_pool,
+        "match_id": room.match_id,
+        "arena_match_id": room.arena_match_id,
+        "mode": "duel" if room.arena_match_id else None,
+        "round_number": room.round_number,
+        "settings": ROOM_SETTINGS[room.room_type],
+        "winner": serialize_player(room.winner) if room.winner else None,
+        "finished_at": room.finished_at.isoformat() if room.finished_at else None,
+    }
+
+@api_router.get("/leaderboard/my-rank")
+async def get_my_rank(request: Request):
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    async with get_pool().acquire() as conn:
+        coins_rank = await conn.fetchval("""
+            SELECT COUNT(*)+1 FROM users
+            WHERE token_balance > (SELECT token_balance FROM users WHERE id=$1)
+        """, user_id)
+        wins_rank = await conn.fetchval("""
+            SELECT COUNT(*)+1 FROM (
+                SELECT u.id, COUNT(am.id) FILTER (WHERE am.winner_user_id = u.id) AS wins
+                FROM users u
+                LEFT JOIN arena_matches am ON am.status='finished'
+                     AND (am.player_one_id=u.id OR am.player_two_id=u.id)
+                GROUP BY u.id
+            ) sub
+            WHERE wins > (
+                SELECT COUNT(am2.id) FILTER (WHERE am2.winner_user_id=$1)
+                FROM arena_matches am2
+                WHERE am2.status='finished'
+                  AND (am2.player_one_id=$1 OR am2.player_two_id=$1)
+            )
+        """, user_id)
+        level_rank = await conn.fetchval("""
+            SELECT COUNT(*)+1 FROM users
+            WHERE xp > (SELECT xp FROM users WHERE id=$1)
+        """, user_id)
+    return {
+        "coins_rank": int(coins_rank or 1),
+        "wins_rank": int(wins_rank or 1),
+        "level_rank": int(level_rank or 1),
+    }
+
+
+@api_router.get("/leaderboard")
+async def get_leaderboard(tab: str = "coins"):
+    if tab not in ("coins", "wins", "level"):
+        tab = "coins"
+    leaderboard = await dbq.get_leaderboard(tab=tab, limit=20)
+    return {"leaderboard": leaderboard, "tab": tab}
+
+
+@api_router.get("/daily-quests")
+async def get_daily_quests(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    quests = await _daily_quests.get_quests_for_user(user_id)
+    return {"quests": quests, **_daily_quests.quest_timing()}
+
+
+@api_router.post("/daily-quests/{quest_key}/claim")
+async def claim_daily_quest(quest_key: str, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    try:
+        async with get_pool().acquire() as conn:
+            async with conn.transaction():
+                return await _daily_quests.claim_quest_in_transaction(conn, user_id, quest_key)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.get("/daily-chest")
+async def get_daily_chest(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        return await _daily_chest.get_daily_chest_state(conn, user_id)
+
+
+@api_router.post("/daily-chest/claim")
+async def claim_daily_chest(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    try:
+        async with get_pool().acquire() as conn:
+            async with conn.transaction():
+                return await _daily_chest.claim_daily_chest_in_transaction(conn, user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.get("/game-history")
+async def get_game_history(http_request: Request, limit: int = 10, user_id: str = ""):
+    """Get recent completed games. If user_id given, returns only that user's games."""
+    if limit > 20:
+        limit = 20
+    if user_id:
+        await _require_self_or_admin(http_request, user_id)
+        games = await dbq.get_user_completed_games(user_id, limit)
+    else:
+        games = await dbq.get_recent_completed_games(limit)
+    return {"games": games}
+
+@api_router.get("/user-stats/{user_id}")
+async def get_user_stats_endpoint(user_id: str, http_request: Request):
+    """Return play statistics for a user (games played, win rate, profit, etc.)"""
+    await _require_self_or_admin(http_request, user_id)
+    try:
+        stats = await dbq.get_user_stats(user_id)
+        return stats
+    except Exception as e:
+        logging.error(f"get_user_stats error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/version")
+async def get_version():
+    """Get current build version for verification"""
+    return {
+        "version": "8.0-WINNER-FIX-20250114",
+        "build_timestamp": "1736864000",
+        "environment": "production",
+        "status": "healthy",
+        "features": {
+            "winner_message_fixed": True,
+            "version_label_removed": True,
+            "prize_visibility_fixed": True,
+            "history_badge_fixed": True
+        }
+    }
+
+@api_router.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "version": "8.0-WINNER-FIX-20250114",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+@api_router.get("/users/telegram/{telegram_id}")
+async def get_user_by_telegram_id(telegram_id: int, http_request: Request):
+    """Find user by Telegram ID. Returns 404 if not found, never 500 for missing user."""
+    # DB query is isolated so HTTPException(404) is never caught as a generic error
+    try:
+        user_doc = await dbq.get_user_by_telegram_id(telegram_id)
+    except Exception as e:
+        logging.error(f"DB error looking up telegram_id={telegram_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+    if not user_doc:
+        logging.info(f"User not found for telegram_id={telegram_id}")
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await _require_self_or_admin(http_request, user_doc.get("id"))
+
+    return {
+        "id": user_doc.get('id'),
+        "telegram_id": user_doc.get('telegram_id'),
+        "first_name": user_doc.get('first_name'),
+        "last_name": user_doc.get('last_name', ''),
+        "username": user_doc.get('telegram_username', ''),
+        "photo_url": user_doc.get('photo_url', ''),
+        "token_balance": user_doc.get('token_balance', 0),
+        "xp": user_doc.get('xp', 0),
+        "level": user_doc.get('level', 1),
+        "class_name": user_doc.get('class_name'),
+        "created_at": user_doc.get('created_at'),
+        "last_login": user_doc.get('last_login'),
+        "last_daily_claim": user_doc.get('last_daily_claim'),
+        "is_verified": user_doc.get('is_verified', False),
+        "is_admin": user_doc.get('is_admin', False),
+        "is_owner": user_doc.get('is_owner', False),
+        "role": user_doc.get('role', 'user'),
+        "current_win_streak": user_doc.get('current_win_streak', 0),
+        "max_win_streak": user_doc.get('max_win_streak', 0),
+    }
+
+class ClassUpdateBody(BaseModel):
+    class_name: str
+
+@api_router.post("/me/class")
+async def set_my_class(body: ClassUpdateBody, http_request: Request):
+    """Update the authenticated user's class (warrior / mage / rogue)."""
+    valid_classes = {"warrior", "mage", "rogue"}
+    if body.class_name not in valid_classes:
+        raise HTTPException(status_code=400, detail="class_name must be warrior, mage, or rogue")
+    user_id = get_authenticated_user_id(http_request)
+    if any(any(player.user_id == user_id for player in room.players) for room in active_rooms.values()):
+        raise HTTPException(status_code=409, detail="Cannot change class while in a room")
+    async with get_pool().acquire() as conn:
+        active_match = await conn.fetchval(
+            """
+            SELECT 1 FROM arena_matches
+            WHERE status = 'active'
+              AND (player_one_id = $1 OR player_two_id = $1)
+            LIMIT 1
+            """,
+            user_id,
+        )
+        if active_match:
+            raise HTTPException(status_code=409, detail="Cannot change class during an active arena match")
+        await conn.execute(
+            "UPDATE users SET class_name = $2 WHERE id = $1",
+            user_id, body.class_name,
+        )
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": user_doc.get("id"),
+        "class_name": user_doc.get("class_name"),
+        "message": f"Class updated to {body.class_name}",
+    }
+
+
+@api_router.get("/user/{user_id}")
+async def get_user_data(user_id: str, http_request: Request):
+    """Get user data including current balance"""
+    await _require_self_or_admin(http_request, user_id)
+    try:
+        user_doc = await dbq.get_user_by_id(user_id)
+        if not user_doc:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        async with get_pool().acquire() as conn:
+            energy_data = await _get_and_regen_energy(str(user_id), conn)
+
+        return {
+            "id": user_doc.get('id'),
+            "telegram_id": user_doc.get('telegram_id'),
+            "first_name": user_doc.get('first_name'),
+            "last_name": user_doc.get('last_name', ''),
+            "username": user_doc.get('telegram_username', ''),
+            "photo_url": user_doc.get('photo_url', ''),
+            "token_balance": user_doc.get('token_balance', 0),
+            "xp": user_doc.get('xp', 0),
+            "level": user_doc.get('level', 1),
+            "class_name": user_doc.get('class_name'),
+            "created_at": user_doc.get('created_at'),
+            "last_login": user_doc.get('last_login'),
+            "is_verified": user_doc.get('is_verified', False),
+            "is_admin": user_doc.get('is_admin', False),
+            "is_owner": user_doc.get('is_owner', False),
+            "role": user_doc.get('role', 'user'),
+            "current_win_streak": user_doc.get('current_win_streak', 0),
+            "max_win_streak": user_doc.get('max_win_streak', 0),
+            "energy": energy_data["energy"],
+            "max_energy": energy_data["max_energy"],
+            "next_energy_at": energy_data["next_energy_at"],
+        }
+    except Exception as e:
+        logging.error(f"Failed to get user data: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get user data")
+
+_DEFAULT_SETTINGS = {
+    "notifications": {"battle": True, "daily_chest": True, "quests": True},
+    "gameplay": {"remember_bet": True},
+    "privacy": {"show_leaderboard": True, "show_stats": True},
+    "responsible": {"daily_limit": 0, "session_reminder": "off"},
+}
+
+def _merge_settings(stored: dict) -> dict:
+    result = copy.deepcopy(_DEFAULT_SETTINGS)
+    for section, defaults in _DEFAULT_SETTINGS.items():
+        if section in stored and isinstance(stored[section], dict):
+            result[section].update(stored[section])
+    return result
+
+@api_router.get("/me/settings")
+async def get_my_settings(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow("SELECT settings FROM users WHERE id = $1", user_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        raw = row["settings"] or {}
+        if isinstance(raw, str):
+            try: raw = json.loads(raw)
+            except Exception: raw = {}
+    return _merge_settings(raw)
+
+class SettingsUpdateBody(BaseModel):
+    notifications: Optional[Dict[str, Any]] = None
+    gameplay: Optional[Dict[str, Any]] = None
+    privacy: Optional[Dict[str, Any]] = None
+    responsible: Optional[Dict[str, Any]] = None
+
+@api_router.post("/me/settings")
+async def update_my_settings(body: SettingsUpdateBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow("SELECT settings FROM users WHERE id = $1", user_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        raw = row["settings"] or {}
+        if isinstance(raw, str):
+            try: raw = json.loads(raw)
+            except Exception: raw = {}
+        merged = _merge_settings(raw)
+        patch = body.dict(exclude_none=True)
+        for section, values in patch.items():
+            if section in merged and isinstance(values, dict):
+                merged[section].update(values)
+        await conn.execute(
+            "UPDATE users SET settings = $2 WHERE id = $1",
+            user_id, json.dumps(merged),
+        )
+    return merged
+
+@api_router.get("/me/progress")
+async def get_my_progress(http_request: Request):
+    """Return the authenticated user's XP and level progression."""
+    user_id = get_authenticated_user_id(http_request)
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    xp = int(user_doc.get('xp') or 0)
+    level = int(user_doc.get('level') or 1)
+    return {
+        "user_id": user_id,
+        "xp": xp,
+        "level": level,
+        "xp_to_next_level": _progression.xp_to_next_level(xp),
+        "xp_for_current_level": _progression.xp_for_level(level),
+    }
+
+
+@api_router.get("/user/{user_id}/prizes")
+async def get_user_prizes(user_id: str, http_request: Request):
+    """Get all prize links won by a specific user"""
+    await _require_self_or_admin(http_request, user_id)
+    prizes = await dbq.get_user_prizes(user_id)
+    return {"prizes": prizes}
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Shop endpoints
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+_TIER_ORDER = {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5}
+
+
+def _serialize_item_row(row: Any) -> Dict[str, Any]:
+    item = dict(row)
+    item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
+    item["item_id"] = item.get("item_id") or item.get("id")
+    item["rarity"] = tier_to_rarity(item.get("tier"))
+    item["stats"] = stat_preview(item)
+    item.update(item_stat_payload(item))
+    return item
+
+
+def _serialize_inventory_row(row: Any) -> Dict[str, Any]:
+    item = dict(row)
+    item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
+    item["inventory_id"] = item["id"]
+    item["item_id"] = item["catalog_item_id"]
+    item["type"] = item["slot"]
+    item["category"] = item["slot"]
+    item["rarity"] = tier_to_rarity(item.get("tier"))
+    item["stats"] = stat_preview(item)
+    item.update(item_stat_payload(item))
+    return item
+
+
+def _serialize_equipped_row(row: Any) -> Dict[str, Any]:
+    item = _serialize_item_row(row)
+    item["inventory_id"] = item.get("inventory_id")
+    item["id"] = item.get("inventory_id") or item["item_id"]
+    return item
+
+
+@api_router.get("/shop/items")
+async def get_shop_items():
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT * FROM items
+            WHERE tier IN ('common', 'uncommon', 'rare')
+            ORDER BY
+                CASE tier
+                    WHEN 'common'    THEN 1
+                    WHEN 'uncommon'  THEN 2
+                    WHEN 'rare'      THEN 3
+                    WHEN 'epic'      THEN 4
+                    WHEN 'legendary' THEN 5
+                    ELSE 6 END,
+                class_name,
+                slot
+        """)
+        return {"items": [_serialize_item_row(r) for r in rows]}
+
+
+class ShopBuyBody(BaseModel):
+    item_id: int
+
+
+class ScrollBuyBody(BaseModel):
+    scroll_type: str
+    quantity: int = Field(default=1, ge=1, le=100)
+
+
+@api_router.post("/shop/buy")
+async def buy_shop_item(body: ShopBuyBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            item = await conn.fetchrow(
+                "SELECT * FROM items WHERE id = $1", body.item_id
+            )
+            if not item or not is_shop_tier(item["tier"]):
+                raise HTTPException(status_code=404, detail="Item not found or not purchasable")
+            user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
+            if not user_row or not can_user_equip_item(user_row["class_name"], item["class_name"]):
+                raise HTTPException(status_code=400, detail="Item class does not match your class")
+            updated = await conn.fetchrow(
+                "UPDATE users SET token_balance = token_balance - $2 "
+                "WHERE id = $1 AND token_balance >= $2 RETURNING id",
+                user_id, item["price"],
+            )
+            if not updated:
+                raise HTTPException(status_code=400, detail="Insufficient token balance")
+            rarity = tier_to_rarity(item["tier"])
+            await conn.execute(
+                """
+                INSERT INTO inventory
+                    (id, user_id, item_type, item_name, item_rarity, equipped, item_id, source, acquired_at)
+                VALUES ($1, $2, $3, $4, $5, FALSE, $6, 'shop', NOW())
+                """,
+                str(uuid.uuid4()), user_id, item["slot"], item["name"], rarity, item["id"],
+            )
+            new_balance = await conn.fetchval("SELECT token_balance FROM users WHERE id = $1", user_id)
+            return {"success": True, "item": _serialize_item_row(item), "new_balance": int(new_balance or 0)}
+
+
+@api_router.get("/shop/scrolls")
+async def get_scroll_shop():
+    return {"scrolls": [dict(scroll) for scroll in SCROLL_SHOP.values() if scroll["purchasable"]]}
+
+
+@api_router.post("/shop/scrolls/buy")
+async def buy_scroll(body: ScrollBuyBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    scroll = SCROLL_SHOP.get(body.scroll_type)
+    if not scroll or not scroll["purchasable"]:
+        raise HTTPException(status_code=404, detail="Scroll not found or not purchasable")
+    total_price = scroll["price"] * body.quantity
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            updated = await conn.fetchrow(
+                "UPDATE users SET token_balance = token_balance - $2 WHERE id = $1 AND token_balance >= $2 RETURNING token_balance",
+                user_id,
+                total_price,
+            )
+            if not updated:
+                raise HTTPException(status_code=400, detail="Insufficient token balance")
+            row = await conn.fetchrow(
+                """
+                INSERT INTO item_scrolls (user_id, scroll_type, quantity, updated_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (user_id, scroll_type) DO UPDATE
+                    SET quantity = item_scrolls.quantity + EXCLUDED.quantity,
+                        updated_at = NOW()
+                RETURNING quantity
+                """,
+                user_id,
+                body.scroll_type,
+                body.quantity,
+            )
+            return {
+                "success": True,
+                "scroll_type": body.scroll_type,
+                "quantity": int(row["quantity"]),
+                "new_balance": int(updated["token_balance"]),
             }
 
 
-        @api_router.get("/admin/list-users")
-        async def list_users(admin_key: str = "", limit: int = 20, search: str = ""):
-            """List users with optional search by name/username."""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            try:
-                if search:
-                    users = await dbq.search_users(search, limit)
-                else:
-                    users = await dbq.get_all_users(limit)
-                result = []
-                for u in users:
-                    result.append({
-                        "id": u.get("id"),
-                        "telegram_id": u.get("telegram_id"),
-                        "first_name": u.get("first_name", ""),
-                        "username": u.get("telegram_username", ""),
-                        "token_balance": u.get("token_balance", 0),
-                    })
-                return {"users": result, "count": len(result)}
-            except Exception as e:
-                logging.error(f"Failed to list users: {e}")
-                raise HTTPException(status_code=500, detail="Failed to list users")
+@api_router.get("/me/scrolls")
+async def get_my_scrolls(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT scroll_type, quantity FROM item_scrolls WHERE user_id = $1",
+            user_id,
+        )
+    by_type = {row["scroll_type"]: int(row["quantity"]) for row in rows}
+    return {"scrolls": {scroll_type: by_type.get(scroll_type, 0) for scroll_type in sorted(SCROLL_TYPES)}}
 
 
-        @api_router.post("/admin/ban/{telegram_id}")
-        async def ban_user_endpoint(telegram_id: int, admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            user = await dbq.get_user_by_telegram_id(telegram_id)
-            if not user:
-                raise HTTPException(status_code=404, detail="User not found")
-            await dbq.ban_user(telegram_id)
-            return {"success": True, "message": f"User {telegram_id} banned"}
+@api_router.get("/me/upgrade")
+async def get_upgrade_state(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        inventory_rows = await conn.fetch(
+            """
+            SELECT inv.id, inv.user_id, inv.item_type, inv.item_name, inv.item_rarity, inv.source, inv.acquired_at,
+                   inv.enchant_level,
+                   inv.item_id AS catalog_item_id,
+                   i.name, i.description, i.class_name, i.slot, i.tier, i.price,
+                   i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
+                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path
+            FROM inventory inv
+            JOIN items i ON i.id = inv.item_id
+            WHERE inv.user_id = $1 AND i.slot IN ('weapon', 'armor')
+            ORDER BY inv.acquired_at DESC, inv.id DESC
+            """,
+            user_id,
+        )
+        equipped_rows = await conn.fetch(
+            "SELECT user_id, slot, inventory_id, item_id FROM equipped_items WHERE user_id = $1",
+            user_id,
+        )
+        scroll_rows = await conn.fetch(
+            "SELECT scroll_type, quantity FROM item_scrolls WHERE user_id = $1",
+            user_id,
+        )
+    scrolls = {row["scroll_type"]: int(row["quantity"]) for row in scroll_rows}
+    equipped_inventory_ids = resolve_effective_equipped_inventory_ids(
+        [dict(row) for row in inventory_rows],
+        [dict(row) for row in equipped_rows],
+    )
+    items = []
+    for row in inventory_rows:
+        item = _serialize_inventory_row({**dict(row), "equipped": row["id"] in equipped_inventory_ids})
+        item["max_enchant"] = max_enchant_for_tier(item["tier"])
+        item["normal_success_chance"] = enchant_success_chance(item["tier"], item["enchant_level"], "normal_scroll")
+        item["blessed_success_chance"] = enchant_success_chance(item["tier"], item["enchant_level"], "blessed_scroll")
+        item["next_enchant_preview"] = {
+            "normal_scroll": next_enchant_preview(item, "normal_scroll"),
+            "blessed_scroll": next_enchant_preview(item, "blessed_scroll"),
+        }
+        items.append(item)
+    return {
+        "items": items,
+        "scrolls": {scroll_type: scrolls.get(scroll_type, 0) for scroll_type in sorted(SCROLL_TYPES)},
+    }
 
 
-        @api_router.post("/admin/unban/{telegram_id}")
-        async def unban_user_endpoint(telegram_id: int, admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            await dbq.unban_user(telegram_id)
-            return {"success": True, "message": f"User {telegram_id} unbanned"}
+@api_router.get("/inventory")
+@api_router.get("/me/inventory")
+async def get_my_inventory(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT inv.id, inv.user_id, inv.item_type, inv.item_name, inv.item_rarity, inv.source, inv.acquired_at,
+                   inv.enchant_level,
+                   inv.item_id AS catalog_item_id,
+                   i.name, i.description, i.class_name, i.slot, i.tier, i.price,
+                   i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
+                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path
+            FROM inventory inv
+            LEFT JOIN items i ON i.id = inv.item_id
+            WHERE inv.user_id = $1
+            ORDER BY inv.acquired_at DESC, inv.id DESC
+            """,
+            user_id,
+        )
+        equipped_rows = await conn.fetch(
+            "SELECT user_id, slot, inventory_id, item_id FROM equipped_items WHERE user_id = $1",
+            user_id,
+        )
+        equipped_inventory_ids = resolve_effective_equipped_inventory_ids(
+            [dict(row) for row in rows],
+            [dict(row) for row in equipped_rows],
+        )
+        return {
+            "items": [
+                _serialize_inventory_row({**dict(row), "equipped": row["id"] in equipped_inventory_ids})
+                for row in rows
+            ]
+        }
 
 
-        @api_router.post("/admin/set-role/{telegram_id}")
-        async def set_role_endpoint(telegram_id: int, is_admin: bool = False, is_owner: bool = False, admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            user = await dbq.get_user_by_telegram_id(telegram_id)
-            if not user:
-                raise HTTPException(status_code=404, detail="User not found")
-            await dbq.set_user_role(telegram_id, is_admin, is_owner)
-            role = "owner" if is_owner else ("admin" if is_admin else "user")
-            return {"success": True, "telegram_id": telegram_id, "role": role}
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Equipment endpoints
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-
-        @api_router.get("/admin/stats")
-        async def get_admin_stats_endpoint(admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            try:
-                stats = await dbq.get_admin_stats()
-                # Add live room info
-                stats["active_rooms"] = len(active_rooms)
-                stats["players_online"] = sum(len(r.players) for r in active_rooms.values())
-                return stats
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-
-
-        @api_router.get("/admin/recent-games")
-        async def get_recent_games_endpoint(admin_key: str = "", limit: int = 15):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            try:
-                games = await dbq.get_recent_completed_games(limit)
-                return {"games": games, "count": len(games)}
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-
-
-        @api_router.get("/admin/wallets")
-        async def get_wallets(admin_key: str = "", limit: int = 10):
-            """ADMIN: View recent temporary wallets — public key, private key, sweep status"""
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            try:
-                async with dbq.get_pool().acquire() as conn:
-                    rows = await conn.fetch(
-                        """SELECT wallet_address, user_id, required_sol, token_amount,
-                                  status, payment_detected, tokens_credited, sol_forwarded,
-                                  private_key IS NOT NULL AS has_private_key, created_at
-                           FROM temporary_wallets
-                           ORDER BY created_at DESC
-                           LIMIT $1""",
-                        limit
-                    )
-                wallets = []
-                for r in rows:
-                    w = dict(r)
-                    if w.get("created_at"):
-                        w["created_at"] = w["created_at"].isoformat()
-                    w["public_key"] = w["wallet_address"]
-                    wallets.append(w)
-                return {"wallets": wallets, "count": len(wallets)}
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-
-
-        @api_router.post("/admin/broadcast")
-        async def broadcast_message(message: str, admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            message = message.strip().replace('\x00', '')
-            if not message:
-                raise HTTPException(status_code=400, detail="Message cannot be empty")
-            if len(message) > 4000:
-                raise HTTPException(status_code=400, detail="Message too long (max 4000 chars)")
-            if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == 'YOUR_TELEGRAM_BOT_TOKEN_HERE':
-                raise HTTPException(status_code=400, detail="TELEGRAM_BOT_TOKEN not configured")
-            try:
-                tg_ids = await dbq.get_all_telegram_ids()
-                sent, failed, skipped = 0, 0, 0
-                import httpx as _httpx
-                errors = []
-                SKIP_ERRORS = ("not found", "chat not found", "user not found", "bot was blocked by the user", "forbidden")
-                async with _httpx.AsyncClient(timeout=10) as client:
-                    for tg_id in tg_ids:
-                        try:
-                            resp = await client.post(
-                                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                                json={"chat_id": tg_id, "text": message, "parse_mode": "HTML"},
-                            )
-                            if resp.status_code == 200:
-                                sent += 1
-                            else:
-                                tg_err = resp.json().get("description", f"HTTP {resp.status_code}")
-                                if any(s in tg_err.lower() for s in SKIP_ERRORS):
-                                    skipped += 1
-                                    logging.info(f"📢 Broadcast skipped {tg_id} (unreachable): {tg_err}")
-                                else:
-                                    failed += 1
-                                    errors.append(f"{tg_id}: {tg_err}")
-                                    logging.warning(f"📢 Broadcast to {tg_id} failed: {tg_err}")
-                            await asyncio.sleep(0.05)
-                        except Exception as ex:
-                            failed += 1
-                            errors.append(f"{tg_id}: {ex}")
-                logging.info(f"📢 Broadcast done: sent={sent}, skipped={skipped}, failed={failed}, total={len(tg_ids)}")
-                # Push in-app broadcast to all connected socket clients
-                await sio.emit('admin_broadcast', {'message': message, 'ts': datetime.now(timezone.utc).isoformat()})
-                return {"sent": sent, "failed": failed, "skipped": skipped, "total": len(tg_ids), "errors": errors[:5]}
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-
-
-        @api_router.post("/admin/force-start/{room_type}")
-        async def force_start_room(room_type: str, admin_key: str = "", background_tasks: BackgroundTasks = None):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            target_room = None
-            for room in active_rooms.values():
-                if room.room_type == room_type and room.status == "waiting":
-                    target_room = room
-                    break
-            if not target_room:
-                raise HTTPException(status_code=404, detail=f"No waiting {room_type} room")
-            if len(target_room.players) == 0:
-                raise HTTPException(status_code=400, detail="Room has no players — add at least one first")
-            settings = ROOM_SETTINGS[room_type]
-            while len(target_room.players) < target_room.min_players:
-                bot_seed = str(uuid.uuid4())[:8]
-                anon_num = str(abs(hash(bot_seed)) % 9000 + 1000)
-                bot = RoomPlayer(
-                    user_id=f"bot_{bot_seed}",
-                    username=f"anon{anon_num}",
-                    first_name="Anonymous",
-                    last_name="",
-                    photo_url="",
-                    bet_amount=settings["min_bet"]
-                )
-                target_room.players.append(bot)
-                target_room.prize_pool += settings["min_bet"]
-            if background_tasks:
-                background_tasks.add_task(start_game_round, target_room)
-            else:
-                asyncio.create_task(start_game_round(target_room))
-            return {"success": True, "message": f"Force starting {room_type} room", "players": len(target_room.players)}
-
-
-        @api_router.post("/admin/toggle-maintenance")
-        async def toggle_maintenance(admin_key: str = ""):
-            global maintenance_mode
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            maintenance_mode = not maintenance_mode
-            logging.info(f"🔧 Maintenance mode {'ON' if maintenance_mode else 'OFF'}")
-            # Notify all connected clients immediately
-            await broadcast_room_updates()
-            return {"maintenance_mode": maintenance_mode}
-
-
-        @api_router.get("/admin/maintenance-status")
-        async def get_maintenance_status_endpoint(admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            return {"maintenance_mode": maintenance_mode}
-
-
-        @api_router.get("/admin/daily-stats")
-        async def get_daily_stats_endpoint(admin_key: str = "", days: int = 7):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            try:
-                return {"days": await dbq.get_daily_stats(days)}
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=str(e))
-
-
-        @api_router.post("/admin/promo-codes")
-        async def create_promo_code_endpoint(code: str, token_amount: int, max_uses: int = 1, unlimited: bool = False, admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            ok = await dbq.create_promo_code(code, token_amount, max_uses, unlimited=unlimited)
-            if not ok:
-                raise HTTPException(status_code=400, detail="Code already exists or failed to create")
-            return {"success": True, "code": code.upper(), "token_amount": token_amount, "max_uses": max_uses, "unlimited": unlimited}
-
-
-        @api_router.get("/admin/promo-codes")
-        async def list_promo_codes_endpoint(admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            return {"codes": await dbq.get_promo_codes()}
-
-
-        @api_router.delete("/admin/promo-codes/{code}")
-        async def delete_promo_code_endpoint(code: str, admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            ok = await dbq.delete_promo_code(code)
-            if not ok:
-                raise HTTPException(status_code=404, detail="Code not found")
-            return {"success": True}
-
-
-        @api_router.post("/use-promo")
-        async def use_promo_code_endpoint(code: str, http_request: Request):
-            user_id = get_authenticated_user_id(http_request)
-            user_doc = await dbq.get_user_by_id(user_id)
-            if not user_doc:
-                raise HTTPException(status_code=404, detail="User not found")
-            telegram_id = int(user_doc["telegram_id"])
-            result = await dbq.use_promo_code(code, telegram_id)
-            if not result["success"]:
-                raise HTTPException(status_code=400, detail=result["error"])
-            return result
-
-
-        @api_router.get("/admin/export-users")
-        async def export_users_csv(admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            from fastapi.responses import StreamingResponse
-            import io, csv
-            users = await dbq.get_all_users(limit=10000)
-            output = io.StringIO()
-            writer = csv.writer(output)
-            writer.writerow(["telegram_id", "first_name", "username", "token_balance", "total_purchases", "is_admin", "is_banned", "created_at"])
-            for u in users:
-                writer.writerow([u.get("telegram_id",""), u.get("first_name",""), u.get("telegram_username",""),
-                                 u.get("token_balance",0), u.get("total_purchases",0),
-                                 u.get("is_admin",False), u.get("is_banned",False), u.get("created_at","")])
-            output.seek(0)
-            return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
-                headers={"Content-Disposition": "attachment; filename=users.csv"})
-
-
-        @api_router.post("/admin/force-close-room/{room_type}")
-        async def force_close_room_endpoint(room_type: str, admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            closed = []
-            for room_id, room in list(active_rooms.items()):
-                if room.room_type == room_type and room.status == "waiting":
-                    room.players.clear()
-                    closed.append(room_id)
-            if not closed:
-                raise HTTPException(status_code=404, detail=f"No waiting {room_type} room found")
-            return {"success": True, "closed_rooms": closed}
-
-
-        @api_router.get("/room-configs")
-        async def get_public_room_configs():
-            """Public endpoint — no auth required. Returns current room bet limits."""
-            result = []
-            for rt in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
-                cfg = room_configs.get(rt, {})
-                defaults = ROOM_SETTINGS.get(RoomType(rt), {})
-                result.append({
-                    "room_type": rt,
-                    "min_bet": cfg.get("min_bet", defaults.get("min_bet", 0)),
-                    "max_bet": cfg.get("max_bet", defaults.get("max_bet", 0)),
-                    "max_players": cfg.get("max_players", defaults.get("max_players", 3)),
-                })
-            return result
-
-
-        @api_router.get("/admin/room-configs")
-        async def get_room_configs_endpoint(admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            result = []
-            for rt in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
-                cfg = room_configs.get(rt, {})
-                defaults = ROOM_SETTINGS.get(RoomType(rt), {})
-                result.append({
-                    "room_type": rt,
-                    "name": defaults.get("name", rt),
-                    "min_bet": cfg.get("min_bet", defaults.get("min_bet", 0)),
-                    "max_bet": cfg.get("max_bet", defaults.get("max_bet", 0)),
-                    "max_players": cfg.get("max_players", defaults.get("max_players", 3)),
-                    "min_players": cfg.get("min_players", defaults.get("min_players", 2)),
-                })
-            return result
-
-
-        @api_router.post("/admin/room-config/{room_type}")
-        async def update_room_config_endpoint(
-            room_type: str,
-            min_bet: int = None,
-            max_bet: int = None,
-            max_players: int = None,
-            min_players: int = None,
-            admin_key: str = ""
-        ):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            if room_type not in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
-                raise HTTPException(status_code=400, detail="Invalid room type")
-
-            defaults = ROOM_SETTINGS.get(RoomType(room_type), {})
-            current = room_configs.get(room_type, {})
-
-            new_min_bet     = min_bet     if min_bet     is not None else current.get("min_bet",     defaults.get("min_bet", 0))
-            new_max_bet     = max_bet     if max_bet     is not None else current.get("max_bet",     defaults.get("max_bet", 0))
-            new_max_players = max_players if max_players is not None else current.get("max_players", defaults.get("max_players", 3))
-            new_min_players = min_players if min_players is not None else current.get("min_players", defaults.get("min_players", 2))
-
-            if new_min_players < 2:
-                raise HTTPException(status_code=400, detail="min_players must be at least 2")
-            if new_max_players < new_min_players:
-                raise HTTPException(status_code=400, detail="max_players must be >= min_players")
-
-            # Persist to DB
-            from db_queries import upsert_room_config
-            saved = await upsert_room_config(room_type, new_min_bet, new_max_bet, new_max_players, new_min_players)
-
-            # Update in-memory cache
-            room_configs[room_type] = saved
-
-            # Apply to existing waiting rooms of this type
-            for room in active_rooms.values():
-                if room.room_type == room_type and room.status == 'waiting':
-                    room.max_players = new_max_players
-                    room.min_players = new_min_players
-
-            # Also update ROOM_SETTINGS so bet validation uses new values
-            ROOM_SETTINGS[RoomType(room_type)]["min_bet"]     = new_min_bet
-            ROOM_SETTINGS[RoomType(room_type)]["max_bet"]     = new_max_bet
-            ROOM_SETTINGS[RoomType(room_type)]["max_players"] = new_max_players
-            ROOM_SETTINGS[RoomType(room_type)]["min_players"] = new_min_players
-
-            # Broadcast live config update to all connected clients
-            await sio.emit('room_config_updated', {
-                'room_type': room_type,
-                'name': ROOM_SETTINGS[RoomType(room_type)].get('name', room_type),
-                'min_bet': new_min_bet,
-                'max_bet': new_max_bet,
-                'max_players': new_max_players,
-                'min_players': new_min_players,
+@api_router.get("/me/equipped")
+async def get_my_equipped(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT ei.slot, COALESCE(inv.id, ei.inventory_id) AS inventory_id,
+                   COALESCE(inv.enchant_level, 0) AS enchant_level, i.*
+            FROM equipped_items ei
+            JOIN items i ON i.id = ei.item_id
+            JOIN users u ON u.id = ei.user_id AND i.class_name = u.class_name
+            LEFT JOIN LATERAL (
+                SELECT id, enchant_level
+                FROM inventory
+                WHERE user_id = ei.user_id
+                  AND item_id = ei.item_id
+                  AND (ei.inventory_id IS NULL OR id = ei.inventory_id)
+                ORDER BY
+                    CASE WHEN id = ei.inventory_id THEN 0 ELSE 1 END,
+                    acquired_at ASC,
+                    id ASC
+                LIMIT 1
+            ) inv ON TRUE
+            WHERE ei.user_id = $1
+              AND ei.class_name = u.class_name
+            """,
+            user_id,
+        )
+        equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None}
+        equipped_items: List[Dict[str, Any]] = []
+        for row in rows:
+            slot = row["slot"]
+            item = _serialize_equipped_row(row)
+            if slot in equipped:
+                equipped[slot] = item
+            equipped_items.append({
+                "id": row["inventory_id"] or row["id"],
+                "inventory_id": row["inventory_id"],
+                "item_id": row["id"],
+                "slot": row["slot"],
             })
-            await broadcast_room_updates()
-
-            return saved
-
-
-        @api_router.get("/admin/freeroll-config")
-        async def get_freeroll_config(admin_key: str = ""):
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            return freeroll_config
+        return {
+            "equipped": equipped,
+            "equipped_items": equipped_items,
+            "loadout_effective_stats": modifiers_to_dict(aggregate_item_modifiers([dict(row) for row in rows])),
+        }
 
 
-        @api_router.post("/admin/freeroll-config")
-        async def update_freeroll_config(
-            max_players: int = None,
-            prize: int = None,
-            is_locked: bool = None,
-            admin_key: str = ""
-        ):
-            global freeroll_config
-            if not verify_admin_key(admin_key):
-                raise HTTPException(status_code=403, detail="Unauthorized")
-            if max_players is not None:
-                freeroll_config['max_players'] = max_players
-                for room in active_rooms.values():
-                    if room.room_type == RoomType.FREEROLL and room.status == 'waiting':
-                        room.max_players = max_players
-            if prize is not None:
-                freeroll_config['prize'] = prize
-            if is_locked is not None:
-                freeroll_config['is_locked'] = is_locked
-            return freeroll_config
+class EquipBody(BaseModel):
+    item_id: Optional[int] = None
+    inventory_id: Optional[str] = None
 
 
-        # ── Arena energy endpoints ────────────────────────────────────────────────────
+class EnchantBody(BaseModel):
+    inventory_id: str
+    scroll_type: str
 
-        @api_router.post("/arena/energy/spend")
-        async def spend_energy(request: Request):
-            user_id = get_authenticated_user_id(request)
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Not authenticated")
-            async with get_pool().acquire() as conn:
-                energy_data = await _get_and_regen_energy(str(user_id), conn)
-                if energy_data["energy"] < 1:
-                    raise HTTPException(status_code=400, detail={
-                        "message": "Not enough energy",
-                        "next_energy_at": energy_data["next_energy_at"]
-                    })
-                new_energy = energy_data["energy"] - 1
-                now = datetime.utcnow().replace(tzinfo=timezone.utc)
+
+@api_router.post("/me/equip")
+async def equip_item(body: EquipBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        inv_row = None
+        if body.inventory_id:
+            inv_row = await conn.fetchrow(
+                """
+                SELECT inv.id AS inventory_id, inv.item_id, i.*
+                FROM inventory inv
+                JOIN items i ON i.id = inv.item_id
+                WHERE inv.user_id = $1 AND inv.id = $2
+                """,
+                user_id,
+                body.inventory_id,
+            )
+        elif body.item_id is not None:
+            inv_rows = await conn.fetch(
+                """
+                SELECT inv.id AS inventory_id, inv.item_id, i.*
+                FROM inventory inv
+                JOIN items i ON i.id = inv.item_id
+                WHERE inv.user_id = $1 AND inv.item_id = $2
+                ORDER BY inv.acquired_at ASC, inv.id ASC
+                """,
+                user_id,
+                body.item_id,
+            )
+            try:
+                inv_row = choose_inventory_copy_for_equip([dict(row) for row in inv_rows])
+            except LookupError:
+                inv_row = None
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not inv_row:
+            raise HTTPException(status_code=404, detail="Item not in your inventory")
+        user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
+        if not user_row or not can_user_equip_item(user_row["class_name"], inv_row["class_name"]):
+            raise HTTPException(status_code=400, detail="Item class does not match your class")
+        await conn.execute(
+            """
+            INSERT INTO equipped_items (user_id, slot, inventory_id, item_id, equipped_at, class_name)
+            VALUES ($1, $2, $3, $4, NOW(), $5)
+            ON CONFLICT (user_id, slot, class_name) DO UPDATE
+                SET inventory_id = EXCLUDED.inventory_id,
+                    item_id = EXCLUDED.item_id,
+                    equipped_at = NOW()
+            """,
+            user_id, inv_row["slot"], inv_row["inventory_id"], inv_row["item_id"], user_row["class_name"],
+        )
+        return {"success": True, "equipped_slot": inv_row["slot"], "item_id": inv_row["item_id"], "inventory_id": inv_row["inventory_id"]}
+
+
+@api_router.post("/me/enchant")
+async def enchant_item(body: EnchantBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    if body.scroll_type not in SCROLL_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid scroll type")
+
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT inv.id AS inventory_id, inv.user_id, inv.item_id, inv.enchant_level,
+                       i.name, i.class_name, i.slot, i.tier
+                FROM inventory inv
+                JOIN items i ON i.id = inv.item_id
+                WHERE inv.user_id = $1 AND inv.id = $2
+                FOR UPDATE OF inv
+                """,
+                user_id,
+                body.inventory_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Item not in your inventory")
+            if not is_enchantable_slot(row["slot"]):
+                raise HTTPException(status_code=400, detail="Only weapon and armor items can be enchanted")
+
+            user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
+            if not user_row or not can_user_equip_item(user_row["class_name"], row["class_name"]):
+                raise HTTPException(status_code=400, detail="Item class does not match your class")
+
+            current_level = int(row["enchant_level"] or 0)
+            max_level = max_enchant_for_tier(row["tier"])
+            if current_level >= max_level:
+                raise HTTPException(status_code=400, detail="Item is already at max enchant")
+
+            scroll_row = await conn.fetchrow(
+                """
+                SELECT quantity
+                FROM item_scrolls
+                WHERE user_id = $1 AND scroll_type = $2
+                FOR UPDATE
+                """,
+                user_id,
+                body.scroll_type,
+            )
+            if not scroll_row or int(scroll_row["quantity"] or 0) <= 0:
+                raise HTTPException(status_code=400, detail="Scroll unavailable")
+
+            await conn.execute(
+                """
+                UPDATE item_scrolls
+                SET quantity = quantity - 1,
+                    updated_at = NOW()
+                WHERE user_id = $1 AND scroll_type = $2
+                """,
+                user_id,
+                body.scroll_type,
+            )
+
+            roll = random.SystemRandom().random()
+            result = resolve_enchant_attempt(row["tier"], current_level, body.scroll_type, roll)
+
+            if result["success"]:
                 await conn.execute(
-                    "UPDATE users SET energy = $1, energy_last_regen = COALESCE(energy_last_regen, $2) WHERE id = $3",
-                    new_energy, now, str(user_id)
+                    "UPDATE inventory SET enchant_level = $3 WHERE user_id = $1 AND id = $2",
+                    user_id,
+                    body.inventory_id,
+                    result["new_enchant_level"],
                 )
-                next_at = None
-                if new_energy < 10:
-                    row = await conn.fetchrow("SELECT energy_last_regen FROM users WHERE id = $1", str(user_id))
-                    lr = row["energy_last_regen"]
-                    if lr.tzinfo is None:
-                        lr = lr.replace(tzinfo=timezone.utc)
-                    next_at = (lr + timedelta(hours=1)).isoformat()
-                return {"ok": True, "energy": new_energy, "max_energy": 10, "next_energy_at": next_at}
+            elif result["destroyed"]:
+                await conn.execute(
+                    """
+                    DELETE FROM equipped_items
+                    WHERE user_id = $1
+                      AND (
+                          inventory_id = $2
+                          OR (inventory_id IS NULL AND item_id = $3)
+                      )
+                    """,
+                    user_id,
+                    body.inventory_id,
+                    row["item_id"],
+                )
+                await conn.execute(
+                    "DELETE FROM inventory WHERE user_id = $1 AND id = $2",
+                    user_id,
+                    body.inventory_id,
+                )
+
+            remaining_scrolls = await conn.fetchval(
+                "SELECT quantity FROM item_scrolls WHERE user_id = $1 AND scroll_type = $2",
+                user_id,
+                body.scroll_type,
+            )
+
+            return {
+                "success": result["success"],
+                "destroyed": result["destroyed"],
+                "inventory_id": body.inventory_id,
+                "item_id": row["item_id"],
+                "slot": row["slot"],
+                "tier": row["tier"],
+                "scroll_type": body.scroll_type,
+                "previous_enchant_level": result["previous_enchant_level"],
+                "new_enchant_level": result["new_enchant_level"],
+                "max_enchant": max_level,
+                "success_chance": result["success_chance"],
+                "roll": result["roll"],
+                "remaining_scrolls": int(remaining_scrolls or 0),
+            }
 
 
-        @api_router.post("/arena/energy/buy")
-        async def buy_energy(request: Request):
-            # TODO: implement token purchase of energy
-            raise HTTPException(status_code=501, detail="Coming soon")
+class UnequipBody(BaseModel):
+    slot: str
 
 
-        # ── Real-time arena: internal match result endpoint (called by Colyseus) ──────
-        import os as _os
+SELL_PRICES = {
+    "common": 5,
+    "uncommon": 100,
+    "rare": 300,
+    "epic": 500,
+    "legendary": 1200,
+}
 
-        INTERNAL_SECRET = _os.environ.get("INTERNAL_SECRET", "")
-        RT_WINNER_COINS = 100
-        RT_LOSER_COINS  = 20
-        RT_WINNER_XP    = 120
-        RT_LOSER_XP     = 30
-        _RT_STREAK_MILESTONES = {3: 50, 5: 100, 7: 200}
-        _processed_realtime_result_rooms: set[str] = set()
-        _realtime_result_lock = asyncio.Lock()
 
-        class RealtimeMatchResultBody(BaseModel):
-            winner_user_id: str
-            loser_user_id: str
-            by_disconnect: bool = False
-            room_id: str = ""
+class SellBody(BaseModel):
+    inventory_id: str
+
+
+@api_router.post("/me/unequip")
+async def unequip_item(body: UnequipBody, http_request: Request):
+    if body.slot not in ("weapon", "armor", "ability"):
+        raise HTTPException(status_code=400, detail="slot must be weapon, armor, or ability")
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
+        await conn.execute(
+            "DELETE FROM equipped_items WHERE user_id = $1 AND slot = $2 AND class_name = $3",
+            user_id, body.slot, user_row["class_name"] if user_row else "",
+        )
+    return {"success": True}
+
+
+@api_router.post("/me/sell")
+async def sell_item(body: SellBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            # 1. Fetch inventory row (lock for update)
+            row = await conn.fetchrow(
+                """
+                SELECT inv.id AS inventory_id, inv.user_id, inv.item_id,
+                       i.name AS item_name, i.tier
+                FROM inventory inv
+                JOIN items i ON i.id = inv.item_id
+                WHERE inv.user_id = $1 AND inv.id = $2
+                FOR UPDATE OF inv
+                """,
+                user_id, body.inventory_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Item not in your inventory")
+
+            # 2. Check not equipped
+            equipped = await conn.fetchval(
+                "SELECT 1 FROM equipped_items WHERE user_id = $1 AND inventory_id = $2",
+                user_id, body.inventory_id,
+            )
+            if equipped:
+                raise HTTPException(status_code=400, detail="Cannot sell an equipped item â€” unequip it first")
+
+            # 3. Sell price
+            tier = (row["tier"] or "common").lower()
+            sell_price = SELL_PRICES.get(tier, 5)
+
+            # 4. Credit tokens
+            new_balance = await conn.fetchval(
+                "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1 RETURNING token_balance",
+                user_id, sell_price,
+            )
+
+            # 5. Delete from inventory
+            await conn.execute(
+                "DELETE FROM inventory WHERE user_id = $1 AND id = $2",
+                user_id, body.inventory_id,
+            )
+
+            return {"new_balance": int(new_balance or 0), "sell_price": sell_price, "item_name": row["item_name"]}
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Admin: give items
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@api_router.post("/admin/give-all-items")
+async def admin_give_all_items(admin_key: str, telegram_id: int):
+    """ADMIN: Insert every item from the catalog into a user's inventory (once per item)."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    async with get_pool().acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT id FROM users WHERE telegram_id = $1", telegram_id
+        )
+        if not user_row:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_id = user_row["id"]
+        all_items = await conn.fetch("SELECT id, slot, name, tier FROM items ORDER BY id")
+        added = 0
+        for item in all_items:
+            rarity = {"common": "Common", "uncommon": "Uncommon", "rare": "Rare",
+                      "epic": "Epic", "legendary": "Legendary"}.get(
+                (item["tier"] or "common").lower(), "Common"
+            )
+            await conn.execute(
+                """
+                INSERT INTO inventory (id, user_id, item_type, item_name, item_rarity, source, item_id, acquired_at)
+                VALUES ($1, $2, $3, $4, $5, 'admin_grant', $6, NOW())
+                """,
+                str(uuid.uuid4()), user_id, item["slot"], item["name"], rarity, item["id"],
+            )
+            added += 1
+        return {"added": added, "user_id": user_id, "telegram_id": telegram_id}
+
+
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Starter items
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@api_router.get("/me/starter-items")
+async def get_starter_items(http_request: Request):
+    """Give the 3 common items for the user's class if not already in inventory."""
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT class_name FROM users WHERE id = $1", user_id
+        )
+        if not user_row or not user_row["class_name"]:
+            raise HTTPException(status_code=400, detail="Set your class before claiming starter items")
+        class_name = user_row["class_name"]
+        starter_items = await conn.fetch(
+            "SELECT * FROM items WHERE class_name = $1 AND tier = 'common' ORDER BY slot ASC", class_name
+        )
+        given = []
+        for item in starter_items:
+            already = await conn.fetchval(
+                "SELECT 1 FROM inventory WHERE user_id = $1 AND item_id = $2",
+                user_id, item["id"],
+            )
+            if not already:
+                await conn.execute(
+                    """
+                    INSERT INTO inventory
+                        (id, user_id, item_type, item_name, item_rarity, equipped, item_id, source, acquired_at)
+                    VALUES ($1, $2, $3, $4, $5, FALSE, $6, 'starter', NOW())
+                    """,
+                    str(uuid.uuid4()), user_id, item["slot"], item["name"], tier_to_rarity(item["tier"]), item["id"],
+                )
+                given.append(_serialize_item_row(item))
+        return {"given": given, "class_name": class_name}
+
+@api_router.get("/check-winner/{user_id}")
+async def check_if_winner(user_id: str, http_request: Request):
+    """Check if user has any unclaimed prizes"""
+    await _require_self_or_admin(http_request, user_id)
+    recent_prizes = await dbq.get_user_prizes(user_id)
+    return {"recent_prizes": recent_prizes[:5]}
+
+
+@api_router.post("/admin/adjust-tokens/{telegram_id}")
+async def adjust_tokens(telegram_id: int, tokens: int, admin_key: str = ""):
+    """Add or remove tokens from a user by Telegram ID. Use negative tokens to remove."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        user_doc = await dbq.get_user_by_telegram_id(telegram_id)
+        if not user_doc:
+            raise HTTPException(status_code=404, detail="User not found")
+        current = user_doc.get('token_balance', 0)
+        new_balance = max(0, current + tokens)
+        await dbq.update_user_fields_by_telegram_id(telegram_id, {"token_balance": new_balance})
+        action = "Added" if tokens >= 0 else "Removed"
+        logging.info(f"Admin {action} {abs(tokens)} tokens for user {telegram_id}. New balance: {new_balance}")
+        return {
+            "status": "success",
+            "telegram_id": telegram_id,
+            "username": user_doc.get('telegram_username', ''),
+            "first_name": user_doc.get('first_name', ''),
+            "previous_balance": current,
+            "tokens_changed": tokens,
+            "new_balance": new_balance
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Failed to adjust tokens: {e}")
+        raise HTTPException(status_code=500, detail="Failed to adjust tokens")
+
+
+@api_router.post("/admin/remove-fake-player")
+async def remove_fake_player(room_type: str, admin_key: str = ""):
+    """Remove the last bot player from a waiting room."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    target_room = None
+    for room in active_rooms.values():
+        if room.room_type == room_type and room.status == "waiting":
+            target_room = room
+            break
+    if not target_room:
+        raise HTTPException(status_code=404, detail=f"No waiting {room_type} room found")
+    bot_players = [p for p in target_room.players if p.user_id.startswith("bot_")]
+    if not bot_players:
+        raise HTTPException(status_code=404, detail="No bot players in this room")
+    bot = bot_players[-1]
+    target_room.players = [p for p in target_room.players if p.user_id != bot.user_id]
+    target_room.prize_pool = max(0, target_room.prize_pool - bot.bet_amount)
+    serialized_players = []
+    for p in target_room.players:
+        pd = p.dict()
+        if 'joined_at' in pd and isinstance(pd['joined_at'], datetime):
+            pd['joined_at'] = pd['joined_at'].isoformat()
+        serialized_players.append(pd)
+    await socket_rooms.broadcast_to_room(sio, target_room.id, 'player_left', {
+        'room_id': target_room.id,
+        'players': serialized_players,
+        'players_count': len(target_room.players),
+        'prize_pool': target_room.prize_pool,
+    })
+    return {"status": "success", "message": f"Bot removed from {room_type}", "players_count": len(target_room.players)}
+
+
+@api_router.post("/admin/add-fake-player")
+async def add_fake_player(room_type: str, player_name: str, bet_amount: int, admin_key: str = "", background_tasks: BackgroundTasks = None):
+    """Add a fake/bot player to a room to fill it up."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    room_type_enum = None
+    for rt in RoomType:
+        if rt.value == room_type:
+            room_type_enum = rt
+            break
+    if room_type_enum is None:
+        raise HTTPException(status_code=400, detail=f"Invalid room type: {room_type}")
+
+    settings = ROOM_SETTINGS[room_type_enum]
+    if bet_amount < settings["min_bet"] or bet_amount > settings["max_bet"]:
+        raise HTTPException(status_code=400, detail=f"Bet must be between {settings['min_bet']} and {settings['max_bet']}")
+
+    target_room = None
+    for room in active_rooms.values():
+        if room.room_type == room_type and room.status == "waiting":
+            target_room = room
+            break
+    if not target_room:
+        raise HTTPException(status_code=404, detail=f"No waiting room found for {room_type}")
+    if len(target_room.players) >= target_room.max_players:
+        raise HTTPException(status_code=400, detail="Room is already full")
+
+    bot_seed = str(uuid.uuid4())[:8]
+    anon_num = str(hash(bot_seed) % 9000 + 1000)
+    fake_player = RoomPlayer(
+        user_id=f"bot_{bot_seed}",
+        username="",
+        first_name="Anonymous",
+        last_name="",
+        photo_url="",
+        bet_amount=bet_amount,
+        is_anonymous=True
+    )
+    target_room.players.append(fake_player)
+    target_room.prize_pool += bet_amount
+
+    serialized_players = []
+    for p in target_room.players:
+        pd = p.dict()
+        if 'joined_at' in pd and isinstance(pd['joined_at'], datetime):
+            pd['joined_at'] = pd['joined_at'].isoformat()
+        serialized_players.append(pd)
+
+    fake_dict = fake_player.dict()
+    if 'joined_at' in fake_dict and isinstance(fake_dict['joined_at'], datetime):
+        fake_dict['joined_at'] = fake_dict['joined_at'].isoformat()
+
+    await socket_rooms.broadcast_to_room(sio, target_room.id, 'player_joined', {
+        'room_id': target_room.id,
+        'room_type': target_room.room_type,
+        'player': fake_dict,
+        'players_count': len(target_room.players),
+        'prize_pool': target_room.prize_pool,
+        'all_players': serialized_players,
+        'room_status': 'filling' if len(target_room.players) < target_room.max_players else 'full',
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    })
+    await broadcast_room_updates()
+
+    if len(target_room.players) >= target_room.min_players:
+        await socket_rooms.broadcast_to_room(sio, target_room.id, 'room_full', {
+            'room_id': target_room.id,
+            'room_type': target_room.room_type,
+            'players': serialized_players,
+            'players_count': len(target_room.players),
+            'message': 'ðŸš€ GAME IS STARTING! GET READY FOR THE BATTLE!',
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        if background_tasks:
+            background_tasks.add_task(start_game_round, target_room)
+
+    return {
+        "status": "success",
+        "message": f"Anonymous player added to {room_type} room",
+        "room_id": target_room.id,
+        "players_count": len(target_room.players),
+        "prize_pool": target_room.prize_pool
+    }
+
+
+@api_router.get("/admin/list-users")
+async def list_users(admin_key: str = "", limit: int = 20, search: str = ""):
+    """List users with optional search by name/username."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        if search:
+            users = await dbq.search_users(search, limit)
+        else:
+            users = await dbq.get_all_users(limit)
+        result = []
+        for u in users:
+            result.append({
+                "id": u.get("id"),
+                "telegram_id": u.get("telegram_id"),
+                "first_name": u.get("first_name", ""),
+                "username": u.get("telegram_username", ""),
+                "token_balance": u.get("token_balance", 0),
+            })
+        return {"users": result, "count": len(result)}
+    except Exception as e:
+        logging.error(f"Failed to list users: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list users")
+
+
+@api_router.post("/admin/ban/{telegram_id}")
+async def ban_user_endpoint(telegram_id: int, admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    user = await dbq.get_user_by_telegram_id(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    await dbq.ban_user(telegram_id)
+    return {"success": True, "message": f"User {telegram_id} banned"}
+
+
+@api_router.post("/admin/unban/{telegram_id}")
+async def unban_user_endpoint(telegram_id: int, admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    await dbq.unban_user(telegram_id)
+    return {"success": True, "message": f"User {telegram_id} unbanned"}
+
+
+@api_router.post("/admin/set-role/{telegram_id}")
+async def set_role_endpoint(telegram_id: int, is_admin: bool = False, is_owner: bool = False, admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    user = await dbq.get_user_by_telegram_id(telegram_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    await dbq.set_user_role(telegram_id, is_admin, is_owner)
+    role = "owner" if is_owner else ("admin" if is_admin else "user")
+    return {"success": True, "telegram_id": telegram_id, "role": role}
+
+
+@api_router.get("/admin/stats")
+async def get_admin_stats_endpoint(admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        stats = await dbq.get_admin_stats()
+        # Add live room info
+        stats["active_rooms"] = len(active_rooms)
+        stats["players_online"] = sum(len(r.players) for r in active_rooms.values())
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/admin/recent-games")
+async def get_recent_games_endpoint(admin_key: str = "", limit: int = 15):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        games = await dbq.get_recent_completed_games(limit)
+        return {"games": games, "count": len(games)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/admin/wallets")
+async def get_wallets(admin_key: str = "", limit: int = 10):
+    """ADMIN: View recent temporary wallets â€” public key, private key, sweep status"""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        async with dbq.get_pool().acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT wallet_address, user_id, required_sol, token_amount,
+                          status, payment_detected, tokens_credited, sol_forwarded,
+                          private_key IS NOT NULL AS has_private_key, created_at
+                   FROM temporary_wallets
+                   ORDER BY created_at DESC
+                   LIMIT $1""",
+                limit
+            )
+        wallets = []
+        for r in rows:
+            w = dict(r)
+            if w.get("created_at"):
+                w["created_at"] = w["created_at"].isoformat()
+            w["public_key"] = w["wallet_address"]
+            wallets.append(w)
+        return {"wallets": wallets, "count": len(wallets)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/admin/broadcast")
+async def broadcast_message(message: str, admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    message = message.strip().replace('\x00', '')
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    if len(message) > 4000:
+        raise HTTPException(status_code=400, detail="Message too long (max 4000 chars)")
+    if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == 'YOUR_TELEGRAM_BOT_TOKEN_HERE':
+        raise HTTPException(status_code=400, detail="TELEGRAM_BOT_TOKEN not configured")
+    try:
+        tg_ids = await dbq.get_all_telegram_ids()
+        sent, failed, skipped = 0, 0, 0
+        import httpx as _httpx
+        errors = []
+        SKIP_ERRORS = ("not found", "chat not found", "user not found", "bot was blocked by the user", "forbidden")
+        async with _httpx.AsyncClient(timeout=10) as client:
+            for tg_id in tg_ids:
+                try:
+                    resp = await client.post(
+                        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                        json={"chat_id": tg_id, "text": message, "parse_mode": "HTML"},
+                    )
+                    if resp.status_code == 200:
+                        sent += 1
+                    else:
+                        tg_err = resp.json().get("description", f"HTTP {resp.status_code}")
+                        if any(s in tg_err.lower() for s in SKIP_ERRORS):
+                            skipped += 1
+                            logging.info(f"ðŸ“¢ Broadcast skipped {tg_id} (unreachable): {tg_err}")
+                        else:
+                            failed += 1
+                            errors.append(f"{tg_id}: {tg_err}")
+                            logging.warning(f"ðŸ“¢ Broadcast to {tg_id} failed: {tg_err}")
+                    await asyncio.sleep(0.05)
+                except Exception as ex:
+                    failed += 1
+                    errors.append(f"{tg_id}: {ex}")
+        logging.info(f"ðŸ“¢ Broadcast done: sent={sent}, skipped={skipped}, failed={failed}, total={len(tg_ids)}")
+        # Push in-app broadcast to all connected socket clients
+        await sio.emit('admin_broadcast', {'message': message, 'ts': datetime.now(timezone.utc).isoformat()})
+        return {"sent": sent, "failed": failed, "skipped": skipped, "total": len(tg_ids), "errors": errors[:5]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/admin/force-start/{room_type}")
+async def force_start_room(room_type: str, admin_key: str = "", background_tasks: BackgroundTasks = None):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    target_room = None
+    for room in active_rooms.values():
+        if room.room_type == room_type and room.status == "waiting":
+            target_room = room
+            break
+    if not target_room:
+        raise HTTPException(status_code=404, detail=f"No waiting {room_type} room")
+    if len(target_room.players) == 0:
+        raise HTTPException(status_code=400, detail="Room has no players â€” add at least one first")
+    settings = ROOM_SETTINGS[room_type]
+    while len(target_room.players) < target_room.min_players:
+        bot_seed = str(uuid.uuid4())[:8]
+        anon_num = str(abs(hash(bot_seed)) % 9000 + 1000)
+        bot = RoomPlayer(
+            user_id=f"bot_{bot_seed}",
+            username=f"anon{anon_num}",
+            first_name="Anonymous",
+            last_name="",
+            photo_url="",
+            bet_amount=settings["min_bet"]
+        )
+        target_room.players.append(bot)
+        target_room.prize_pool += settings["min_bet"]
+    if background_tasks:
+        background_tasks.add_task(start_game_round, target_room)
+    else:
+        asyncio.create_task(start_game_round(target_room))
+    return {"success": True, "message": f"Force starting {room_type} room", "players": len(target_room.players)}
+
+
+@api_router.post("/admin/toggle-maintenance")
+async def toggle_maintenance(admin_key: str = ""):
+    global maintenance_mode
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    maintenance_mode = not maintenance_mode
+    logging.info(f"ðŸ”§ Maintenance mode {'ON' if maintenance_mode else 'OFF'}")
+    # Notify all connected clients immediately
+    await broadcast_room_updates()
+    return {"maintenance_mode": maintenance_mode}
+
+
+@api_router.get("/admin/maintenance-status")
+async def get_maintenance_status_endpoint(admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    return {"maintenance_mode": maintenance_mode}
+
+
+@api_router.get("/admin/daily-stats")
+async def get_daily_stats_endpoint(admin_key: str = "", days: int = 7):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        return {"days": await dbq.get_daily_stats(days)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/admin/promo-codes")
+async def create_promo_code_endpoint(code: str, token_amount: int, max_uses: int = 1, unlimited: bool = False, admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    ok = await dbq.create_promo_code(code, token_amount, max_uses, unlimited=unlimited)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Code already exists or failed to create")
+    return {"success": True, "code": code.upper(), "token_amount": token_amount, "max_uses": max_uses, "unlimited": unlimited}
+
+
+@api_router.get("/admin/promo-codes")
+async def list_promo_codes_endpoint(admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    return {"codes": await dbq.get_promo_codes()}
+
+
+@api_router.delete("/admin/promo-codes/{code}")
+async def delete_promo_code_endpoint(code: str, admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    ok = await dbq.delete_promo_code(code)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Code not found")
+    return {"success": True}
+
+
+@api_router.post("/use-promo")
+async def use_promo_code_endpoint(code: str, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    telegram_id = int(user_doc["telegram_id"])
+    result = await dbq.use_promo_code(code, telegram_id)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@api_router.get("/admin/export-users")
+async def export_users_csv(admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    from fastapi.responses import StreamingResponse
+    import io, csv
+    users = await dbq.get_all_users(limit=10000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["telegram_id", "first_name", "username", "token_balance", "total_purchases", "is_admin", "is_banned", "created_at"])
+    for u in users:
+        writer.writerow([u.get("telegram_id",""), u.get("first_name",""), u.get("telegram_username",""),
+                         u.get("token_balance",0), u.get("total_purchases",0),
+                         u.get("is_admin",False), u.get("is_banned",False), u.get("created_at","")])
+    output.seek(0)
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users.csv"})
+
+
+@api_router.post("/admin/force-close-room/{room_type}")
+async def force_close_room_endpoint(room_type: str, admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    closed = []
+    for room_id, room in list(active_rooms.items()):
+        if room.room_type == room_type and room.status == "waiting":
+            room.players.clear()
+            closed.append(room_id)
+    if not closed:
+        raise HTTPException(status_code=404, detail=f"No waiting {room_type} room found")
+    return {"success": True, "closed_rooms": closed}
+
+
+@api_router.get("/room-configs")
+async def get_public_room_configs():
+    """Public endpoint â€” no auth required. Returns current room bet limits."""
+    result = []
+    for rt in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
+        cfg = room_configs.get(rt, {})
+        defaults = ROOM_SETTINGS.get(RoomType(rt), {})
+        result.append({
+            "room_type": rt,
+            "min_bet": cfg.get("min_bet", defaults.get("min_bet", 0)),
+            "max_bet": cfg.get("max_bet", defaults.get("max_bet", 0)),
+            "max_players": cfg.get("max_players", defaults.get("max_players", 3)),
+        })
+    return result
+
+
+@api_router.get("/admin/room-configs")
+async def get_room_configs_endpoint(admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    result = []
+    for rt in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
+        cfg = room_configs.get(rt, {})
+        defaults = ROOM_SETTINGS.get(RoomType(rt), {})
+        result.append({
+            "room_type": rt,
+            "name": defaults.get("name", rt),
+            "min_bet": cfg.get("min_bet", defaults.get("min_bet", 0)),
+            "max_bet": cfg.get("max_bet", defaults.get("max_bet", 0)),
+            "max_players": cfg.get("max_players", defaults.get("max_players", 3)),
+            "min_players": cfg.get("min_players", defaults.get("min_players", 2)),
+        })
+    return result
+
+
+@api_router.post("/admin/room-config/{room_type}")
+async def update_room_config_endpoint(
+    room_type: str,
+    min_bet: int = None,
+    max_bet: int = None,
+    max_players: int = None,
+    min_players: int = None,
+    admin_key: str = ""
+):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    if room_type not in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
+        raise HTTPException(status_code=400, detail="Invalid room type")
+
+    defaults = ROOM_SETTINGS.get(RoomType(room_type), {})
+    current = room_configs.get(room_type, {})
+
+    new_min_bet     = min_bet     if min_bet     is not None else current.get("min_bet",     defaults.get("min_bet", 0))
+    new_max_bet     = max_bet     if max_bet     is not None else current.get("max_bet",     defaults.get("max_bet", 0))
+    new_max_players = max_players if max_players is not None else current.get("max_players", defaults.get("max_players", 3))
+    new_min_players = min_players if min_players is not None else current.get("min_players", defaults.get("min_players", 2))
+
+    if new_min_players < 2:
+        raise HTTPException(status_code=400, detail="min_players must be at least 2")
+    if new_max_players < new_min_players:
+        raise HTTPException(status_code=400, detail="max_players must be >= min_players")
+
+    # Persist to DB
+    from db_queries import upsert_room_config
+    saved = await upsert_room_config(room_type, new_min_bet, new_max_bet, new_max_players, new_min_players)
+
+    # Update in-memory cache
+    room_configs[room_type] = saved
+
+    # Apply to existing waiting rooms of this type
+    for room in active_rooms.values():
+        if room.room_type == room_type and room.status == 'waiting':
+            room.max_players = new_max_players
+            room.min_players = new_min_players
+
+    # Also update ROOM_SETTINGS so bet validation uses new values
+    ROOM_SETTINGS[RoomType(room_type)]["min_bet"]     = new_min_bet
+    ROOM_SETTINGS[RoomType(room_type)]["max_bet"]     = new_max_bet
+    ROOM_SETTINGS[RoomType(room_type)]["max_players"] = new_max_players
+    ROOM_SETTINGS[RoomType(room_type)]["min_players"] = new_min_players
+
+    # Broadcast live config update to all connected clients
+    await sio.emit('room_config_updated', {
+        'room_type': room_type,
+        'name': ROOM_SETTINGS[RoomType(room_type)].get('name', room_type),
+        'min_bet': new_min_bet,
+        'max_bet': new_max_bet,
+        'max_players': new_max_players,
+        'min_players': new_min_players,
+    })
+    await broadcast_room_updates()
+
+    return saved
+
+
+@api_router.get("/admin/freeroll-config")
+async def get_freeroll_config(admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    return freeroll_config
+
+
+@api_router.post("/admin/freeroll-config")
+async def update_freeroll_config(
+    max_players: int = None,
+    prize: int = None,
+    is_locked: bool = None,
+    admin_key: str = ""
+):
+    global freeroll_config
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    if max_players is not None:
+        freeroll_config['max_players'] = max_players
+        for room in active_rooms.values():
+            if room.room_type == RoomType.FREEROLL and room.status == 'waiting':
+                room.max_players = max_players
+    if prize is not None:
+        freeroll_config['prize'] = prize
+    if is_locked is not None:
+        freeroll_config['is_locked'] = is_locked
+    return freeroll_config
+
+
+# â”€â”€ Arena energy endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+@api_router.post("/arena/energy/spend")
+async def spend_energy(request: Request):
+    user_id = get_authenticated_user_id(request)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    async with get_pool().acquire() as conn:
+        energy_data = await _get_and_regen_energy(str(user_id), conn)
+        if energy_data["energy"] < 1:
+            raise HTTPException(status_code=400, detail={
+                "message": "Not enough energy",
+                "next_energy_at": energy_data["next_energy_at"]
+            })
+        new_energy = energy_data["energy"] - 1
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        await conn.execute(
+            "UPDATE users SET energy = $1, energy_last_regen = COALESCE(energy_last_regen, $2) WHERE id = $3",
+            new_energy, now, str(user_id)
+        )
+        next_at = None
+        if new_energy < 10:
+            row = await conn.fetchrow("SELECT energy_last_regen FROM users WHERE id = $1", str(user_id))
+            lr = row["energy_last_regen"]
+            if lr.tzinfo is None:
+                lr = lr.replace(tzinfo=timezone.utc)
+            next_at = (lr + timedelta(hours=1)).isoformat()
+        return {"ok": True, "energy": new_energy, "max_energy": 10, "next_energy_at": next_at}
+
+
+@api_router.post("/arena/energy/buy")
+async def buy_energy(request: Request):
+    # TODO: implement token purchase of energy
+    raise HTTPException(status_code=501, detail="Coming soon")
+
+
+# â”€â”€ Real-time arena: internal match result endpoint (called by Colyseus) â”€â”€â”€â”€â”€â”€
+import os as _os
+
+INTERNAL_SECRET = _os.environ.get("INTERNAL_SECRET", "")
+RT_WINNER_COINS = 100
+RT_LOSER_COINS  = 20
+RT_WINNER_XP    = 120
+RT_LOSER_XP     = 30
+_RT_STREAK_MILESTONES = {3: 50, 5: 100, 7: 200}
+_processed_realtime_result_rooms: set[str] = set()
+_realtime_result_lock = asyncio.Lock()
+
+class RealtimeMatchResultBody(BaseModel):
+    winner_user_id: str
+    loser_user_id: str
+    by_disconnect: bool = False
+    room_id: str = ""
 
 @api_router.post("/internal/match-result")
 async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Request):
@@ -4547,8 +4559,8 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
     if body.winner_user_id == body.loser_user_id:
         raise HTTPException(status_code=400, detail="winner and loser must differ")
     try:
-        uuid.UUID(body.winner_user_id)
-        uuid.UUID(body.loser_user_id)
+        winner_uuid = uuid.UUID(body.winner_user_id)
+        loser_uuid  = uuid.UUID(body.loser_user_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid participant id")
 
@@ -4560,7 +4572,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
             async with conn.transaction():
                 participant_rows = await conn.fetch(
                     "SELECT id, xp FROM users WHERE id = ANY($1::uuid[]) FOR UPDATE",
-                    [body.winner_user_id, body.loser_user_id],
+                    [winner_uuid, loser_uuid],
                 )
                 participants = {str(row["id"]): row for row in participant_rows}
                 if body.winner_user_id not in participants or body.loser_user_id not in participants:
@@ -4575,7 +4587,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                            level         = $4,
                            wins          = wins + 1
                        WHERE id = $1""",
-                    body.winner_user_id,
+                    winner_uuid,
                     RT_WINNER_COINS,
                     w_xp_res["new_xp"],
                     w_xp_res["new_level"],
@@ -4587,14 +4599,14 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                            max_win_streak     = GREATEST(max_win_streak, current_win_streak + 1)
                        WHERE id = $1
                        RETURNING current_win_streak""",
-                    body.winner_user_id,
+                    winner_uuid,
                 )
                 new_streak = streak_row["current_win_streak"] if streak_row else 0
                 streak_bonus = _RT_STREAK_MILESTONES.get(new_streak, 0)
                 if streak_bonus:
                     await conn.execute(
                         "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
-                        body.winner_user_id, streak_bonus,
+                        winner_uuid, streak_bonus,
                     )
 
                 l_row = participants[body.loser_user_id]
@@ -4607,7 +4619,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                            losses             = losses + 1,
                            current_win_streak = 0
                        WHERE id = $1""",
-                    body.loser_user_id,
+                    loser_uuid,
                     RT_LOSER_COINS,
                     l_xp_res["new_xp"],
                     l_xp_res["new_level"],
@@ -4615,7 +4627,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
 
         _processed_realtime_result_rooms.add(body.room_id)
 
-    # ── Daily quest hooks (outside transaction — non-fatal) ──────────────────
+    # â”€â”€ Daily quest hooks (outside transaction â€” non-fatal) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     await asyncio.gather(
         _daily_quests.increment_quest(body.winner_user_id, "play_match"),
         _daily_quests.increment_quest(body.loser_user_id,  "play_match"),
@@ -4642,7 +4654,7 @@ async def get_user_loadout_internal(user_id: str, request: Request):
     if not secrets.compare_digest(secret, INTERNAL_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     equipped_rows = await _fetch_equipped_snapshot(user_id)
-    # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slot→item
+    # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slotâ†’item
     item_list = [v for v in equipped_rows.values() if v is not None]
     stats = modifiers_to_dict(aggregate_item_modifiers(item_list))
     return {
@@ -4654,7 +4666,7 @@ async def get_user_loadout_internal(user_id: str, request: Request):
         "has_weapon": equipped_rows.get("weapon") is not None,
     }
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 # Include Arena MVP routes before mounting the API router.
 from arena_api import router as arena_router
@@ -4699,9 +4711,9 @@ async def startup_event():
     try:
         from init_db import init as run_migrations
         await run_migrations()
-        logger.info("✅ DB migrations applied on startup")
+        logger.info("âœ… DB migrations applied on startup")
     except Exception as e:
-        logger.error(f"⚠️ DB migrations warning: {e}")
+        logger.error(f"âš ï¸ DB migrations warning: {e}")
 
     await initialize_rooms()
 
@@ -4709,13 +4721,13 @@ async def startup_event():
     await payment_monitor.start_monitoring()
 
     # Run payment auto-recovery system (scans last 24 hours for missed payments)
-    logger.info("🔄 Running payment auto-recovery on startup...")
+    logger.info("ðŸ”„ Running payment auto-recovery on startup...")
     try:
         processor = get_processor(None)
         recovery_result = await run_startup_recovery(None, processor)
-        logger.info(f"✅ Auto-recovery complete: {recovery_result}")
+        logger.info(f"âœ… Auto-recovery complete: {recovery_result}")
     except Exception as e:
-        logger.error(f"❌ Auto-recovery failed: {e}")
+        logger.error(f"âŒ Auto-recovery failed: {e}")
 
     # Start redundant payment scanner (backup detection system)
     asyncio.create_task(redundant_payment_scanner())
@@ -4734,13 +4746,13 @@ async def startup_event():
         deleted_count = 0
         logging.info("[Startup] Game history cleanup disabled")
     except Exception as e:
-        logging.error(f"❌ [Startup] Failed to clear game history: {e}")
+        logging.error(f"âŒ [Startup] Failed to clear game history: {e}")
 
-    logging.info("🎰 Casino Battle Royale API started!")
-    logging.info(f"🏠 Active rooms: {len(active_rooms)}")
-    logging.info(f"💳 Solana monitoring: {'Enabled' if CASINO_WALLET_ADDRESS != 'YourWalletAddressHere12345678901234567890123456789' else 'Disabled (set CASINO_WALLET_ADDRESS)'}")
-    logging.info("🔍 Redundant payment scanner: Enabled (15s interval - FAST detection)")
-    logging.info("🧹 Wallet cleanup scheduler: Enabled (72h grace period)")
+    logging.info("ðŸŽ° Casino Battle Royale API started!")
+    logging.info(f"ðŸ  Active rooms: {len(active_rooms)}")
+    logging.info(f"ðŸ’³ Solana monitoring: {'Enabled' if CASINO_WALLET_ADDRESS != 'YourWalletAddressHere12345678901234567890123456789' else 'Disabled (set CASINO_WALLET_ADDRESS)'}")
+    logging.info("ðŸ” Redundant payment scanner: Enabled (15s interval - FAST detection)")
+    logging.info("ðŸ§¹ Wallet cleanup scheduler: Enabled (72h grace period)")
 
 async def redundant_payment_scanner():
     """
@@ -4753,14 +4765,14 @@ async def redundant_payment_scanner():
     # Wait a bit before starting to ensure DB is ready
     await asyncio.sleep(10)
     
-    logging.info("🔍 [Scanner] Redundant payment scanner started (15s interval)")
+    logging.info("ðŸ” [Scanner] Redundant payment scanner started (15s interval)")
     
     while True:
         try:
             processor = get_processor(None)
             await processor.rescan_pending_payments()
         except Exception as e:
-            logging.error(f"❌ [Scanner] Error in redundant payment scanner: {e}")
+            logging.error(f"âŒ [Scanner] Error in redundant payment scanner: {e}")
             import traceback
             logging.error(traceback.format_exc())
         
@@ -4846,20 +4858,20 @@ async def wallet_cleanup_scheduler():
     # Wait 1 hour after startup before first cleanup
     await asyncio.sleep(3600)
     
-    logging.info("🧹 [Cleanup Scheduler] Wallet cleanup scheduler started (24h interval, 72h grace period)")
+    logging.info("ðŸ§¹ [Cleanup Scheduler] Wallet cleanup scheduler started (24h interval, 72h grace period)")
     
     while True:
         try:
             processor = get_processor(None)
             result = await processor.cleanup_old_wallets_with_grace_period(grace_period_hours=120)
             
-            logging.info(f"🧹 [Cleanup Scheduler] Cleanup complete:")
+            logging.info(f"ðŸ§¹ [Cleanup Scheduler] Cleanup complete:")
             logging.info(f"   Cleaned: {result.get('cleaned', 0)} wallets")
             logging.info(f"   Blocked: {result.get('blocked', 0)} wallets (funds still present)")
             logging.info(f"   Flagged: {result.get('flagged_for_review', 0)} wallets need manual review")
             
         except Exception as e:
-            logging.error(f"❌ [Cleanup Scheduler] Error: {e}")
+            logging.error(f"âŒ [Cleanup Scheduler] Error: {e}")
             import traceback
             logging.error(traceback.format_exc())
         
@@ -4876,17 +4888,17 @@ async def cleanup_old_game_history():
         total_games = await dbq.count_completed_games()
 
         if total_games > 5:
-            logging.info(f"🗑️ [Game History] {total_games} games in history (limit 5); old entries managed by DB retention policy")
+            logging.info(f"ðŸ—‘ï¸ [Game History] {total_games} games in history (limit 5); old entries managed by DB retention policy")
 
     except Exception as e:
-        logging.error(f"❌ [Game History Cleanup] Error: {e}")
+        logging.error(f"âŒ [Game History Cleanup] Error: {e}")
     
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on application shutdown"""
     payment_monitor.monitoring = False
     await close_pool()
-    logging.info("🛑 Casino Battle Royale API shutting down")
+    logging.info("ðŸ›‘ Casino Battle Royale API shutting down")
 
 # Export the socket app for uvicorn
 

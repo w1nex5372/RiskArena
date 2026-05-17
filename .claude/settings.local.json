@@ -39,7 +39,31 @@
       "Bash(Select-Object LineNumber, Line)",
       "Bash(Format-Table -AutoSize)",
       "PowerShell(docker exec riskarena-frontend *)",
-      "Bash(docker build *)"
+      "Bash(docker build *)",
+      "Bash(node *)",
+      "Bash(python -m pytest tests/test_internal_loadout.py -v)",
+      "Bash(python -m json.tool)",
+      "Bash(docker exec riskarena-backend *)",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\Puras\\\\OneDrive\\\\Desktop\\\\RiskArena\\\\backend\\\\server.py\" | Select-Object -Index \\(4588..4602\\))",
+      "PowerShell(Out-Null *)",
+      "PowerShell(docker exec *)",
+      "Bash(python -c ' *)",
+      "Bash(.venv/Scripts/python -c ' *)",
+      "Bash(.venv/Scripts/python -u -c ' *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('energy:', d.get\\('energy'\\), 'max:', d.get\\('max_energy'\\)\\)\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k,'=',v\\) for k,v in d.items\\(\\) if 'energy' in k.lower\\(\\) or k in ['id','first_name']]\")",
+      "Bash(docker-compose down *)",
+      "Bash(python -c \"from backend.itemization import _weapon_image; print\\(_weapon_image\\('rogue','weapon'\\)\\); print\\(_weapon_image\\('rogue','armor'\\)\\); print\\(_weapon_image\\('rogue','ability'\\)\\)\")",
+      "Bash(docker-compose exec *)",
+      "Bash(docker compose *)",
+      "Bash(git commit -m '@ *)",
+      "Bash(cat .env)",
+      "Bash(ls *.yaml *.yml)",
+      "Bash(ls render.yaml railway.toml fly.toml)",
+      "Bash(python3 -c \"import json,sys; items=json.load\\(sys.stdin\\); [print\\(i.get\\('name'\\), '|', i.get\\('image_path'\\), '|', i.get\\('slot'\\)\\) for i in \\(items.get\\('items'\\) or items\\)[:5]]\")",
+      "Bash(python3 -m json.tool)",
+      "PowerShell(netstat *)",
+      "PowerShell(Get-Process *)"
     ]
   }
 }
