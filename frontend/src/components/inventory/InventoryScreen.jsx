@@ -382,7 +382,7 @@ function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary }) {
             size={104}
             badgeSize={32}
             active={isActive}
-            sheetPath={isActive ? user?.character_spritesheet_path : null}
+            sheetPath={isActive ? (user?.battle_spritesheet_path || user?.character_spritesheet_path) : null}
             style={{
               borderRadius: 14,
               border: `1px solid ${info.color}33`,
@@ -596,7 +596,13 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
       ability: equipped.ability || null,
     });
     setLoadoutEffectiveStats(data?.loadout_effective_stats || {});
-  }, []);
+    if (data?.battle_spritesheet_path || data?.battle_spritesheet_hash) {
+      onUserUpdate?.({
+        battle_spritesheet_path: data?.battle_spritesheet_path || '',
+        battle_spritesheet_hash: data?.battle_spritesheet_hash || '',
+      });
+    }
+  }, [onUserUpdate]);
 
   const refreshItems = useCallback(async ({ showLoading = false } = {}) => {
     if (showLoading) {

@@ -3983,7 +3983,13 @@ async def get_upgrade_state(http_request: Request):
             user_id,
         )
         equipped_rows = await conn.fetch(
-            "SELECT user_id, slot, inventory_id, item_id FROM equipped_items WHERE user_id = $1",
+            """
+            SELECT ei.user_id, ei.slot, ei.inventory_id, ei.item_id
+            FROM equipped_items ei
+            JOIN users u ON u.id = ei.user_id
+            WHERE ei.user_id = $1
+              AND ei.class_name = u.class_name
+            """,
             user_id,
         )
         scroll_rows = await conn.fetch(
@@ -4033,7 +4039,13 @@ async def get_my_inventory(http_request: Request):
             user_id,
         )
         equipped_rows = await conn.fetch(
-            "SELECT user_id, slot, inventory_id, item_id FROM equipped_items WHERE user_id = $1",
+            """
+            SELECT ei.user_id, ei.slot, ei.inventory_id, ei.item_id
+            FROM equipped_items ei
+            JOIN users u ON u.id = ei.user_id
+            WHERE ei.user_id = $1
+              AND ei.class_name = u.class_name
+            """,
             user_id,
         )
         equipped_inventory_ids = resolve_effective_equipped_inventory_ids(

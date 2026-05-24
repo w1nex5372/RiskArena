@@ -181,6 +181,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const [isPortrait, setIsPortrait] = useState(() => window.innerHeight > window.innerWidth);
   const [loadoutStats, setLoadoutStats] = useState({});
   const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
+  const [equippedSheetPath, setEquippedSheetPath] = useState('');
   const updatePhase = useCallback((p) => {
     phaseRef.current = p;
     setPhase(p);
@@ -192,10 +193,12 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       .then(res => {
         setLoadoutStats(res.data?.loadout_effective_stats || {});
         setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
+        setEquippedSheetPath(res.data?.battle_spritesheet_path || '');
       })
       .catch(() => {
         setLoadoutStats({});
         setEquipped({ weapon: null, armor: null, ability: null });
+        setEquippedSheetPath('');
       });
   }, [user?.id]); // eslint-disable-line
 
@@ -680,7 +683,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
                 size={72}
                 weapon={equipped?.weapon || null}
                 badgeSize={24}
-                sheetPath={user?.character_spritesheet_path || null}
+                sheetPath={equippedSheetPath || user?.character_spritesheet_path || null}
               />
 
               <div style={{ flex: 1, zIndex: 1, minWidth: 0 }}>

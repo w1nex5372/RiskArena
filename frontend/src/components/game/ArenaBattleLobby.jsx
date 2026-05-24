@@ -137,7 +137,7 @@ function CharacterCard({ player, label, isYou, ready }) {
             <CharacterPortrait
               cls={className}
               weapon={player?.weapon || null}
-              sheetPath={player?.character_spritesheet_path || null}
+              sheetPath={player?.battle_spritesheet_path || player?.character_spritesheet_path || null}
               size={94}
               badgeSize={26}
               active={ready}
@@ -198,6 +198,8 @@ export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmL
     const me = roomMe
       ? {
           ...roomMe,
+          battle_spritesheet_path: roomMe.battle_spritesheet_path || user?.battle_spritesheet_path,
+          battle_spritesheet_hash: roomMe.battle_spritesheet_hash || user?.battle_spritesheet_hash,
           character_spritesheet_path: roomMe.character_spritesheet_path || user?.character_spritesheet_path,
           character_spritesheet_hash: roomMe.character_spritesheet_hash || user?.character_spritesheet_hash,
         }
@@ -208,6 +210,8 @@ export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmL
           username: user?.username || user?.telegram_username,
           photo_url: user?.photo_url,
           class_name: user?.class_name,
+          battle_spritesheet_path: user?.battle_spritesheet_path,
+          battle_spritesheet_hash: user?.battle_spritesheet_hash,
           character_spritesheet_path: user?.character_spritesheet_path,
           character_spritesheet_hash: user?.character_spritesheet_hash,
           level: user?.level,

@@ -280,7 +280,7 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
               cls={selectedClass}
               size={150}
               weapon={equipped?.weapon || null}
-              sheetPath={user?.character_spritesheet_path || null}
+              sheetPath={user?.battle_spritesheet_path || user?.character_spritesheet_path || null}
             />
           </div>
         </div>

@@ -263,7 +263,7 @@ function FighterPanel({
             <CharacterPortrait
               cls={className}
               weapon={player?.weapon || null}
-              sheetPath={player?.character_spritesheet_path || null}
+              sheetPath={player?.battle_spritesheet_path || player?.character_spritesheet_path || null}
               size={142}
               badgeSize={34}
               showWeaponBadge={false}
@@ -487,6 +487,8 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
   const userPlayer = roomUser
     ? {
         ...roomUser,
+        battle_spritesheet_path: roomUser.battle_spritesheet_path || user?.battle_spritesheet_path,
+        battle_spritesheet_hash: roomUser.battle_spritesheet_hash || user?.battle_spritesheet_hash,
         character_spritesheet_path: roomUser.character_spritesheet_path || user?.character_spritesheet_path,
         character_spritesheet_hash: roomUser.character_spritesheet_hash || user?.character_spritesheet_hash,
       }
@@ -496,6 +498,8 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
         username: user?.username || user?.telegram_username,
         photo_url: user?.photo_url,
         class_name: user?.class_name,
+        battle_spritesheet_path: user?.battle_spritesheet_path,
+        battle_spritesheet_hash: user?.battle_spritesheet_hash,
         character_spritesheet_path: user?.character_spritesheet_path,
         character_spritesheet_hash: user?.character_spritesheet_hash,
         level: user?.level,
@@ -623,7 +627,7 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
             <CharacterPortrait
               cls={userClass}
               weapon={userPlayer?.weapon || null}
-              sheetPath={userPlayer?.character_spritesheet_path || null}
+              sheetPath={userPlayer?.battle_spritesheet_path || userPlayer?.character_spritesheet_path || null}
               size={160}
               badgeSize={38}
               showWeaponBadge={false}
@@ -722,7 +726,7 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
         <CharacterPortrait
           cls={userClass}
           weapon={userPlayer?.weapon || null}
-          sheetPath={userPlayer?.character_spritesheet_path || null}
+          sheetPath={userPlayer?.battle_spritesheet_path || userPlayer?.character_spritesheet_path || null}
           size={120}
           badgeSize={30}
           active={false}

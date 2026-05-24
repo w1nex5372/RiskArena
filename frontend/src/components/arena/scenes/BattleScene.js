@@ -972,7 +972,6 @@ export default class BattleScene extends Phaser.Scene {
     const player = this.room?.state?.players?.get(sessionId);
     if (!s || !player) return;
     this._playAttackBodyMotion(s, player);
-    this._swingHeldWeapon(s, player);
   }
 
   _getVisualFacingRight(player) {
@@ -1138,11 +1137,7 @@ export default class BattleScene extends Phaser.Scene {
       if (cls === 'rogue') body.setScale(SPRITE_SCALE, SPRITE_SCALE * 0.86);
       body.setDepth(2);
 
-      // Equipped weapons are baked into generated LPC sheets. Keep the separate
-      // held-icon fallback out of battle so it cannot drift away from the hand.
-      if (player.hasWeapon && !bodyDesc.generated) {
-        weapon = this._createHeldWeapon(cls, spawnX, visualY, player);
-      }
+      // Equipped weapons are baked into generated LPC sheets.
     } else {
       body = this.add.rectangle(
         spawnX,
@@ -1228,11 +1223,6 @@ export default class BattleScene extends Phaser.Scene {
     if (s.useLPC) s.body.setFlipX(!this._getVisualFacingRight(player));
     const usesGeneratedSheet = this._applyGeneratedBodyIfAvailable(s, player);
     if (s.aura?.active) s.aura.setPosition(x, visualY - SPRITE_HEIGHT / 2);
-    // Lazy-create weapon if loadout fetch completed after initial spawn
-    if (s.useLPC && player.hasWeapon && !usesGeneratedSheet && !s.weapon) {
-      s.weapon = this._createHeldWeapon(s.cls, x, visualY, player);
-    }
-
     if (s.weapon?.active) {
       if (usesGeneratedSheet) {
         s.weapon.setVisible(false);
@@ -1337,7 +1327,6 @@ export default class BattleScene extends Phaser.Scene {
       if (st === 'attacking' && s.lastState !== 'attacking') {
         const wY = visualY - SPRITE_HEIGHT * 0.55;
         _spawnWhoosh(this, x, wY, player.facingRight);
-        this._swingHeldWeapon(s, player);
       }
 
       s.lastState = st;
