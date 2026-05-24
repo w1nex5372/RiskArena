@@ -18,7 +18,6 @@ from arena_domain import (
     MAX_ROUNDS,
     STARTING_HP,
     PlayerCombatState,
-    calculate_payout,
     class_modifiers_for,
     combine_modifiers,
     normalize_action,
@@ -581,30 +580,12 @@ async def resolve_current_round_tx(conn, match_id: str, default_missing: bool) -
 
 
 async def finish_match_tx(conn, match, result) -> None:
-    payout = calculate_payout(match["stake_amount"], result.status, match["pot_amount"])
     now = datetime.now(timezone.utc)
     try:
         raw_meta = match["metadata"]
         metadata = json.loads(raw_meta) if isinstance(raw_meta, str) else (raw_meta or {})
     except Exception:
         metadata = {}
-    if result.status == "draw":
-        await conn.execute(
-            "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
-            match["player_one_id"],
-            payout["refund_each"],
-        )
-        await conn.execute(
-            "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
-            match["player_two_id"],
-            payout["refund_each"],
-        )
-    else:
-        await conn.execute(
-            "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
-            result.winner_user_id,
-            payout["winner_payout"],
-        )
 
     # Award XP — keep per-player results to embed in match metadata
     p1_id = match["player_one_id"]
@@ -670,7 +651,6 @@ async def finish_match_tx(conn, match, result) -> None:
     final_metadata = dict(metadata or {})
     final_metadata.update({
         "resolution": result.resolution,
-        "payout": payout,
         "max_rounds": MAX_ROUNDS,
         "xp_results": xp_results,
         "streak_results": streak_results,
@@ -695,8 +675,8 @@ async def finish_match_tx(conn, match, result) -> None:
         match["id"],
         result.status,
         result.winner_user_id,
-        payout["winner_payout"],
-        payout["burn_amount"],
+        0,
+        0,
         result.player_one_hp,
         result.player_two_hp,
         result.player_one_ability_used,

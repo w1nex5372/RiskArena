@@ -133,8 +133,16 @@ async def _fetch_user_damage(conn, raid_id: str, user_id: str) -> int:
     return int(val or 0)
 
 
+async def _fetch_player_count(conn, raid_id: str) -> int:
+    val = await conn.fetchval(
+        "SELECT COUNT(DISTINCT user_id) FROM boss_raid_damage WHERE raid_id = $1",
+        raid_id,
+    )
+    return int(val or 0)
+
+
 async def get_raid_state(raid_id: str, user_id: str) -> Optional[Dict]:
-    """Full state including top_dealers and my_damage for API responses."""
+    """Full state including top_dealers, my_damage, and player_count for API responses."""
     async with get_pool().acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM boss_raids WHERE id = $1", raid_id)
         if not row:
@@ -142,6 +150,7 @@ async def get_raid_state(raid_id: str, user_id: str) -> Optional[Dict]:
         data = _row(row)
         data["top_dealers"] = await _fetch_top_dealers(conn, raid_id)
         data["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
+        data["player_count"] = await _fetch_player_count(conn, raid_id)
         return data
 
 
@@ -157,6 +166,7 @@ async def get_active_raid_state(user_id: str) -> Optional[Dict]:
         data = _row(row)
         data["top_dealers"] = await _fetch_top_dealers(conn, raid_id)
         data["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
+        data["player_count"] = await _fetch_player_count(conn, raid_id)
         return data
 
 
@@ -306,6 +316,7 @@ async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]]]:
                 state = _row(updated)
                 state["top_dealers"] = await _fetch_top_dealers(conn, raid_id)
                 state["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
+                state["player_count"] = await _fetch_player_count(conn, raid_id)
                 return state, rewards
 
             modifiers = await _fetch_player_modifiers(conn, user_id)
@@ -365,6 +376,7 @@ async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]]]:
             state = _row(updated)
             state["top_dealers"] = await _fetch_top_dealers(conn, raid_id)
             state["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
+            state["player_count"] = await _fetch_player_count(conn, raid_id)
             return state, rewards
 
 

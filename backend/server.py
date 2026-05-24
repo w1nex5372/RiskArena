@@ -366,6 +366,8 @@ class User(BaseModel):
     character_build_json: Optional[Dict[str, Any]] = None
     character_spritesheet_path: Optional[str] = None
     character_spritesheet_hash: Optional[str] = None
+    battle_spritesheet_path: Optional[str] = None
+    battle_spritesheet_hash: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     energy: Optional[int] = None
@@ -622,6 +624,8 @@ class RoomPlayer(BaseModel):
     class_name: Optional[str] = None
     character_spritesheet_path: Optional[str] = None
     character_spritesheet_hash: Optional[str] = None
+    battle_spritesheet_path: Optional[str] = None
+    battle_spritesheet_hash: Optional[str] = None
     weapon: Optional[Dict[str, Any]] = None
     armor: Optional[Dict[str, Any]] = None
     ability: Optional[Dict[str, Any]] = None
@@ -2341,6 +2345,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
         user_payload = attach_session(response, existing_user)
         user_payload.update(energy_data)
         user_payload.update(_character_preview_fields_for_user(existing_user))
+        user_payload.update(await _runtime_character_sprite_payload_for_user(str(existing_user["id"])))
         return User(**user_payload)
     
     # Create new user
@@ -2396,6 +2401,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
         user_payload2 = attach_session(response, existing_user)
         user_payload2.update(energy_data2)
         user_payload2.update(_character_preview_fields_for_user(existing_user))
+        user_payload2.update(await _runtime_character_sprite_payload_for_user(str(existing_user["id"])))
         return User(**user_payload2)
 
     logging.info(f"ðŸ†• Created new user: {user.first_name} (telegram_id: {user.telegram_id})")
@@ -2403,6 +2409,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
     new_user_payload = attach_session(response, user.dict())
     new_user_payload.update({"energy": 10, "max_energy": 10, "next_energy_at": None})
     new_user_payload.update(_character_preview_fields_for_user(new_user_payload))
+    new_user_payload.update({"battle_spritesheet_path": "", "battle_spritesheet_hash": ""})
     return User(**new_user_payload)
 
 
@@ -2419,6 +2426,7 @@ async def dev_auth(response: Response, username: str = "DevUser", uid: int = 1):
             energy_data = await _get_and_regen_energy(str(existing["id"]), conn)
         payload.update(energy_data)
         payload.update(_character_preview_fields_for_user(existing))
+        payload.update(await _runtime_character_sprite_payload_for_user(str(existing["id"])))
         return User(**payload)
     new_user = User(
         telegram_id=fake_telegram_id,
@@ -2435,6 +2443,7 @@ async def dev_auth(response: Response, username: str = "DevUser", uid: int = 1):
     payload = attach_session(response, created)
     payload.update({"energy": 10, "max_energy": 10, "next_energy_at": None})
     payload.update(_character_preview_fields_for_user(created))
+    payload.update({"battle_spritesheet_path": "", "battle_spritesheet_hash": ""})
     return User(**payload)
 
 
@@ -2785,6 +2794,7 @@ async def get_current_user(http_request: Request):
         raise HTTPException(status_code=404, detail="User not found")
     character_build = _character_build_for_user_payload(user_doc)
     preview_fields = _character_preview_fields_for_user(user_doc)
+    battle_fields = await _runtime_character_sprite_payload_for_user(user_id)
     return {
         "id": user_doc.get("id"),
         "telegram_id": user_doc.get("telegram_id"),
@@ -2798,6 +2808,8 @@ async def get_current_user(http_request: Request):
         "class_name": user_doc.get("class_name"),
         "character_build_json": character_build,
         **preview_fields,
+        "battle_spritesheet_path": battle_fields.get("battle_spritesheet_path", ""),
+        "battle_spritesheet_hash": battle_fields.get("battle_spritesheet_hash", ""),
         "is_admin": user_doc.get("is_admin", False),
         "is_owner": user_doc.get("is_owner", False),
         "role": user_doc.get("role", "user"),
@@ -2995,6 +3007,12 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
     
     equipped = await _fetch_equipped_snapshot(request.user_id)
     character_preview = _character_preview_fields_for_user(dict(user_doc))
+    battle_sprite = _battle_spritesheet_for_loadout(
+        request.user_id,
+        user_doc.get("class_name"),
+        equipped,
+        _character_build_for_user_payload(dict(user_doc)),
+    )
 
     # Add player to room with full Telegram info
     if request.is_anonymous:
@@ -3012,6 +3030,8 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             class_name=user_doc.get('class_name'),
             character_spritesheet_path=character_preview.get("character_spritesheet_path"),
             character_spritesheet_hash=character_preview.get("character_spritesheet_hash"),
+            battle_spritesheet_path=battle_sprite.get("path"),
+            battle_spritesheet_hash=battle_sprite.get("hash"),
             weapon=equipped.get('weapon'),
             armor=equipped.get('armor'),
             ability=equipped.get('ability'),
@@ -3029,6 +3049,8 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             class_name=user_doc.get('class_name'),
             character_spritesheet_path=character_preview.get("character_spritesheet_path"),
             character_spritesheet_hash=character_preview.get("character_spritesheet_hash"),
+            battle_spritesheet_path=battle_sprite.get("path"),
+            battle_spritesheet_hash=battle_sprite.get("hash"),
             weapon=equipped.get('weapon'),
             armor=equipped.get('armor'),
             ability=equipped.get('ability'),
@@ -3660,6 +3682,7 @@ def _serialize_item_row(row: Any) -> Dict[str, Any]:
     item = dict(row)
     item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
     item["item_id"] = item.get("item_id") or item.get("id")
+    item["lpc_visual"] = _coerce_json_dict(item.get("lpc_visual")) or None
     item["rarity"] = tier_to_rarity(item.get("tier"))
     item["stats"] = stat_preview(item)
     item.update(item_stat_payload(item))
@@ -3673,6 +3696,7 @@ def _serialize_inventory_row(row: Any) -> Dict[str, Any]:
     item["item_id"] = item["catalog_item_id"]
     item["type"] = item["slot"]
     item["category"] = item["slot"]
+    item["lpc_visual"] = _coerce_json_dict(item.get("lpc_visual")) or None
     item["rarity"] = tier_to_rarity(item.get("tier"))
     item["stats"] = stat_preview(item)
     item.update(item_stat_payload(item))
@@ -3718,7 +3742,7 @@ def _ensure_runtime_character_sheet(user_id: str, character_build: Dict[str, Any
         return None
 
 
-def _character_build_for_equipped_weapon(
+def _character_build_for_equipped_visuals(
     class_name: str,
     character_build: Optional[Dict[str, Any]],
     equipped: Dict[str, Any],
@@ -3726,15 +3750,22 @@ def _character_build_for_equipped_weapon(
     build = copy.deepcopy(character_build or _default_character_build(class_name))
     build["className"] = class_name
     weapon = build.get("weapon") if isinstance(build.get("weapon"), dict) else {}
-    if equipped.get("weapon") is None:
+    weapon_visual = _coerce_json_dict((equipped.get("weapon") or {}).get("lpc_visual"))
+    weapon_asset = str(weapon_visual.get("asset") or "").strip()
+    if equipped.get("weapon") is None or not weapon_asset:
         build["weapon"] = {**weapon, "enabled": False}
     else:
-        default_weapon = _default_character_build(class_name).get("weapon") or {}
         build["weapon"] = {
-            "asset": weapon.get("asset") or default_weapon.get("asset"),
+            "asset": weapon_asset,
             "enabled": True,
         }
-    return build
+    try:
+        return _validate_character_build(build, class_name)
+    except HTTPException as exc:
+        logging.warning("[character-build] invalid equipped LPC visual for class=%s: %s", class_name, exc.detail)
+        fallback = copy.deepcopy(build)
+        fallback["weapon"] = {**weapon, "enabled": False}
+        return _validate_character_build(fallback, class_name)
 
 
 def _battle_spritesheet_for_loadout(
@@ -3751,13 +3782,34 @@ def _battle_spritesheet_for_loadout(
     weapon_key = weapon.get("inventory_id") or weapon.get("item_id") or "no-weapon"
     armor_key = armor.get("inventory_id") or armor.get("item_id") or "noarmor"
     enchant = int(weapon.get("enchant_level", 0) or 0)
-    runtime_build = _character_build_for_equipped_weapon(cls, character_build, equipped)
+    runtime_build = _character_build_for_equipped_visuals(cls, character_build, equipped)
     build_hash = _stable_character_build_hash(runtime_build)
-    sheet_hash = hashlib.sha1(f"{cls}:{build_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
+    visual_hash = hashlib.sha1(json.dumps({
+        "weapon": weapon.get("lpc_visual"),
+        "armor": armor.get("lpc_visual"),
+    }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:10]
+    sheet_hash = hashlib.sha1(f"lpc-v2:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
     generated_path = _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash)
     return {
         "path": generated_path or "",
-        "hash": f"lpc-v1:{sheet_hash}",
+        "hash": f"lpc-v2:{sheet_hash}",
+    }
+
+
+async def _runtime_character_sprite_payload_for_user(user_id: str) -> Dict[str, Any]:
+    equipped_rows = await _fetch_equipped_snapshot(user_id)
+    async with get_pool().acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT class_name, character_build_json FROM users WHERE id = $1",
+            user_id,
+        )
+    class_name = user_row["class_name"] if user_row else None
+    character_build = _character_build_for_user_payload(dict(user_row) if user_row else {"class_name": class_name})
+    battle_sprite = _battle_spritesheet_for_loadout(user_id, class_name, equipped_rows, character_build)
+    return {
+        "character_build_json": character_build,
+        "battle_spritesheet_path": battle_sprite["path"],
+        "battle_spritesheet_hash": battle_sprite["hash"],
     }
 
 
@@ -3922,7 +3974,7 @@ async def get_upgrade_state(http_request: Request):
                    inv.item_id AS catalog_item_id,
                    i.name, i.description, i.class_name, i.slot, i.tier, i.price,
                    i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
-                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path
+                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path, i.lpc_visual
             FROM inventory inv
             JOIN items i ON i.id = inv.item_id
             WHERE inv.user_id = $1 AND i.slot IN ('weapon', 'armor')
@@ -3972,7 +4024,7 @@ async def get_my_inventory(http_request: Request):
                    inv.item_id AS catalog_item_id,
                    i.name, i.description, i.class_name, i.slot, i.tier, i.price,
                    i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
-                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path
+                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path, i.lpc_visual
             FROM inventory inv
             LEFT JOIN items i ON i.id = inv.item_id
             WHERE inv.user_id = $1
@@ -4041,9 +4093,19 @@ async def get_my_equipped(http_request: Request):
                 "item_id": row["id"],
                 "slot": row["slot"],
             })
+        user_row = await conn.fetchrow(
+            "SELECT class_name, character_build_json FROM users WHERE id = $1",
+            user_id,
+        )
+        class_name = user_row["class_name"] if user_row else None
+        character_build = _character_build_for_user_payload(dict(user_row) if user_row else {"class_name": class_name})
+        battle_sprite = _battle_spritesheet_for_loadout(user_id, class_name, equipped, character_build)
         return {
             "equipped": equipped,
             "equipped_items": equipped_items,
+            "character_build_json": character_build,
+            "battle_spritesheet_path": battle_sprite["path"],
+            "battle_spritesheet_hash": battle_sprite["hash"],
             "loadout_effective_stats": modifiers_to_dict(aggregate_item_modifiers([dict(row) for row in rows])),
         }
 
@@ -4108,7 +4170,14 @@ async def equip_item(body: EquipBody, http_request: Request):
             """,
             user_id, inv_row["slot"], inv_row["inventory_id"], inv_row["item_id"], user_row["class_name"],
         )
-        return {"success": True, "equipped_slot": inv_row["slot"], "item_id": inv_row["item_id"], "inventory_id": inv_row["inventory_id"]}
+        result = {
+            "success": True,
+            "equipped_slot": inv_row["slot"],
+            "item_id": inv_row["item_id"],
+            "inventory_id": inv_row["inventory_id"],
+        }
+    result.update(await _runtime_character_sprite_payload_for_user(user_id))
+    return result
 
 
 @api_router.post("/me/enchant")
@@ -4230,7 +4299,9 @@ async def unequip_item(body: UnequipBody, http_request: Request):
             "DELETE FROM equipped_items WHERE user_id = $1 AND slot = $2 AND class_name = $3",
             user_id, body.slot, user_row["class_name"] if user_row else "",
         )
-    return {"success": True}
+    result = {"success": True}
+    result.update(await _runtime_character_sprite_payload_for_user(user_id))
+    return result
 
 
 @api_router.post("/me/sell")

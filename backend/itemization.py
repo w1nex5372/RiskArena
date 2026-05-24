@@ -4,6 +4,7 @@ Shared itemization definitions and pure helper functions.
 This module owns the canonical item catalog, shop/drop rules, stat aggregation,
 and passive parsing so backend systems consume one deterministic source of truth.
 """
+import json
 from dataclasses import asdict
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
@@ -39,18 +40,18 @@ TIER_PRICE = {
     "legendary": 0,
 }
 ENCHANT_MAX_BY_TIER = {
-    "common": 5,
-    "uncommon": 6,
-    "rare": 8,
+    "common": 10,
+    "uncommon": 10,
+    "rare": 10,
     "epic": 10,
-    "legendary": 12,
+    "legendary": 10,
 }
 ENCHANT_SAFE_BY_TIER = {
-    "common": 3,
-    "uncommon": 3,
-    "rare": 3,
-    "epic": 2,
-    "legendary": 2,
+    "common": 0,
+    "uncommon": 0,
+    "rare": 0,
+    "epic": 0,
+    "legendary": 0,
 }
 ENCHANT_BASE_CHANCE_BY_TIER = {
     "common": 0.92,
@@ -111,12 +112,24 @@ BASE_STAT_KEYS = (
 
 
 _WEAPON_ASSET = {"warrior": "warrior_katana", "mage": "mage_staff", "rogue": "rogue_scimitar"}
+_LPC_WEAPON_ASSET = {
+    "warrior": "weapon.sword.katana",
+    "mage": "weapon.staff.mage_staff",
+    "rogue": "weapon.sword.scimitar",
+}
 
 
 def _weapon_image(class_name: str, slot: str) -> str:
     if slot == "weapon":
         return f"/items/{_WEAPON_ASSET.get(class_name, class_name + '_weapon')}.png"
     return f"/items/{class_name}_{slot}.png"
+
+
+def _lpc_visual(class_name: str, slot: str) -> Optional[Dict[str, Any]]:
+    if slot == "weapon":
+        asset = _LPC_WEAPON_ASSET.get(class_name)
+        return {"schemaVersion": "item_lpc_visual.v1", "slot": "weapon", "asset": asset} if asset else None
+    return None
 
 
 def _item(
@@ -134,6 +147,7 @@ def _item(
     passive_type: Optional[str] = None,
     passive_value: float = 0.0,
     image_path: Optional[str] = None,
+    lpc_visual: Optional[Dict[str, Any]] = None,
 ) -> Dict:
     return {
         "name": name,
@@ -150,6 +164,7 @@ def _item(
         "passive_type": passive_type,
         "passive_value": passive_value,
         "image_path": image_path or _weapon_image(class_name, slot),
+        "lpc_visual": lpc_visual if lpc_visual is not None else _lpc_visual(class_name, slot),
     }
 
 
@@ -241,6 +256,8 @@ def enchant_success_chance(tier: Optional[str], current_level: int, scroll_type:
         raise ValueError("Invalid enchant level")
     if current_level >= max_enchant_for_tier(tier_key):
         return 0.0
+    if scroll_type == "normal_scroll" and current_level >= 5:
+        return 0.0
     if current_level < safe_enchant_for_tier(tier_key):
         return 1.0
     base = ENCHANT_BASE_CHANCE_BY_TIER.get(tier_key, 0.0)
@@ -256,8 +273,6 @@ def resolve_enchant_attempt(tier: str, current_level: int, scroll_type: str, rol
     new_level = current_level
     if success:
         new_level = current_level + 1
-    elif scroll_type == "normal_scroll" and current_level >= safe_enchant_for_tier(tier):
-        destroyed = True
     return {
         "success": success,
         "destroyed": destroyed,
@@ -401,8 +416,6 @@ def next_enchant_preview(item: Dict[str, Any], scroll_type: str = "normal_scroll
     current_stats = effective_stats_for_item(item, current_level)
     next_stats = effective_stats_for_item(item, next_level)
     chance = enchant_success_chance(tier, current_level, scroll_type)
-    safe_level = safe_enchant_for_tier(tier)
-    can_destroy = scroll_type == "normal_scroll" and current_level >= safe_level and current_level < max_level
     return {
         "scroll_type": scroll_type,
         "current_enchant_level": current_level,
@@ -413,9 +426,9 @@ def next_enchant_preview(item: Dict[str, Any], scroll_type: str = "normal_scroll
         "next_enchant_stats": enchant_stats_for_item(item, next_level),
         "next_effective_stats": next_stats,
         "delta_stats": stat_delta(current_stats, next_stats),
-        "safe_until": safe_level,
-        "can_destroy": can_destroy,
-        "failure_behavior": "destroy_copy" if can_destroy else "keep_copy",
+        "safe_until": 0,
+        "can_destroy": False,
+        "failure_behavior": "keep_copy",
         "at_max": current_level >= max_level,
     }
 
@@ -480,6 +493,7 @@ def seed_rows() -> List[tuple]:
             item["passive_type"],
             item["passive_value"],
             item["image_path"],
+            json.dumps(item["lpc_visual"], sort_keys=True) if item.get("lpc_visual") else None,
         )
         for item in FULL_ITEM_CATALOG
     ]

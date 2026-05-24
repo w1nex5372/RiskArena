@@ -1,10 +1,13 @@
 """
 Boss Raid HTTP endpoints.
 """
+import random
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 import boss_repo
-from auth import get_authenticated_user_id
+import boss_domain as _boss_domain
+from auth import get_authenticated_user_id, require_admin_request
 
 router = APIRouter(prefix="/boss-raid", tags=["boss-raid"])
 
@@ -65,6 +68,7 @@ async def attack_boss(http_request: Request):
             "top_dealers": state.get("top_dealers", []),
             "attacker_id": user_id,
             "my_damage": state.get("my_damage", 0),
+            "player_count": state.get("player_count", 0),
         })
 
         # Raid just ended — broadcast result with all reward rows;
@@ -77,3 +81,31 @@ async def attack_boss(http_request: Request):
             })
 
     return state
+
+
+class SpawnRaidRequest(BaseModel):
+    name: str = ""
+    level: int = 1
+
+
+@router.post("/admin/spawn")
+async def admin_spawn_raid(body: SpawnRaidRequest, http_request: Request):
+    """Admin: manually spawn a new boss raid (for testing). Requires x-admin-key header."""
+    require_admin_request(http_request)
+    name = body.name.strip() or random.choice(_boss_domain.BOSS_NAMES)
+    level = max(1, min(body.level, 10))
+    try:
+        raid = await boss_repo.spawn_raid(name, level)
+    except Exception as exc:
+        raise _http_error(exc)
+    if _sio:
+        await _sio.emit("boss_spawned", {
+            "id": raid["id"],
+            "name": raid["name"],
+            "level": raid["level"],
+            "max_hp": raid["max_hp"],
+            "current_hp": raid["current_hp"],
+            "phase": raid["phase"],
+            "raid_end_at": raid["raid_end_at"],
+        })
+    return raid
