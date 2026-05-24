@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
+import { Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
 import apiClient from '../../api/client';
 import { CLASS_MODIFIERS, CLASS_INFO } from '../../utils/characters';
 import { getItemImageSrc, getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
-import CharPreview from '../arena/CharPreview';
+import CharacterPortrait from '../arena/CharacterPortrait';
 import WeaponIcon from '../WeaponIcon';
 
 function SlotImage({ item, FallbackIcon, size = 44 }) {
@@ -47,9 +47,6 @@ function SlotImage({ item, FallbackIcon, size = 44 }) {
   );
 }
 
-const BET_PRESETS = [200, 250, 300, 350, 400, 450];
-const CLASS_KEYS = ['warrior', 'mage', 'rogue'];
-
 const LOADOUT_SLOTS = [
   { key: 'weapon',    label: 'WEAPON',  Icon: Sword },
   { key: 'armor',     label: 'ARMOR',   Icon: Shield },
@@ -57,13 +54,10 @@ const LOADOUT_SLOTS = [
 ];
 
 export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
-  const [selectedBet, setSelectedBet] = useState(200);
   const [history, setHistory] = useState(null);
   const [entering, setEntering] = useState(false);
   const [enteringRealTime, setEnteringRealTime] = useState(false);
   const [energyError, setEnergyError] = useState('');
-  const [switching, setSwitching] = useState(false);
-  const [switchFeedback, setSwitchFeedback] = useState(false);
   const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
   const [loadoutEffectiveStats, setLoadoutEffectiveStats] = useState({});
   const [timeToNext, setTimeToNext] = useState('');
@@ -73,6 +67,10 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
   );
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+
+  useEffect(() => {
+    setSelectedClass((user?.class_name || 'warrior').toLowerCase());
+  }, [user?.class_name]);
 
   useEffect(() => {
     if (!user?.next_energy_at) { setTimeToNext(''); return; }
@@ -123,34 +121,6 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
     };
   }, [user?.class_name, user?.id]);
 
-  const cycleClass = async (dir) => {
-    if (switching) return;
-    const idx = CLASS_KEYS.indexOf(selectedClass);
-    const next = CLASS_KEYS[(idx + dir + CLASS_KEYS.length) % CLASS_KEYS.length];
-    const prevSelected = selectedClass;
-    if (next === (user?.class_name || '').toLowerCase()) {
-      setSelectedClass(next);
-      return;
-    }
-    setSelectedClass(next);
-    setSwitching(true);
-    try {
-      await apiClient.post('/me/class', { class_name: next });
-      onClassChange?.(next);
-      setEquipped({ weapon: null, armor: null, ability: null });
-      setLoadoutEffectiveStats({});
-      const equippedResponse = await apiClient.get('/me/equipped');
-      setEquipped(equippedResponse.data?.equipped || { weapon: null, armor: null, ability: null });
-      setLoadoutEffectiveStats(equippedResponse.data?.loadout_effective_stats || {});
-      setSwitchFeedback(true);
-      setTimeout(() => { if (mountedRef.current) setSwitchFeedback(false); }, 1800);
-    } catch {
-      if (mountedRef.current) setSelectedClass(prevSelected);
-    } finally {
-      if (mountedRef.current) setSwitching(false);
-    }
-  };
-
   const bronzeGames = (history || []).filter(
     (g) => (g.room_type || '').toLowerCase() === 'bronze'
   );
@@ -166,8 +136,6 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
 
   const bronzeRoom = (rooms || []).find((r) => r.room_type === 'bronze');
   const queueCount = bronzeRoom?.players_count || 0;
-  const prizePool = Math.floor(selectedBet * 2 * 0.9);
-
   const recentOpponents = bronzeGames.slice(0, 3).map((g) => {
     const opp = (g.players || []).find(
       (p) => String(p.user_id) !== String(user?.id)
@@ -182,20 +150,16 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
       name: opp?.first_name || opp?.username || 'Anonymous',
       photo: opp?.photo_url,
       won,
-      bet: opp?.bet_amount || 0,
     };
   });
 
-  const canEnter =
-    !entering &&
-    user?.token_balance >= selectedBet &&
-    !!user?.class_name;
+  const canEnter = !entering && !!user?.class_name;
 
   const handleEnter = async () => {
     if (!canEnter) return;
     setEntering(true);
     try {
-      await onEnterBattle(selectedBet);
+      await onEnterBattle(0);
     } finally {
       setEntering(false);
     }
@@ -309,56 +273,23 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
 
           {/* Right: arrows + character image */}
           <div style={{ position: 'relative', flexShrink: 0, width: 140, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1 }}>
-            {/* Left arrow */}
-            <button
-              onClick={() => cycleClass(-1)}
-              style={{
-                position: 'absolute', left: -12, top: '50%', transform: 'translateY(-50%)',
-                width: 32, height: 32, borderRadius: '50%',
-                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', zIndex: 2, padding: 0,
-              }}
-            >
-              <ChevronLeft style={{ width: 16, height: 16, color: 'white' }} />
-            </button>
-
             {/* Glow behind image */}
             <div style={{ position: 'absolute', bottom: -16, right: -20, width: 120, height: 120, background: `radial-gradient(circle, ${classInfo.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
 
-            <CharPreview cls={selectedClass} size={150} weaponSrc={equipped?.weapon?.image_path || null} style={{ filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.7))' }} />
-
-            {/* Right arrow */}
-            <button
-              onClick={() => cycleClass(1)}
-              style={{
-                position: 'absolute', right: -8, top: '50%', transform: 'translateY(-50%)',
-                width: 32, height: 32, borderRadius: '50%',
-                background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', zIndex: 2, padding: 0,
-              }}
-            >
-              <ChevronRight style={{ width: 16, height: 16, color: 'white' }} />
-            </button>
+            <CharacterPortrait
+              cls={selectedClass}
+              size={150}
+              weapon={equipped?.weapon || null}
+              sheetPath={user?.character_spritesheet_path || null}
+            />
           </div>
         </div>
 
         {/* Status pill */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, zIndex: 1, position: 'relative' }}>
-          {switchFeedback ? (
-            <span style={{ padding: '4px 14px', borderRadius: 20, background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#22c55e', fontSize: 11, fontWeight: 800 }}>
-              Class changed!
-            </span>
-          ) : switching ? (
-            <span style={{ padding: '4px 14px', borderRadius: 20, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#64748b', fontSize: 11, fontWeight: 800 }}>
-              ...
-            </span>
-          ) : (
-            <span style={{ padding: '4px 14px', borderRadius: 20, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.35)', color: '#c9a84c', fontSize: 11, fontWeight: 800 }}>
-              ACTIVE
-            </span>
-          )}
+          <span style={{ padding: '4px 14px', borderRadius: 20, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.35)', color: '#c9a84c', fontSize: 11, fontWeight: 800 }}>
+            ACTIVE
+          </span>
         </div>
       </div>
 
@@ -422,33 +353,63 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
                 key={key}
                 onClick={onNavigateInventory}
                 style={{
-                  minHeight: 102, borderRadius: 14, padding: '9px 8px',
-                  background: item ? 'rgba(26,26,46,0.95)' : 'rgba(255,255,255,0.02)',
+                  minHeight: 126, borderRadius: 16, padding: 9,
+                  background: item
+                    ? `linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(10,14,28,0.98) 100%)`
+                    : 'rgba(255,255,255,0.02)',
                   border: item ? `1px solid ${rarityBorder}` : '1px dashed rgba(201,168,76,0.2)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', gap: 6,
                   cursor: 'pointer',
-                  boxShadow: item ? `0 0 12px ${tier === 'legendary' ? 'rgba(201,168,76,0.22)' : tier === 'epic' ? 'rgba(168,85,247,0.18)' : rarityBorder}` : 'none',
+                  boxShadow: item ? `0 0 14px ${tier === 'legendary' ? 'rgba(201,168,76,0.18)' : tier === 'epic' ? 'rgba(168,85,247,0.14)' : 'rgba(0,0,0,0.18)'}` : 'none',
                   transition: 'all 0.15s ease',
                 }}
               >
-                {item
-                  ? <SlotImage item={item} size={40} FallbackIcon={Icon} />
-                  : <Icon style={{ width: 22, height: 22, color: '#334155', opacity: 0.35 }} />
-                }
-                <p style={{ color: '#475569', fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', margin: 0 }}>{label}</p>
+                <div style={{
+                  height: 54,
+                  borderRadius: 12,
+                  border: item ? `1px solid ${rarityBorder}` : '1px solid rgba(255,255,255,0.06)',
+                  background: item
+                    ? `radial-gradient(circle at 50% 28%, ${tierTheme?.soft || 'rgba(201,168,76,0.12)'} 0%, rgba(8,12,24,0.95) 66%)`
+                    : 'rgba(8,12,24,0.7)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}>
+                  {item
+                    ? <SlotImage item={item} size={42} FallbackIcon={Icon} />
+                    : <Icon style={{ width: 22, height: 22, color: '#334155', opacity: 0.35 }} />
+                  }
+                  {item && enchantLevel > 0 ? (
+                    <span style={{
+                      position: 'absolute',
+                      top: 5,
+                      right: 5,
+                      color: '#c9a84c',
+                      background: 'rgba(0,0,0,0.62)',
+                      border: '1px solid rgba(201,168,76,0.28)',
+                      borderRadius: 999,
+                      padding: '2px 5px',
+                      fontSize: 9,
+                      fontWeight: 900,
+                      lineHeight: 1,
+                    }}>
+                      +{enchantLevel}
+                    </span>
+                  ) : null}
+                </div>
+                <p style={{ color: '#64748b', fontSize: 8, fontWeight: 900, letterSpacing: '0.08em', margin: 0, textAlign: 'center', textTransform: 'uppercase' }}>{label}</p>
                 {item && (
                   <>
-                    <p style={{ color: rarityColor, fontSize: 9, fontWeight: 700, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                    <p style={{ color: '#f8fafc', fontSize: 10, fontWeight: 850, lineHeight: 1.15, minHeight: 22, margin: 0, maxWidth: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', textAlign: 'center' }}>
                       {item.name}
                     </p>
-                    <p style={{ color: '#94a3b8', fontSize: 8, fontWeight: 700, margin: 0 }}>
+                    <p style={{ color: rarityColor, fontSize: 8, fontWeight: 900, margin: 0, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                       {item.rarity || ''}
                     </p>
-                    <p style={{ color: '#c9a84c', fontSize: 10, fontWeight: 900, margin: 0 }}>
-                      +{enchantLevel}
-                    </p>
                     {statChips[0] ? (
-                      <p style={{ color: rarityColor, fontSize: 8, fontWeight: 700, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                      <p style={{ color: '#c9a84c', fontSize: 8, fontWeight: 800, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
                         {statChips[0].label}
                       </p>
                     ) : null}
@@ -463,60 +424,6 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
             );
           })}
         </div>
-      </div>
-
-      {/* ── Bet Selector ───────────────────────────────────────── */}
-      <div style={{ margin: '12px 16px 0', borderRadius: 18, background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.15)', padding: '16px 16px 18px' }}>
-        <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase', margin: '0 0 12px' }}>
-          Select Wager
-        </p>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-          {BET_PRESETS.map((bet) => {
-            const active = selectedBet === bet;
-            const affordable = (user?.token_balance || 0) >= bet;
-            return (
-              <button
-                key={bet}
-                onClick={() => affordable && setSelectedBet(bet)}
-                style={{
-                  borderRadius: 12, padding: '10px 4px', border: 'none', cursor: affordable ? 'pointer' : 'not-allowed',
-                  background: active
-                    ? 'linear-gradient(135deg, #8b0000, #c0392b)'
-                    : affordable
-                    ? 'rgba(255,255,255,0.05)'
-                    : 'rgba(255,255,255,0.02)',
-                  boxShadow: active ? '0 0 12px rgba(139,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)' : 'none',
-                  outline: active ? '1px solid rgba(201,168,76,0.5)' : '1px solid rgba(255,255,255,0.07)',
-                  transition: 'all 0.15s ease',
-                  opacity: affordable ? 1 : 0.35,
-                }}
-              >
-                <p style={{ color: active ? 'white' : '#94a3b8', fontWeight: 800, fontSize: 15, margin: 0 }}>
-                  {bet}
-                </p>
-                <p style={{ color: active ? 'rgba(255,255,255,0.65)' : '#475569', fontSize: 10, margin: '1px 0 0', fontWeight: 600 }}>
-                  coins
-                </p>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Prize pool row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, padding: '10px 14px', borderRadius: 12, background: 'rgba(201,168,76,0.07)', border: '1px solid rgba(201,168,76,0.18)' }}>
-          <span style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>Prize Pool</span>
-          <span style={{ color: '#c9a84c', fontWeight: 900, fontSize: 18 }}>
-            {prizePool.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600 }}>coins</span>
-          </span>
-        </div>
-
-        {/* Insufficient balance warning */}
-        {(user?.token_balance || 0) < selectedBet && (
-          <p style={{ color: '#f87171', fontSize: 11, fontWeight: 700, textAlign: 'center', margin: '10px 0 0' }}>
-            Insufficient balance — need {selectedBet - (user?.token_balance || 0)} more coins
-          </p>
-        )}
       </div>
 
       {/* ── Real-Time Battle Button (Colyseus) ─────────────────── */}
@@ -653,9 +560,6 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
                   <p style={{ color: '#e8e0d0', fontWeight: 700, fontSize: 13, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {opp.name}
                   </p>
-                  {opp.bet > 0 && (
-                    <p style={{ color: '#475569', fontSize: 11, margin: '1px 0 0', fontWeight: 500 }}>{opp.bet} coins wagered</p>
-                  )}
                 </div>
                 <div style={{ flexShrink: 0, padding: '3px 10px', borderRadius: 20, background: opp.won ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.12)', border: `1px solid ${opp.won ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.25)'}` }}>
                   <span style={{ color: opp.won ? '#22c55e' : '#f87171', fontWeight: 800, fontSize: 11 }}>

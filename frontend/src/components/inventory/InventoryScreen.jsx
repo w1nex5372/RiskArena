@@ -6,7 +6,7 @@ import { Button } from '../ui/button';
 import ShopScreen from '../shop/ShopScreen';
 import apiClient from '../../api/client';
 import { CLASS_INFO, CLASS_MODIFIERS } from '../../utils/characters';
-import CharPreview from '../arena/CharPreview';
+import CharacterPortrait from '../arena/CharacterPortrait';
 import {
   CLASS_THEME,
   TIER_ORDER,
@@ -72,7 +72,7 @@ function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
   const imagePath = item?.image_path;
   const isWeapon = getSlotKey(item) === 'weapon';
   if (isWeapon && imagePath && !failed) {
-    return <WeaponIcon imagePath={imagePath} size={60} borderRadius={10} />;
+    return <WeaponIcon imagePath={imagePath} size={54} borderRadius={10} />;
   }
   if (!src || failed) {
     return <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />;
@@ -327,8 +327,6 @@ function LoadoutCard({ slot, item, onTabJump }) {
   );
 }
 
-const CLASS_KEYS = ['warrior', 'mage', 'rogue'];
-
 function mergeStatTotals(...statSources) {
   return statSources.reduce((totals, stats) => {
     Object.entries(stats || {}).forEach(([key, value]) => {
@@ -338,53 +336,19 @@ function mergeStatTotals(...statSources) {
   }, {});
 }
 
-function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, onClassChange }) {
-  const activeKey = String(user?.class_name || '').trim().toLowerCase() || null;
-  const [viewedIdx, setViewedIdx] = useState(() => {
-    const idx = CLASS_KEYS.indexOf(activeKey);
-    return idx >= 0 ? idx : 0;
-  });
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const idx = CLASS_KEYS.indexOf((user?.class_name || '').toLowerCase());
-    if (idx >= 0) setViewedIdx(idx);
-  }, [user?.class_name]);
-
-  const viewedKey = CLASS_KEYS[viewedIdx];
-  const info = CLASS_INFO[viewedKey];
-  const isActive = activeKey === viewedKey;
+function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary }) {
+  const activeKey = String(user?.class_name || 'warrior').trim().toLowerCase();
+  const info = CLASS_INFO[activeKey] || CLASS_INFO.warrior;
   const classBonusSummary = getStatEntries(
-    isActive
-      ? mergeStatTotals(CLASS_MODIFIERS[viewedKey], loadoutEffectiveStats)
-      : CLASS_MODIFIERS[viewedKey],
+    mergeStatTotals(CLASS_MODIFIERS[activeKey], loadoutEffectiveStats),
   );
-
-  const prev = () => setViewedIdx((i) => (i - 1 + CLASS_KEYS.length) % CLASS_KEYS.length);
-  const next = () => setViewedIdx((i) => (i + 1) % CLASS_KEYS.length);
-
-  const select = async () => {
-    if (saving || isActive) return;
-    setSaving(true);
-    try {
-      await apiClient.post('/me/class', { class_name: viewedKey });
-      onClassChange?.(viewedKey);
-    } catch {
-      // silently ignore
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const navBtnStyle = {
-    width: 30, height: 30, borderRadius: 8,
-    border: '1px solid rgba(255,255,255,0.1)',
-    background: 'rgba(255,255,255,0.05)',
-    color: '#94a3b8', fontWeight: 900, fontSize: 18,
-    cursor: 'pointer', display: 'flex', alignItems: 'center',
-    justifyContent: 'center', lineHeight: 1, padding: 0,
-    flexShrink: 0,
-  };
+  const viewedKey = activeKey;
+  const isActive = true;
+  const saving = false;
+  const prev = () => {};
+  const next = () => {};
+  const select = () => {};
+  const navBtnStyle = { display: 'none' };
 
   return (
     <div style={{
@@ -412,19 +376,17 @@ function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, onCla
       {/* Hero body */}
       <div style={{ display: 'flex', gap: 14, padding: '14px 14px 0', alignItems: 'flex-start' }}>
         {/* Character image */}
-        <div style={{
-          width: 100, height: 132,
-          borderRadius: 14, flexShrink: 0,
-          background: `radial-gradient(circle at 50% 30%, ${info.color}22 0%, rgba(15,23,42,0.1) 65%, transparent 100%)`,
-          border: `1px solid ${info.color}33`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <CharPreview
+        <div style={{ flexShrink: 0 }}>
+          <CharacterPortrait
             cls={viewedKey}
-            size={90}
+            size={104}
+            badgeSize={32}
+            active={isActive}
+            sheetPath={isActive ? user?.character_spritesheet_path : null}
             style={{
-              filter: `drop-shadow(0 0 14px ${info.glow})`,
-              opacity: isActive ? 1 : 0.65,
+              borderRadius: 14,
+              border: `1px solid ${info.color}33`,
+              boxShadow: `0 0 18px ${info.glow}`,
               transition: 'opacity 0.2s ease',
             }}
           />
@@ -1161,38 +1123,58 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                     <div
                       key={item.inventory_id}
                       onClick={() => setSelectedItem(item)}
-                      className={isEquipped ? '' : rarityCardClass(item)}
                       style={{
                         position: 'relative',
-                        borderRadius: 14,
+                        minHeight: 126,
+                        borderRadius: 16,
                         overflow: 'hidden',
                         cursor: 'pointer',
-                        border: isEquipped ? '2px solid rgba(201,168,76,0.7)' : `1.5px solid ${theme.border}`,
-                        boxShadow: isEquipped ? '0 0 16px rgba(201,168,76,0.45)' : `0 0 10px ${theme.glow}`,
+                        padding: 7,
+                        background: `linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(10,14,28,0.98) 100%)`,
+                        border: isEquipped ? '1.5px solid rgba(201,168,76,0.76)' : `1px solid ${theme.border}`,
+                        boxShadow: isEquipped ? '0 0 18px rgba(201,168,76,0.28)' : `0 0 12px ${theme.glow}`,
                       }}
                     >
-                      <div style={{ width: '100%', paddingTop: '100%', position: 'relative' }}>
+                      <div style={{
+                        height: 76,
+                        position: 'relative',
+                        borderRadius: 12,
+                        border: `1px solid ${theme.border}`,
+                        background: `radial-gradient(circle at 50% 30%, ${theme.soft} 0%, rgba(8,12,24,0.95) 62%)`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                      }}>
+                        <GridItemImage src={src} item={item} FallbackIcon={FallbackIcon} theme={theme} ringClass={rarityRingClass(item)} />
                         <div style={{
                           position: 'absolute',
-                          inset: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: 'rgba(13,13,26,0.85)',
+                          left: 6,
+                          top: 6,
+                          fontSize: 8,
+                          fontWeight: 900,
+                          color: theme.color,
+                          background: 'rgba(0,0,0,0.48)',
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: 999,
+                          padding: '2px 6px',
+                          lineHeight: 1,
+                          textTransform: 'uppercase',
                         }}>
-                          <GridItemImage src={src} item={item} FallbackIcon={FallbackIcon} theme={theme} ringClass={rarityRingClass(item)} />
+                          {getTierLabel(item)}
                         </div>
                         {isEquipped && (
                           <div style={{
                             position: 'absolute',
-                            bottom: 3,
-                            left: 3,
+                            bottom: 6,
+                            left: 6,
                             fontSize: 9,
                             fontWeight: 900,
                             color: '#c9a84c',
-                            background: 'rgba(0,0,0,0.75)',
-                            borderRadius: 4,
-                            padding: '1px 3px',
+                            background: 'rgba(0,0,0,0.58)',
+                            border: '1px solid rgba(201,168,76,0.32)',
+                            borderRadius: 999,
+                            padding: '2px 6px',
                             lineHeight: 1,
                           }}>
                             E
@@ -1201,37 +1183,46 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                         {enchantLevel > 0 && (
                           <div style={{
                             position: 'absolute',
-                            top: 3,
-                            right: 3,
-                            fontSize: 9,
+                            top: 6,
+                            right: 6,
+                            fontSize: 10,
                             fontWeight: 900,
                             color: '#c9a84c',
-                            background: 'rgba(0,0,0,0.7)',
-                            borderRadius: 4,
-                            padding: '1px 3px',
+                            background: 'rgba(0,0,0,0.62)',
+                            border: '1px solid rgba(201,168,76,0.28)',
+                            borderRadius: 999,
+                            padding: '2px 6px',
                             lineHeight: 1,
                           }}>
                             +{enchantLevel}
                           </div>
                         )}
+                      </div>
+                      <div style={{ padding: '7px 2px 0' }}>
                         <div style={{
-                          position: 'absolute',
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          background: 'linear-gradient(transparent, rgba(0,0,0,0.82))',
-                          padding: '10px 3px 3px',
-                          fontSize: 8,
-                          fontWeight: 700,
-                          color: '#cbd5e1',
+                          color: '#f8fafc',
+                          fontSize: 10,
+                          fontWeight: 850,
+                          lineHeight: 1.15,
                           textAlign: 'center',
-                          lineHeight: 1.2,
+                          minHeight: 23,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
                           overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          pointerEvents: 'none',
                         }}>
                           {item.name}
+                        </div>
+                        <div style={{
+                          marginTop: 5,
+                          color: '#64748b',
+                          fontSize: 8,
+                          fontWeight: 900,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          textAlign: 'center',
+                        }}>
+                          {formatSlotLabel(slot)}
                         </div>
                       </div>
                     </div>

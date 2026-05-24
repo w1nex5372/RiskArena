@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Shield, Sparkles, Sword } from 'lucide-react';
 import { fetchArenaMatch, resolveArenaTimeout, submitArenaAction } from '../../api/arenaApi';
-import { getCharacterImage, getClassInfo, normalizeCharacterClass } from '../../utils/characters';
+import CharacterPortrait from '../arena/CharacterPortrait';
+import { getClassInfo, normalizeCharacterClass } from '../../utils/characters';
 
 const MAX_ROUNDS = 20;
 
@@ -215,8 +216,8 @@ function FighterPanel({
   label,
   player,
   hp,
-  imgSrc,
   classInfo,
+  className,
   mirror,
   damageFloats,
   shakeClassName,
@@ -257,18 +258,23 @@ function FighterPanel({
       </div>
 
       <div style={{ position: 'relative', height: 154, display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 10 }}>
-        {imgSrc ? (
-          <img
-            src={imgSrc}
-            alt={classInfo?.name || label}
-            className={[shakeClassName, extraClassName].filter(Boolean).join(' ')}
-            style={{
-              height: '100%',
-              objectFit: 'contain',
-              transform: mirror ? 'scaleX(-1)' : 'none',
-              filter: classInfo ? `drop-shadow(0 0 16px ${classInfo.glow})` : 'none',
-            }}
-          />
+        {className ? (
+          <div className={[shakeClassName, extraClassName].filter(Boolean).join(' ')}>
+            <CharacterPortrait
+              cls={className}
+              weapon={player?.weapon || null}
+              sheetPath={player?.character_spritesheet_path || null}
+              size={142}
+              badgeSize={34}
+              showWeaponBadge={false}
+              style={{
+                border: 0,
+                boxShadow: classInfo ? `0 0 16px ${classInfo.glow}` : 'none',
+                background: 'transparent',
+                transform: mirror ? 'scaleX(-1)' : 'none',
+              }}
+            />
+          </div>
         ) : (
           <div
             style={{
@@ -478,22 +484,28 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
   const roomUser = roomPlayers.find((player) => String(player.user_id) === String(user?.id)) || null;
   const roomOpponent = roomPlayers.find((player) => String(player.user_id) !== String(user?.id)) || null;
 
-  const userPlayer = roomUser || {
-    user_id: user?.id,
-    first_name: user?.first_name,
-    username: user?.username || user?.telegram_username,
-    photo_url: user?.photo_url,
-    class_name: user?.class_name,
-    level: user?.level,
-  };
+  const userPlayer = roomUser
+    ? {
+        ...roomUser,
+        character_spritesheet_path: roomUser.character_spritesheet_path || user?.character_spritesheet_path,
+        character_spritesheet_hash: roomUser.character_spritesheet_hash || user?.character_spritesheet_hash,
+      }
+    : {
+        user_id: user?.id,
+        first_name: user?.first_name,
+        username: user?.username || user?.telegram_username,
+        photo_url: user?.photo_url,
+        class_name: user?.class_name,
+        character_spritesheet_path: user?.character_spritesheet_path,
+        character_spritesheet_hash: user?.character_spritesheet_hash,
+        level: user?.level,
+      };
   const opponentPlayer = roomOpponent || null;
 
   const userClass = getPlayerClass(userPlayer, 'warrior');
   const opponentClass = getPlayerClass(opponentPlayer, null);
   const userInfo = getClassInfo(userClass, 'warrior');
   const opponentInfo = getClassInfo(opponentClass, null);
-  const userImgSrc = getCharacterImage(userClass, 'warrior');
-  const opponentImgSrc = getCharacterImage(opponentClass, null);
 
   if (phase === 'entry') {
     return (
@@ -608,11 +620,14 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
             <div style={{ fontSize: 12, fontWeight: 800, color: '#c9a84c', letterSpacing: '0.18em', marginBottom: 8, textTransform: 'uppercase' }}>
               Victory
             </div>
-            <img
-              src={userImgSrc}
-              alt={userInfo?.name || 'You'}
-              className="arena-victory-glow"
-              style={{ height: 160, objectFit: 'contain', margin: '0 auto 16px', display: 'block' }}
+            <CharacterPortrait
+              cls={userClass}
+              weapon={userPlayer?.weapon || null}
+              sheetPath={userPlayer?.character_spritesheet_path || null}
+              size={160}
+              badgeSize={38}
+              showWeaponBadge={false}
+              style={{ margin: '0 auto 16px' }}
             />
             <div style={{ fontSize: 32, fontWeight: 900, color: '#fbbf24', marginBottom: 16 }}>Match won</div>
 
@@ -704,10 +719,15 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
           textAlign: 'center',
         }}
       >
-        <img
-          src={userImgSrc}
-          alt={userInfo?.name || 'You'}
-          style={{ height: 120, objectFit: 'contain', margin: '0 auto 16px', display: 'block', opacity: 0.72 }}
+        <CharacterPortrait
+          cls={userClass}
+          weapon={userPlayer?.weapon || null}
+          sheetPath={userPlayer?.character_spritesheet_path || null}
+          size={120}
+          badgeSize={30}
+          active={false}
+          showWeaponBadge={false}
+          style={{ margin: '0 auto 16px' }}
         />
         <div style={{ fontSize: 28, fontWeight: 900, color: didDraw ? '#60a5fa' : '#f87171', marginBottom: 12 }}>
           {didDraw ? 'Draw' : 'Defeated'}
@@ -818,8 +838,8 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
           label="Opponent"
           player={opponentPlayer}
           hp={enemyHp}
-          imgSrc={opponentImgSrc}
           classInfo={opponentInfo}
+          className={opponentClass}
           mirror
           damageFloats={damageFloats.filter((float) => float.target === 'opponent')}
           shakeClassName={shakeOpponent ? 'arena-shake-flip' : ''}
@@ -831,8 +851,8 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
           label="You"
           player={userPlayer}
           hp={userHp}
-          imgSrc={userImgSrc}
           classInfo={userInfo}
+          className={userClass}
           mirror={false}
           damageFloats={damageFloats.filter((float) => float.target === 'player')}
           shakeClassName={shakePlayer ? 'arena-shake' : ''}

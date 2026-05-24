@@ -1,8 +1,4 @@
-export const CHARACTER_IMAGES = {
-  warrior: '/characters/warrior_sheet.png',
-  mage: '/characters/mage_sheet.png',
-  rogue: '/characters/rogue_sheet.png',
-};
+export const CHARACTER_CLASSES = ['warrior', 'mage', 'rogue'];
 
 export const CLASS_INFO = {
   warrior: {
@@ -36,19 +32,13 @@ export const CLASS_INFO = {
 
 export function normalizeCharacterClass(className) {
   const normalized = String(className || '').trim().toLowerCase();
-  return CHARACTER_IMAGES[normalized] ? normalized : null;
+  return CHARACTER_CLASSES.includes(normalized) ? normalized : null;
 }
 
 export function getClassInfo(className, fallbackClass = 'warrior') {
   const normalized = normalizeCharacterClass(className);
   if (normalized) return CLASS_INFO[normalized];
   return fallbackClass ? CLASS_INFO[fallbackClass] || null : null;
-}
-
-export function getCharacterImage(className, fallbackClass = 'warrior') {
-  const normalized = normalizeCharacterClass(className);
-  if (normalized) return CHARACTER_IMAGES[normalized];
-  return fallbackClass ? CHARACTER_IMAGES[fallbackClass] || null : null;
 }
 
 export const CLASS_MODIFIERS = {

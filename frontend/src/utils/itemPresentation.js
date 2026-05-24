@@ -244,3 +244,16 @@ export function getItemStatChips(item) {
 export function getPassiveText(item) {
   return String(item?.passive_label || '').trim();
 }
+
+export function getEnchantColor(level) {
+  const n = Number(level || 0);
+  if (n >= 10) return '#ff2200';
+  if (n >= 6)  return '#aa00ff';
+  if (n >= 1)  return '#3399ff';
+  return '#c9a84c';
+}
+
+export function getEnchantLabel(level) {
+  const n = Number(level || 0);
+  return n > 0 ? `+${n}` : '';
+}

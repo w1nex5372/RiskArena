@@ -1,11 +1,12 @@
 from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, Request, Response
 from fastapi.responses import Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import socketio
 from dotenv import load_dotenv
 from database import create_pool, close_pool, get_pool
 import db_queries as dbq
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional, Dict, Any
 import os
 import logging
@@ -33,6 +34,8 @@ import time
 import base58
 import uvicorn
 import copy
+import re
+import sys
 
 # Load environment variables FIRST before importing modules that read them
 ROOT_DIR = Path(__file__).parent
@@ -319,7 +322,7 @@ PRIZE_LINKS = {
 
 ROOM_SETTINGS = {
     RoomType.FREE:     {"min_bet": 0,   "max_bet": 0,    "name": "Free Room",  "min_players": 2, "max_players": 3,  "game_mode": "roulette"},
-    RoomType.BRONZE:   {"min_bet": 200, "max_bet": 450,  "name": "Bronze Room","min_players": 2, "max_players": 2,  "game_mode": "duel"},
+    RoomType.BRONZE:   {"min_bet": 0,   "max_bet": 0,    "name": "Bronze Room","min_players": 2, "max_players": 2,  "game_mode": "duel"},
     RoomType.SILVER:   {"min_bet": 350, "max_bet": 800,  "name": "Silver Room","min_players": 2, "max_players": 3,  "game_mode": "roulette"},
     RoomType.GOLD:     {"min_bet": 650, "max_bet": 1200, "name": "Gold Room",  "min_players": 2, "max_players": 3,  "game_mode": "roulette"},
     RoomType.FREEROLL: {"min_bet": 0,   "max_bet": 0,    "name": "Free Roll",  "min_players": 2, "max_players": 30, "game_mode": "roulette"},
@@ -360,14 +363,236 @@ class User(BaseModel):
     xp: int = Field(default=0)
     level: int = Field(default=1)
     class_name: Optional[str] = None
+    character_build_json: Optional[Dict[str, Any]] = None
+    character_spritesheet_path: Optional[str] = None
+    character_spritesheet_hash: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_login: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     energy: Optional[int] = None
     max_energy: Optional[int] = None
     next_energy_at: Optional[str] = None
 
+    @field_validator("character_build_json", mode="before")
+    @classmethod
+    def _parse_character_build_json(cls, value):
+        if value is None or isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                return None
+        return None
+
 class UserCreate(BaseModel):
     telegram_auth_data: TelegramAuthData
+
+
+VALID_CHARACTER_CLASSES = {"warrior", "mage", "rogue"}
+
+DEFAULT_CHARACTER_BUILDS: Dict[str, Dict[str, Any]] = {
+    "warrior": {
+        "schemaVersion": "character_build.v1",
+        "className": "warrior",
+        "bodyType": "male",
+        "layers": [
+            {"slot": "body", "asset": "body.male", "variant": None},
+            {"slot": "head", "asset": "head.human.male", "variant": None},
+            {"slot": "face", "asset": "face.male.neutral", "variant": None},
+            {"slot": "eyes", "asset": "eyes.human.neutral", "variant": "blue"},
+            {"slot": "legs", "asset": "legs.pants2", "variant": "black"},
+            {"slot": "feet", "asset": "feet.boots.rimmed", "variant": "black"},
+            {"slot": "torso", "asset": "torso.armour.plate", "variant": None},
+            {"slot": "hair", "asset": "hair.bedhead", "variant": "red"},
+        ],
+        "weapon": {"asset": "weapon.sword.katana", "enabled": False},
+    },
+    "rogue": {
+        "schemaVersion": "character_build.v1",
+        "className": "rogue",
+        "bodyType": "male",
+        "layers": [
+            {"slot": "body", "asset": "body.male", "variant": None},
+            {"slot": "head", "asset": "head.human.male", "variant": None},
+            {"slot": "face", "asset": "face.male.neutral", "variant": None},
+            {"slot": "eyes", "asset": "eyes.human.neutral", "variant": "gray"},
+            {"slot": "legs", "asset": "legs.pants2", "variant": "brown"},
+            {"slot": "feet", "asset": "feet.boots.rimmed", "variant": "leather"},
+            {"slot": "torso", "asset": "torso.armour.leather", "variant": None},
+            {"slot": "hair", "asset": "hair.bangslong", "variant": "brown"},
+        ],
+        "weapon": {"asset": "weapon.sword.scimitar", "enabled": False},
+    },
+    "mage": {
+        "schemaVersion": "character_build.v1",
+        "className": "mage",
+        "bodyType": "male",
+        "layers": [
+            {"slot": "body", "asset": "body.male", "variant": None},
+            {"slot": "head", "asset": "head.human.male", "variant": None},
+            {"slot": "face", "asset": "face.male.neutral", "variant": None},
+            {"slot": "eyes", "asset": "eyes.human.neutral", "variant": "blue"},
+            {"slot": "legs", "asset": "legs.pants2", "variant": "navy"},
+            {"slot": "feet", "asset": "feet.sandals", "variant": "leather"},
+            {"slot": "torso", "asset": "torso.clothes.vest_open", "variant": "blue"},
+            {"slot": "waist", "asset": "torso.waist.belt_robe", "variant": "teal"},
+            {"slot": "hair", "asset": "hair.xlong", "variant": "blue"},
+        ],
+        "weapon": {"asset": "weapon.staff.mage_staff", "enabled": False},
+    },
+}
+
+APP_DIR = Path(__file__).resolve().parent
+RISKARENA_ROOT = Path(os.getenv("RISKARENA_ROOT") or APP_DIR.parent).resolve()
+GENERATED_ASSET_ROOT = Path(os.getenv("GENERATED_ASSET_ROOT") or (RISKARENA_ROOT / "generated")).resolve()
+GENERATED_CHARACTER_DIR = GENERATED_ASSET_ROOT / "characters"
+SAFE_GENERATED_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+
+ALLOWED_CHARACTER_BUILD_ASSETS = {
+    "body.male",
+    "head.human.male",
+    "face.male.neutral",
+    "eyes.human.neutral",
+    "legs.pants2",
+    "feet.boots.rimmed",
+    "feet.sandals",
+    "torso.armour.plate",
+    "torso.armour.leather",
+    "torso.clothes.vest_open",
+    "torso.waist.belt_robe",
+    "hair.bedhead",
+    "hair.bangslong",
+    "hair.xlong",
+}
+ALLOWED_CHARACTER_WEAPONS = {
+    "weapon.sword.katana",
+    "weapon.sword.scimitar",
+    "weapon.staff.mage_staff",
+}
+CLASS_CHARACTER_WEAPON = {
+    "warrior": "weapon.sword.katana",
+    "rogue": "weapon.sword.scimitar",
+    "mage": "weapon.staff.mage_staff",
+}
+ALLOWED_CHARACTER_SLOTS = {"body", "head", "face", "eyes", "legs", "feet", "torso", "waist", "hair"}
+REQUIRED_CHARACTER_LAYER_SLOTS = {"body", "head", "face", "eyes"}
+
+
+def _coerce_json_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _default_character_build(class_name: Optional[str]) -> Dict[str, Any]:
+    cls = (class_name or "warrior").strip().lower()
+    if cls not in DEFAULT_CHARACTER_BUILDS:
+        cls = "warrior"
+    return copy.deepcopy(DEFAULT_CHARACTER_BUILDS[cls])
+
+
+def _with_required_character_layers(build: Dict[str, Any], class_name: Optional[str]) -> Dict[str, Any]:
+    patched = copy.deepcopy(build)
+    default_build = _default_character_build(patched.get("className") or class_name)
+    layers = patched.get("layers")
+    if not isinstance(layers, list):
+        layers = []
+    else:
+        layers = copy.deepcopy(layers)
+    seen_slots = {str(layer.get("slot") or "").strip().lower() for layer in layers if isinstance(layer, dict)}
+    for default_layer in default_build.get("layers", []):
+        slot = str(default_layer.get("slot") or "").strip().lower()
+        if slot in REQUIRED_CHARACTER_LAYER_SLOTS and slot not in seen_slots:
+            layers.append(copy.deepcopy(default_layer))
+            seen_slots.add(slot)
+    patched["layers"] = layers
+    return patched
+
+
+def _character_build_for_user_payload(user_payload: Dict[str, Any]) -> Dict[str, Any]:
+    build = _coerce_json_dict(user_payload.get("character_build_json"))
+    if build:
+        try:
+            return _validate_character_build(
+                _with_required_character_layers(build, user_payload.get("class_name")),
+                user_payload.get("class_name"),
+            )
+        except HTTPException:
+            return _default_character_build(user_payload.get("class_name"))
+    return _default_character_build(user_payload.get("class_name"))
+
+
+def _stable_character_build_hash(build: Dict[str, Any]) -> str:
+    raw = json.dumps(build, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def _validate_character_build(build: Dict[str, Any], current_class_name: Optional[str]) -> Dict[str, Any]:
+    if not isinstance(build, dict):
+        raise HTTPException(status_code=400, detail="character_build must be an object")
+    schema_version = build.get("schemaVersion")
+    if schema_version != "character_build.v1":
+        raise HTTPException(status_code=400, detail="Unsupported character_build schemaVersion")
+
+    build_class = str(build.get("className") or current_class_name or "").strip().lower()
+    if build_class not in VALID_CHARACTER_CLASSES:
+        raise HTTPException(status_code=400, detail="className must be warrior, mage, or rogue")
+    if current_class_name and str(current_class_name).lower() != build_class:
+        raise HTTPException(status_code=400, detail="character_build className must match your active class")
+
+    body_type = str(build.get("bodyType") or "male").strip().lower()
+    if body_type != "male":
+        raise HTTPException(status_code=400, detail="Only bodyType=male is supported in character_build.v1")
+
+    build = _with_required_character_layers(build, build_class)
+    layers = build.get("layers")
+    if not isinstance(layers, list) or not layers:
+        raise HTTPException(status_code=400, detail="character_build layers must be a non-empty list")
+    normalized_layers: List[Dict[str, Any]] = []
+    seen_slots = set()
+    for layer in layers:
+        if not isinstance(layer, dict):
+            raise HTTPException(status_code=400, detail="Each character_build layer must be an object")
+        slot = str(layer.get("slot") or "").strip().lower()
+        asset = str(layer.get("asset") or "").strip()
+        variant = layer.get("variant")
+        if slot not in ALLOWED_CHARACTER_SLOTS:
+            raise HTTPException(status_code=400, detail=f"Unsupported character_build slot: {slot}")
+        if slot in seen_slots and slot != "torso":
+            raise HTTPException(status_code=400, detail=f"Duplicate character_build slot: {slot}")
+        if asset not in ALLOWED_CHARACTER_BUILD_ASSETS:
+            raise HTTPException(status_code=400, detail=f"Unsupported character_build asset: {asset}")
+        if variant is not None and not isinstance(variant, str):
+            raise HTTPException(status_code=400, detail="character_build variant must be a string or null")
+        seen_slots.add(slot)
+        normalized_layers.append({"slot": slot, "asset": asset, "variant": variant})
+    if "body" not in seen_slots:
+        raise HTTPException(status_code=400, detail="character_build requires a body layer")
+
+    weapon = build.get("weapon") or {"enabled": False}
+    if not isinstance(weapon, dict):
+        raise HTTPException(status_code=400, detail="character_build weapon must be an object")
+    weapon_enabled = bool(weapon.get("enabled"))
+    weapon_asset = weapon.get("asset")
+    if weapon_enabled and weapon_asset not in ALLOWED_CHARACTER_WEAPONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported character_build weapon asset: {weapon_asset}")
+    if weapon_enabled and weapon_asset != CLASS_CHARACTER_WEAPON.get(build_class):
+        raise HTTPException(status_code=400, detail=f"Weapon asset does not match className={build_class}")
+
+    return {
+        "schemaVersion": "character_build.v1",
+        "className": build_class,
+        "bodyType": body_type,
+        "layers": normalized_layers,
+        "weapon": {"asset": weapon_asset, "enabled": weapon_enabled},
+    }
 
 
 def attach_session(response: Response, user_payload: dict) -> dict:
@@ -395,6 +620,8 @@ class RoomPlayer(BaseModel):
     is_anonymous: bool = False
     level: int = Field(default=1)
     class_name: Optional[str] = None
+    character_spritesheet_path: Optional[str] = None
+    character_spritesheet_hash: Optional[str] = None
     weapon: Optional[Dict[str, Any]] = None
     armor: Optional[Dict[str, Any]] = None
     ability: Optional[Dict[str, Any]] = None
@@ -1374,12 +1601,9 @@ async def broadcast_room_updates():
 
 def is_arena_duel_room(room: GameRoom) -> bool:
     return (
-        room.min_players == 2
-        and room.max_players == 2
+        room.room_type == RoomType.BRONZE
         and len(room.players) == 2
         and all(not p.user_id.startswith("bot_") for p in room.players)
-        and room.players[0].bet_amount > 0
-        and room.players[1].bet_amount > 0
     )
 
 
@@ -2116,6 +2340,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
             energy_data = await _get_and_regen_energy(str(existing_user['id']), _econn)
         user_payload = attach_session(response, existing_user)
         user_payload.update(energy_data)
+        user_payload.update(_character_preview_fields_for_user(existing_user))
         return User(**user_payload)
     
     # Create new user
@@ -2170,13 +2395,48 @@ async def telegram_auth(user_data: UserCreate, response: Response):
             energy_data2 = await _get_and_regen_energy(str(existing_user['id']), _econn2)
         user_payload2 = attach_session(response, existing_user)
         user_payload2.update(energy_data2)
+        user_payload2.update(_character_preview_fields_for_user(existing_user))
         return User(**user_payload2)
 
     logging.info(f"ðŸ†• Created new user: {user.first_name} (telegram_id: {user.telegram_id})")
 
     new_user_payload = attach_session(response, user.dict())
     new_user_payload.update({"energy": 10, "max_energy": 10, "next_energy_at": None})
+    new_user_payload.update(_character_preview_fields_for_user(new_user_payload))
     return User(**new_user_payload)
+
+
+@api_router.get("/auth/dev")
+async def dev_auth(response: Response, username: str = "DevUser", uid: int = 1):
+    """Local dev only — requires ALLOW_INSECURE_DEV_AUTH=true in .env"""
+    if not os.getenv("ALLOW_INSECURE_DEV_AUTH"):
+        raise HTTPException(status_code=403, detail="Dev auth disabled")
+    fake_telegram_id = 9_900_000_000 + uid
+    existing = await dbq.get_user_by_telegram_id(fake_telegram_id)
+    if existing:
+        payload = attach_session(response, existing)
+        async with get_pool().acquire() as conn:
+            energy_data = await _get_and_regen_energy(str(existing["id"]), conn)
+        payload.update(energy_data)
+        payload.update(_character_preview_fields_for_user(existing))
+        return User(**payload)
+    new_user = User(
+        telegram_id=fake_telegram_id,
+        first_name=username,
+        telegram_username=username,
+        token_balance=10_000,
+        is_verified=True,
+    )
+    user_dict = new_user.dict()
+    user_dict["created_at"] = user_dict["created_at"].isoformat()
+    user_dict["last_login"] = user_dict["last_login"].isoformat()
+    await dbq.insert_user(user_dict)
+    created = await dbq.get_user_by_telegram_id(fake_telegram_id)
+    payload = attach_session(response, created)
+    payload.update({"energy": 10, "max_energy": 10, "next_energy_at": None})
+    payload.update(_character_preview_fields_for_user(created))
+    return User(**payload)
+
 
 # Solana Token Purchase Endpoints
 class TokenPurchaseRequest(BaseModel):
@@ -2523,6 +2783,8 @@ async def get_current_user(http_request: Request):
     user_doc = await dbq.get_user_by_id(user_id)
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
+    character_build = _character_build_for_user_payload(user_doc)
+    preview_fields = _character_preview_fields_for_user(user_doc)
     return {
         "id": user_doc.get("id"),
         "telegram_id": user_doc.get("telegram_id"),
@@ -2534,6 +2796,8 @@ async def get_current_user(http_request: Request):
         "xp": user_doc.get("xp", 0),
         "level": user_doc.get("level", 1),
         "class_name": user_doc.get("class_name"),
+        "character_build_json": character_build,
+        **preview_fields,
         "is_admin": user_doc.get("is_admin", False),
         "is_owner": user_doc.get("is_owner", False),
         "role": user_doc.get("role", "user"),
@@ -2730,6 +2994,7 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
         await sio.emit('balance_updated', {'user_id': request.user_id, 'new_balance': new_balance_after_join}, room=joining_sid)
     
     equipped = await _fetch_equipped_snapshot(request.user_id)
+    character_preview = _character_preview_fields_for_user(dict(user_doc))
 
     # Add player to room with full Telegram info
     if request.is_anonymous:
@@ -2745,6 +3010,8 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             is_anonymous=True,
             level=int(user_doc.get('level') or 1),
             class_name=user_doc.get('class_name'),
+            character_spritesheet_path=character_preview.get("character_spritesheet_path"),
+            character_spritesheet_hash=character_preview.get("character_spritesheet_hash"),
             weapon=equipped.get('weapon'),
             armor=equipped.get('armor'),
             ability=equipped.get('ability'),
@@ -2760,6 +3027,8 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             is_anonymous=False,
             level=int(user_doc.get('level') or 1),
             class_name=user_doc.get('class_name'),
+            character_spritesheet_path=character_preview.get("character_spritesheet_path"),
+            character_spritesheet_hash=character_preview.get("character_spritesheet_hash"),
             weapon=equipped.get('weapon'),
             armor=equipped.get('armor'),
             ability=equipped.get('ability'),
@@ -3123,6 +3392,8 @@ async def get_user_by_telegram_id(telegram_id: int, http_request: Request):
         raise HTTPException(status_code=404, detail="User not found")
 
     await _require_self_or_admin(http_request, user_doc.get("id"))
+    character_build = _character_build_for_user_payload(user_doc)
+    preview_fields = _character_preview_fields_for_user(user_doc)
 
     return {
         "id": user_doc.get('id'),
@@ -3135,6 +3406,8 @@ async def get_user_by_telegram_id(telegram_id: int, http_request: Request):
         "xp": user_doc.get('xp', 0),
         "level": user_doc.get('level', 1),
         "class_name": user_doc.get('class_name'),
+        "character_build_json": character_build,
+        **preview_fields,
         "created_at": user_doc.get('created_at'),
         "last_login": user_doc.get('last_login'),
         "last_daily_claim": user_doc.get('last_daily_claim'),
@@ -3149,15 +3422,14 @@ async def get_user_by_telegram_id(telegram_id: int, http_request: Request):
 class ClassUpdateBody(BaseModel):
     class_name: str
 
-@api_router.post("/me/class")
-async def set_my_class(body: ClassUpdateBody, http_request: Request):
-    """Update the authenticated user's class (warrior / mage / rogue)."""
-    valid_classes = {"warrior", "mage", "rogue"}
-    if body.class_name not in valid_classes:
-        raise HTTPException(status_code=400, detail="class_name must be warrior, mage, or rogue")
-    user_id = get_authenticated_user_id(http_request)
+
+class CharacterBuildUpdateBody(BaseModel):
+    character_build: Dict[str, Any]
+
+
+async def _ensure_can_change_character_setup(user_id: str) -> None:
     if any(any(player.user_id == user_id for player in room.players) for room in active_rooms.values()):
-        raise HTTPException(status_code=409, detail="Cannot change class while in a room")
+        raise HTTPException(status_code=409, detail="Cannot change character while in a room")
     async with get_pool().acquire() as conn:
         active_match = await conn.fetchval(
             """
@@ -3169,18 +3441,83 @@ async def set_my_class(body: ClassUpdateBody, http_request: Request):
             user_id,
         )
         if active_match:
-            raise HTTPException(status_code=409, detail="Cannot change class during an active arena match")
+            raise HTTPException(status_code=409, detail="Cannot change character during an active arena match")
+
+@api_router.post("/me/class")
+async def set_my_class(body: ClassUpdateBody, http_request: Request):
+    """Update the authenticated user's class (warrior / mage / rogue)."""
+    class_name = body.class_name.strip().lower()
+    if class_name not in VALID_CHARACTER_CLASSES:
+        raise HTTPException(status_code=400, detail="class_name must be warrior, mage, or rogue")
+    user_id = get_authenticated_user_id(http_request)
+    await _ensure_can_change_character_setup(user_id)
+    default_build = _default_character_build(class_name)
+    async with get_pool().acquire() as conn:
         await conn.execute(
-            "UPDATE users SET class_name = $2 WHERE id = $1",
-            user_id, body.class_name,
+            "UPDATE users SET class_name = $2, character_build_json = $3::jsonb WHERE id = $1",
+            user_id, class_name, json.dumps(default_build),
         )
     user_doc = await dbq.get_user_by_id(user_id)
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
+    character_build = _character_build_for_user_payload(user_doc)
+    preview_fields = _character_preview_fields_for_user(user_doc)
     return {
         "id": user_doc.get("id"),
         "class_name": user_doc.get("class_name"),
-        "message": f"Class updated to {body.class_name}",
+        "character_build_json": character_build,
+        **preview_fields,
+        "message": f"Class updated to {class_name}",
+    }
+
+
+@api_router.get("/me/character-build")
+async def get_my_character_build(http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    character_build = _character_build_for_user_payload(user_doc)
+    preview_fields = _character_preview_fields_for_user(user_doc)
+    return {
+        "class_name": user_doc.get("class_name"),
+        "character_build_json": character_build,
+        **preview_fields,
+    }
+
+
+@api_router.post("/me/character-build/preview")
+async def preview_my_character_build(body: CharacterBuildUpdateBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    async with get_pool().acquire() as conn:
+        current_class = await conn.fetchval("SELECT class_name FROM users WHERE id = $1", user_id)
+    validated = _validate_character_build(body.character_build, current_class)
+    preview_fields = _character_preview_spritesheet_for_user(user_id, validated["className"], validated)
+    return {
+        "class_name": validated["className"],
+        "character_build_json": validated,
+        **preview_fields,
+    }
+
+
+@api_router.post("/me/character-build")
+async def update_my_character_build(body: CharacterBuildUpdateBody, http_request: Request):
+    user_id = get_authenticated_user_id(http_request)
+    await _ensure_can_change_character_setup(user_id)
+    async with get_pool().acquire() as conn:
+        current_class = await conn.fetchval("SELECT class_name FROM users WHERE id = $1", user_id)
+        validated = _validate_character_build(body.character_build, current_class)
+        class_name = current_class or validated["className"]
+        await conn.execute(
+            "UPDATE users SET class_name = $2, character_build_json = $3::jsonb WHERE id = $1",
+            user_id, class_name, json.dumps(validated),
+        )
+    preview_fields = _character_preview_spritesheet_for_user(user_id, class_name, validated)
+    return {
+        "class_name": class_name,
+        "character_build_json": validated,
+        **preview_fields,
+        "message": "Character build updated",
     }
 
 
@@ -3196,6 +3533,8 @@ async def get_user_data(user_id: str, http_request: Request):
         async with get_pool().acquire() as conn:
             energy_data = await _get_and_regen_energy(str(user_id), conn)
 
+        character_build = _character_build_for_user_payload(user_doc)
+        preview_fields = _character_preview_fields_for_user(user_doc)
         return {
             "id": user_doc.get('id'),
             "telegram_id": user_doc.get('telegram_id'),
@@ -3207,6 +3546,8 @@ async def get_user_data(user_id: str, http_request: Request):
             "xp": user_doc.get('xp', 0),
             "level": user_doc.get('level', 1),
             "class_name": user_doc.get('class_name'),
+            "character_build_json": character_build,
+            **preview_fields,
             "created_at": user_doc.get('created_at'),
             "last_login": user_doc.get('last_login'),
             "is_verified": user_doc.get('is_verified', False),
@@ -3343,6 +3684,115 @@ def _serialize_equipped_row(row: Any) -> Dict[str, Any]:
     item["inventory_id"] = item.get("inventory_id")
     item["id"] = item.get("inventory_id") or item["item_id"]
     return item
+
+
+def _safe_generated_user_id(user_id: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", str(user_id or "user"))
+    return safe[:80] or "user"
+
+
+def _ensure_runtime_character_sheet(user_id: str, character_build: Dict[str, Any], sheet_hash: str) -> Optional[str]:
+    safe_user_id = _safe_generated_user_id(user_id)
+    if not SAFE_GENERATED_ID.match(safe_user_id) or not SAFE_GENERATED_ID.match(sheet_hash):
+        return None
+
+    out_path = GENERATED_CHARACTER_DIR / safe_user_id / f"{sheet_hash}.png"
+    if out_path.exists():
+        return f"/generated/characters/{safe_user_id}/{sheet_hash}.png"
+
+    tools_dir = RISKARENA_ROOT / "tools"
+    if not (tools_dir / "generate_character_build.py").exists():
+        logging.warning("[character-build] generator missing at %s", tools_dir)
+        return None
+
+    try:
+        if str(tools_dir) not in sys.path:
+            sys.path.insert(0, str(tools_dir))
+        from generate_character_build import generate_user_sheet, load_json  # type: ignore
+
+        catalog = load_json(tools_dir / "lpc_character_catalog.json")
+        generate_user_sheet(f"{safe_user_id}_{sheet_hash}", character_build, catalog, out_path)
+        return f"/generated/characters/{safe_user_id}/{sheet_hash}.png"
+    except Exception as exc:
+        logging.warning("[character-build] failed to generate sheet for user=%s hash=%s: %s", user_id, sheet_hash, exc)
+        return None
+
+
+def _character_build_for_equipped_weapon(
+    class_name: str,
+    character_build: Optional[Dict[str, Any]],
+    equipped: Dict[str, Any],
+) -> Dict[str, Any]:
+    build = copy.deepcopy(character_build or _default_character_build(class_name))
+    build["className"] = class_name
+    weapon = build.get("weapon") if isinstance(build.get("weapon"), dict) else {}
+    if equipped.get("weapon") is None:
+        build["weapon"] = {**weapon, "enabled": False}
+    else:
+        default_weapon = _default_character_build(class_name).get("weapon") or {}
+        build["weapon"] = {
+            "asset": weapon.get("asset") or default_weapon.get("asset"),
+            "enabled": True,
+        }
+    return build
+
+
+def _battle_spritesheet_for_loadout(
+    user_id: str,
+    class_name: Optional[str],
+    equipped: Dict[str, Any],
+    character_build: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    cls = (class_name or "").strip().lower()
+    if cls not in {"warrior", "mage", "rogue"}:
+        return {"path": "", "hash": ""}
+    weapon = equipped.get("weapon") or {}
+    armor = equipped.get("armor") or {}
+    weapon_key = weapon.get("inventory_id") or weapon.get("item_id") or "no-weapon"
+    armor_key = armor.get("inventory_id") or armor.get("item_id") or "noarmor"
+    enchant = int(weapon.get("enchant_level", 0) or 0)
+    runtime_build = _character_build_for_equipped_weapon(cls, character_build, equipped)
+    build_hash = _stable_character_build_hash(runtime_build)
+    sheet_hash = hashlib.sha1(f"{cls}:{build_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
+    generated_path = _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash)
+    return {
+        "path": generated_path or "",
+        "hash": f"lpc-v1:{sheet_hash}",
+    }
+
+
+def _character_preview_spritesheet_for_user(
+    user_id: str,
+    class_name: Optional[str],
+    character_build: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    cls = (class_name or "").strip().lower()
+    if cls not in VALID_CHARACTER_CLASSES:
+        return {"character_spritesheet_path": "", "character_spritesheet_hash": ""}
+
+    base_build = copy.deepcopy(character_build or _default_character_build(cls))
+    base_build["className"] = cls
+    weapon = base_build.get("weapon") if isinstance(base_build.get("weapon"), dict) else {}
+    base_build["weapon"] = {**weapon, "enabled": False}
+
+    build_hash = _stable_character_build_hash(base_build)
+    sheet_hash = hashlib.sha1(f"{cls}:{build_hash}:base-preview".encode("utf-8")).hexdigest()[:16]
+    generated_path = _ensure_runtime_character_sheet(user_id, base_build, sheet_hash)
+    return {
+        "character_spritesheet_path": generated_path or "",
+        "character_spritesheet_hash": f"lpc-base:{sheet_hash}" if generated_path else "",
+    }
+
+
+def _character_preview_fields_for_user(user_doc: Dict[str, Any]) -> Dict[str, str]:
+    if not user_doc or not user_doc.get("class_name"):
+        return {"character_spritesheet_path": "", "character_spritesheet_hash": ""}
+    character_build = _character_build_for_user_payload(user_doc)
+    return _character_preview_spritesheet_for_user(
+        str(user_doc.get("id") or ""),
+        user_doc.get("class_name"),
+        character_build,
+    )
 
 
 @api_router.get("/shop/items")
@@ -3729,26 +4179,6 @@ async def enchant_item(body: EnchantBody, http_request: Request):
                     body.inventory_id,
                     result["new_enchant_level"],
                 )
-            elif result["destroyed"]:
-                await conn.execute(
-                    """
-                    DELETE FROM equipped_items
-                    WHERE user_id = $1
-                      AND (
-                          inventory_id = $2
-                          OR (inventory_id IS NULL AND item_id = $3)
-                      )
-                    """,
-                    user_id,
-                    body.inventory_id,
-                    row["item_id"],
-                )
-                await conn.execute(
-                    "DELETE FROM inventory WHERE user_id = $1 AND id = $2",
-                    user_id,
-                    body.inventory_id,
-                )
-
             remaining_scrolls = await conn.fetchval(
                 "SELECT quantity FROM item_scrolls WHERE user_id = $1 AND scroll_type = $2",
                 user_id,
@@ -4654,6 +5084,14 @@ async def get_user_loadout_internal(user_id: str, request: Request):
     if not secrets.compare_digest(secret, INTERNAL_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     equipped_rows = await _fetch_equipped_snapshot(user_id)
+    async with get_pool().acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT class_name, character_build_json FROM users WHERE id = $1",
+            user_id,
+        )
+    class_name = user_row["class_name"] if user_row else None
+    character_build = _character_build_for_user_payload(dict(user_row) if user_row else {"class_name": class_name})
+    battle_sprite = _battle_spritesheet_for_loadout(user_id, class_name, equipped_rows, character_build)
     # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slotâ†’item
     item_list = [v for v in equipped_rows.values() if v is not None]
     stats = modifiers_to_dict(aggregate_item_modifiers(item_list))
@@ -4664,6 +5102,10 @@ async def get_user_loadout_internal(user_id: str, request: Request):
         "defend_reduction": stats.get("defend_reduction", 0),
         "hp_bonus": stats.get("hp_bonus", 0),
         "has_weapon": equipped_rows.get("weapon") is not None,
+        "weapon_enchant": int((equipped_rows.get("weapon") or {}).get("enchant_level", 0) or 0),
+        "character_build_json": character_build,
+        "battle_spritesheet_path": battle_sprite["path"],
+        "battle_spritesheet_hash": battle_sprite["hash"],
     }
 
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -4677,6 +5119,9 @@ import boss_api as _boss_api_module
 from boss_api import router as boss_router
 api_router.include_router(boss_router)
 _boss_api_module.set_sio(sio)  # give boss_api access to the Socket.IO server
+
+GENERATED_ASSET_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/generated", StaticFiles(directory=str(GENERATED_ASSET_ROOT)), name="generated")
 
 # Include the router
 app.include_router(api_router)

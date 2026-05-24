@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Shield, Sparkles, Sword } from 'lucide-react';
-import { getCharacterImage, getClassInfo, normalizeCharacterClass } from '../../utils/characters';
-import { getItemStatRows, getPassiveText } from '../../utils/itemPresentation';
+import CharacterPortrait from '../arena/CharacterPortrait';
+import { getClassInfo, normalizeCharacterClass } from '../../utils/characters';
+import { getEnchantColor, getItemStatRows, getPassiveText } from '../../utils/itemPresentation';
 
 const PANEL_BG = 'linear-gradient(180deg, #0c1120 0%, #111827 48%, #0b1220 100%)';
 
@@ -56,8 +57,8 @@ function LoadoutRow({ item }) {
           >
             {item.value}
           </span>
-          {item.gear ? (
-            <span style={{ color: '#c9a84c', fontSize: 10, fontWeight: 900, flexShrink: 0 }}>+{enchantLevel}</span>
+          {item.gear && enchantLevel > 0 ? (
+            <span style={{ color: getEnchantColor(enchantLevel), fontSize: 10, fontWeight: 900, flexShrink: 0 }}>+{enchantLevel}</span>
           ) : null}
         </div>
         {stats.length ? (
@@ -82,7 +83,6 @@ function LoadoutRow({ item }) {
 function CharacterCard({ player, label, isYou, ready }) {
   const className = normalizeCharacterClass(player?.class_name);
   const classInfo = getClassInfo(className, null);
-  const imgSrc = getCharacterImage(className, null);
   const loadout = getLoadoutSummary(player);
 
   return (
@@ -133,17 +133,20 @@ function CharacterCard({ player, label, isYou, ready }) {
             flexShrink: 0,
           }}
         >
-          {imgSrc ? (
-            <img
-              src={imgSrc}
-              alt={classInfo?.name || 'Character'}
+          {className ? (
+            <CharacterPortrait
+              cls={className}
+              weapon={player?.weapon || null}
+              sheetPath={player?.character_spritesheet_path || null}
+              size={94}
+              badgeSize={26}
+              active={ready}
+              showWeaponBadge={false}
               style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
+                border: 0,
+                boxShadow: 'none',
+                background: 'transparent',
                 transform: isYou ? 'none' : 'scaleX(-1)',
-                filter: classInfo ? `drop-shadow(0 0 12px ${classInfo.glow})` : 'none',
-                opacity: ready ? 1 : 0.6,
               }}
             />
           ) : (
@@ -187,21 +190,28 @@ function CharacterCard({ player, label, isYou, ready }) {
 }
 
 export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmLeave }) {
-  const stakeAmount = Number(lobbyData?.bet_amount || 0);
-  const prizePool = stakeAmount * 2;
   const userId = String(user?.id || '');
 
   const { userPlayer, opponentPlayer } = useMemo(() => {
     const allPlayers = Array.isArray(players) ? players : [];
-    const me = allPlayers.find((player) => String(player.user_id) === userId) || {
-      ...(user || {}),
-      user_id: user?.id,
-      first_name: user?.first_name,
-      username: user?.username || user?.telegram_username,
-      photo_url: user?.photo_url,
-      class_name: user?.class_name,
-      level: user?.level,
-    };
+    const roomMe = allPlayers.find((player) => String(player.user_id) === userId);
+    const me = roomMe
+      ? {
+          ...roomMe,
+          character_spritesheet_path: roomMe.character_spritesheet_path || user?.character_spritesheet_path,
+          character_spritesheet_hash: roomMe.character_spritesheet_hash || user?.character_spritesheet_hash,
+        }
+      : {
+          ...(user || {}),
+          user_id: user?.id,
+          first_name: user?.first_name,
+          username: user?.username || user?.telegram_username,
+          photo_url: user?.photo_url,
+          class_name: user?.class_name,
+          character_spritesheet_path: user?.character_spritesheet_path,
+          character_spritesheet_hash: user?.character_spritesheet_hash,
+          level: user?.level,
+        };
     const opponent = allPlayers.find((player) => String(player.user_id) !== userId) || null;
     return { userPlayer: me, opponentPlayer: opponent };
   }, [players, user, userId]);
@@ -257,23 +267,6 @@ export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmL
             </div>
           </div>
 
-          <div
-            style={{
-              minWidth: 96,
-              borderRadius: 16,
-              padding: '10px 12px',
-              background: 'rgba(15,23,42,0.85)',
-              border: '1px solid rgba(148,163,184,0.16)',
-              textAlign: 'right',
-            }}
-          >
-            <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Prize pool
-            </div>
-            <div style={{ fontSize: 20, color: '#fbbf24', fontWeight: 900, marginTop: 4 }}>
-              {prizePool.toLocaleString()}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -318,7 +311,7 @@ export default function ArenaBattleLobby({ lobbyData, players, user, setConfirmL
             {isReady ? `Battle starts in ${countdown ?? '...'}s` : 'Waiting for opponent'}
           </div>
           <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-            {isReady ? 'Both loadouts locked in for this match.' : `Stake locked: ${stakeAmount.toLocaleString()} coins`}
+            {isReady ? 'Both loadouts locked in for this match.' : 'Get your loadout ready.'}
           </div>
         </div>
 

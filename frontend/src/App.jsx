@@ -24,10 +24,12 @@ import RoomLobby from './components/rooms/RoomLobby';
 import ArenaScreen from './components/game/ArenaScreen';
 import ArenaEntryScreen from './components/game/ArenaEntryScreen';
 import RealTimeArenaScreen from './components/arena/RealTimeArenaScreen';
+import WeaponDebugScreen from './components/arena/WeaponDebugScreen';
 import BossRaidScreen from './components/game/BossRaidScreen';
 import TournamentScreen from './components/game/TournamentScreen';
 import LeaderboardScreen from './components/leaderboard/LeaderboardScreen';
 import InventoryScreen from './components/inventory/InventoryScreen';
+import CharacterCreationScreen from './components/onboarding/CharacterCreationScreen';
 import DailyQuestsScreen from './components/game/DailyQuestsScreen';
 import DailyChestScreen from './components/game/DailyChestScreen';
 import SettingsScreen from './components/settings/SettingsScreen';
@@ -70,6 +72,10 @@ axios.interceptors.request.use((config) => {
 // Roulette Wheel Component
 // Static wheel showing final position for missed games (no animation)
 function App() {
+  if (new URLSearchParams(window.location.search).get('weaponDebug') === '1') {
+    return <WeaponDebugScreen />;
+  }
+
   // Core state
   const [socket, setSocket] = useState(null);
   const [user, setUser] = useState(null);
@@ -192,7 +198,7 @@ function App() {
   const [userActiveRooms, setUserActiveRooms] = useState({}); // Track which rooms user is in: {roomType: {roomId}}
   const [roomLimits, setRoomLimits] = useState({
     free:     { min: 0,   max: 0,    maxPlayers: 3  },
-    bronze:   { min: 200, max: 450,  maxPlayers: 3  },
+    bronze:   { min: 0,   max: 0,    maxPlayers: 2  },
     silver:   { min: 350, max: 800,  maxPlayers: 3  },
     gold:     { min: 650, max: 1200, maxPlayers: 3  },
     freeroll: { min: 0,   max: 0,    maxPlayers: 30 },
@@ -503,6 +509,10 @@ function App() {
     sessionStorage.removeItem('active_arena_context');
     setActiveArenaMatchId(null);
     setActiveArenaRoomContext(null);
+    setGameInProgress(false);
+    setShowWinnerScreen(false);
+    setWinnerData(null);
+    setInLobby(false);
     setActiveTab('rooms');
     loadRooms();
     loadGameHistory();
@@ -1106,11 +1116,44 @@ function App() {
 
   // Authentication and data loading
   useEffect(() => {
+    const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
     // Initialize Telegram Web App early
     if (window.Telegram && window.Telegram.WebApp) {
       console.log('🔄 Initializing Telegram Web App...');
       window.Telegram.WebApp.ready();
       window.Telegram.WebApp.expand();
+    }
+
+    // Local dev auth bypass. Use localhost:3000?dev=2 in a second browser
+    // to create a separate user for real-time battle testing.
+    if (isLocalhost) {
+      const loginDevUser = async () => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const devUid = params.get('dev') || '1';
+          const response = await axios.get(`${API}/auth/dev`, {
+            params: { username: `DevUser${devUid}`, uid: devUid },
+          });
+
+          if (response.data) {
+            setUser(response.data);
+            saveUserSession(response.data);
+            loadRooms();
+            loadGameHistory();
+            loadUserPrizes();
+            fetchRoomLimits();
+            await fetchMissedResults(response.data.id);
+            setIsLoading(false);
+          }
+        } catch (err) {
+          console.error('Dev auth failed, falling back to Telegram auth:', err);
+          localStorage.removeItem('casino_user');
+        }
+      };
+
+      loginDevUser();
+      return;
     }
     
     // Check for saved user session first
@@ -1399,6 +1442,17 @@ function App() {
     } catch (e) {
       console.error('❌ Failed to save user session:', e);
     }
+  };
+
+  const handleCharacterCreated = (fields) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const nextUser = { ...prev, ...fields };
+      saveUserSession(nextUser);
+      return nextUser;
+    });
+    setActiveTab('arena');
+    toast.success('Character created');
   };
 
   const refreshUserData = async (userId) => {
@@ -1993,29 +2047,19 @@ function App() {
     }
   };
 
-  const enterArenaBattle = async (betAmount) => {
+  const enterArenaBattle = async () => {
     if (!user) return;
     if (!user.class_name) {
       toast.error('Choose a character class first');
-      return;
-    }
-    const parsed = parseInt(betAmount);
-    if (isNaN(parsed) || parsed < 200 || parsed > 450) {
-      toast.error('Bet must be between 200 and 450');
-      return;
-    }
-    if ((user.token_balance || 0) < parsed) {
-      toast.error('Insufficient tokens');
       return;
     }
     try {
       const response = await axios.post(`${API}/join-room`, {
         room_type: 'bronze',
         user_id: user.id,
-        bet_amount: parsed,
+        bet_amount: 0,
         is_anonymous: false,
       }, authConfig());
-      setUser({ ...user, token_balance: response.data.new_balance });
       setUserActiveRooms((prev) => ({ ...prev, bronze: { roomId: response.data.room_id } }));
       currentGameRoomRef.current = response.data.room_id;
       sessionStorage.setItem('active_game_room', response.data.room_id);
@@ -2026,7 +2070,7 @@ function App() {
       setLobbyData({
         room_type: 'bronze',
         room_id: response.data.room_id,
-        bet_amount: parsed,
+        bet_amount: 0,
         min_players: response.data.min_players,
         max_players: response.data.max_players,
       });
@@ -2038,7 +2082,7 @@ function App() {
         const roomData = await checkUserRoomStatus('bronze');
         if (roomData) {
           setInLobby(true);
-          setLobbyData({ room_type: 'bronze', room_id: roomData.room_id, bet_amount: parsed, min_players: roomData.min_players, max_players: roomData.max_players });
+          setLobbyData({ room_type: 'bronze', room_id: roomData.room_id, bet_amount: 0, min_players: roomData.min_players, max_players: roomData.max_players });
           setRoomParticipants((prev) => ({ ...prev, bronze: roomData.players || [] }));
           currentGameRoomRef.current = roomData.room_id;
           sessionStorage.setItem('active_game_room', roomData.room_id);
@@ -2196,6 +2240,15 @@ function App() {
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <Toaster richColors position="top-right" />
       </div>
+    );
+  }
+
+  if (!user.class_name) {
+    return (
+      <>
+        <CharacterCreationScreen user={user} onComplete={handleCharacterCreated} />
+        <Toaster richColors position="top-right" />
+      </>
     );
   }
 
@@ -2740,7 +2793,12 @@ function App() {
             {activeTab === 'arena' && inRealTimeArena && (
               <RealTimeArenaScreen
                 user={user}
-                onLeave={() => setInRealTimeArena(false)}
+                onLeave={() => {
+                  setInRealTimeArena(false);
+                  setGameInProgress(false);
+                  setShowWinnerScreen(false);
+                  setWinnerData(null);
+                }}
               />
             )}
 
@@ -2750,6 +2808,24 @@ function App() {
                 rooms={rooms}
                 onEnterBattle={enterArenaBattle}
                 onEnterRealTime={() => setInRealTimeArena(true)}
+                onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
+                onNavigateInventory={() => setActiveTab('inventory')}
+                onEnergySpent={(energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev)}
+              />
+            )}
+
+            {/* Safety fallback: arena tab stuck with stale blocking flags but no content to show */}
+            {activeTab === 'arena' && !inRealTimeArena && !activeArenaMatchId && !inLobby && (showWinnerScreen ? !winnerData : gameInProgress ? !currentGameData : false) && (
+              <ArenaEntryScreen
+                user={user}
+                rooms={rooms}
+                onEnterBattle={enterArenaBattle}
+                onEnterRealTime={() => {
+                  setGameInProgress(false);
+                  setShowWinnerScreen(false);
+                  setWinnerData(null);
+                  setInRealTimeArena(true);
+                }}
                 onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
                 onNavigateInventory={() => setActiveTab('inventory')}
                 onEnergySpent={(energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev)}

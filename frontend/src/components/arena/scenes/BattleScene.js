@@ -29,6 +29,8 @@ const STATE_ANIM = {
   jumping:   'jump',
 };
 
+const WEAPON_DEBUG_STATES = ['idle', 'walk', 'attack', 'hurt', 'dead', 'jump'];
+
 const SPRITE_SCALE   = 2.0;
 const SPRITE_HEIGHT  = 64 * SPRITE_SCALE;
 // LPC art leaves ~6px empty at frame bottom; at 2x scale push sprite down 12px to land on floor
@@ -37,17 +39,123 @@ const FOOT_OFFSET    = 12;
 const CLASS_COLORS = { warrior: 0xe74c3c, mage: 0x9b59b6, rogue: 0x2ecc71 };
 const CLASS_HEX    = { warrior: '#e74c3c', mage: '#9b59b6', rogue: '#2ecc71' };
 const CLASS_WEAPON      = { warrior: 'warrior_katana', mage: 'mage_staff', rogue: 'rogue_scimitar' };
+const CLASS_WEAPON_ICON = {
+  warrior: '/items/icons/warrior_katana_icon.png',
+  mage: '/items/icons/mage_staff_icon.png',
+  rogue: '/items/icons/rogue_scimitar_icon.png',
+};
+const BACKEND_ASSET_BASE = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
+
+function resolveRuntimeAssetUrl(path) {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith('/generated/') && BACKEND_ASSET_BASE) return `${BACKEND_ASSET_BASE}${path}`;
+  return path;
+}
 // Per-weapon sheet column counts (width / 64)
 const WEAPON_SHEET_COLS = { warrior: 18, mage: 24, rogue: 18 };
-// Weapon sheet rows follow 4-dir blocks (south=+0, west=+1, north=+2, east=+3).
-// Character uses south-facing (row 11) so weapon must also use south rows.
-// Row 60 = south idle/walk, row 64 = south attack, row 68/69 = hurt/dead.
-// mage_staff (66 rows): row 64 = south attack, row 65 = hurt/dead.
+// LPC weapon exports are transparent overlay sheets. For the waiting/idle pose,
+// row 65 col 2 gives a readable held weapon; the pure idle rows render as a flat
+// horizontal slash across the body with these exported weapon sheets.
 const WEAPON_ANIM_ROWS  = {
-  warrior: { idle: 60, walk: 60, walkFrames: 9, attack: 64, attackFrames: 6, hurt: 68, dead: 69 },
-  mage:    { idle: 60, walk: 60, walkFrames: 9, attack: 64, attackFrames: 6, hurt: 65, dead: 65 },
-  rogue:   { idle: 60, walk: 60, walkFrames: 9, attack: 64, attackFrames: 6, hurt: 68, dead: 69 },
+  warrior: { idle: 65, idleCol: 2, walk: 57, walkStartCol: 0, walkFrames: 9, attack: 65, attackFrames: 6, hurt: 68, dead: 69 },
+  mage:    { idle: 11, idleCol: 0, walk: 11, walkFrames: 9, attack: 64, attackCols: [1,4,7], hurt: 20, dead: 20 },
+  rogue:   { idle: 65, idleCol: 2, walk: 57, walkStartCol: 0, walkFrames: 9, attack: 65, attackFrames: 6, hurt: 68, dead: 69 },
 };
+
+// Weapon sheets are 64x64 overlays, but the exported melee frames sit high inside
+// the cell. These anchors move the full overlay down into the character hand zone.
+const WEAPON_ANCHOR = {
+  warrior: { xOff:   0, yOff: 48 },
+  mage:    { xOff:   0, yOff:  0 },
+  rogue:   { xOff:   0, yOff: 44 },
+};
+
+const WEAPON_VISUAL_SCALE = {
+  warrior: 1,
+  mage: 1,
+  rogue: 1,
+};
+
+const WEAPON_POSE_PRESETS = {
+};
+
+const HELD_WEAPON_POSE = {
+  warrior: { xOff: 21, yOff: -50, scale: 0.105, rotation: -25 },
+  mage:    { xOff: 17, yOff: -45, scale: 0.100, rotation: -26 },
+  rogue:   { xOff: 22, yOff: -42, scale: 0.100, rotation: -35 },
+};
+
+function getWeaponScale(cls) {
+  const scale = WEAPON_VISUAL_SCALE[cls] ?? 1;
+  const ySquash = cls === 'rogue' ? 0.86 : 1;
+  return [SPRITE_SCALE * scale, SPRITE_SCALE * ySquash * scale];
+}
+
+// ── Enchant FX config ─────────────────────────────────────────────────────────
+// +1–5  blue gradient (static glow)
+// +6–7  purple (static)
+// +8–9  gold/orange (pulsing)
+// +10   red (fast pulse + particle trail)
+const ENCHANT_FX = [
+  null,                                                         // 0 — no effect
+  { color: 0x99ccff, strength: 1.5, pulse: false },            // +1 light blue
+  { color: 0x55aaff, strength: 2.0, pulse: false },            // +2 blue
+  { color: 0x2277ff, strength: 2.5, pulse: false },            // +3 medium blue
+  { color: 0x0044dd, strength: 3.0, pulse: false },            // +4 deep blue
+  { color: 0x002299, strength: 3.5, pulse: false },            // +5 dark blue
+  { color: 0x8800ff, strength: 4.0, pulse: false },            // +6 purple
+  { color: 0xcc00ee, strength: 4.5, pulse: false },            // +7 vivid purple
+  { color: 0xffaa00, strength: 4.5, pulse: true, dur: 800 },   // +8 gold pulse
+  { color: 0xff6600, strength: 5.0, pulse: true, dur: 500 },   // +9 orange fast pulse
+  { color: 0xff2200, strength: 5.5, pulse: true, dur: 380, trail: true }, // +10 red + particles
+];
+
+function applyEnchantFX(scene, weapon, enchant, spawnX, visualY, cls) {
+  if (!weapon?.active || !weapon.preFX) return null;
+  weapon.preFX.clear();
+  const fx = ENCHANT_FX[Math.min(enchant, 10)];
+  if (!fx) return null;
+
+  const startStr = fx.pulse ? fx.strength * 0.45 : fx.strength;
+  const glowFX = weapon.preFX.addGlow(fx.color, startStr, 0);
+  if (fx.pulse) {
+    scene.tweens.add({
+      targets: glowFX,
+      outerStrength: { from: startStr, to: fx.strength },
+      yoyo: true, repeat: -1, duration: fx.dur,
+    });
+  }
+
+  let trail = null;
+  if (fx.trail) {
+    trail = scene.add.particles(spawnX, visualY, 'smoke_particle', {
+      speed: { min: 8, max: 24 },
+      scale: { start: 0.22, end: 0 },
+      alpha: { start: 0.35, end: 0 },
+      lifespan: 400, quantity: 1,
+      tint: 0xff2200, emitting: true,
+    });
+    trail.setDepth(3);
+  }
+  return trail;
+}
+
+function _spawnWhoosh(scene, x, y, facingRight) {
+  const g = scene.add.graphics().setDepth(5);
+  const d = facingRight ? 1 : -1;
+  g.lineStyle(2.5, 0xffffff, 0.9);
+  g.beginPath();
+  g.moveTo(x + d * 8,  y - 28);
+  g.bezierCurveTo(x + d * 34, y - 52, x + d * 56, y - 18, x + d * 42, y + 14);
+  g.strokePath();
+  g.lineStyle(1.5, 0xaaddff, 0.6);
+  g.beginPath();
+  g.moveTo(x + d * 4,  y - 22);
+  g.bezierCurveTo(x + d * 26, y - 44, x + d * 48, y - 12, x + d * 36, y + 16);
+  g.strokePath();
+  scene.tweens.add({ targets: g, alpha: 0, duration: 200, ease: 'Power2', onComplete: () => { if (g.active) g.destroy(); } });
+}
 
 // Spectator palette (pixel crowd)
 const CROWD_COLORS = [
@@ -66,6 +174,7 @@ export default class BattleScene extends Phaser.Scene {
     this.sprites         = new Map();
     this.lastPhase       = null;
     this.hitEmitter      = null;
+    this.dustEmitter     = null;
     this.torchTweens     = [];
     this.sceneReady      = false;
     this._pendingRoom    = null;
@@ -74,6 +183,8 @@ export default class BattleScene extends Phaser.Scene {
     this._vsObjects      = [];
     this.spectators      = [];
     this.hud             = null;
+    this.weaponDebug     = null;
+    this.dynamicSheetLoads = new Set();
   }
 
   // ── 1. Preload ─────────────────────────────────────────────────────────
@@ -83,11 +194,6 @@ export default class BattleScene extends Phaser.Scene {
     this.load.on('loaderror', (file) => {
       console.warn(`[BattleScene] ${file.key} missing — using rectangle fallback`);
     });
-    ['warrior', 'mage', 'rogue'].forEach((cls) => {
-      this.load.spritesheet(`${cls}_sheet`, `/characters/${cls}_sheet.png`, {
-        frameWidth: 64, frameHeight: 64,
-      });
-    });
     // Skip weapon sheets on mobile — saves ~15MB texture memory
     if (!this._isMobile) {
       ['warrior', 'mage', 'rogue'].forEach((cls) => {
@@ -96,6 +202,9 @@ export default class BattleScene extends Phaser.Scene {
         });
       });
     }
+    ['warrior', 'mage', 'rogue'].forEach((cls) => {
+      this.load.image(`${cls}_held_weapon`, CLASS_WEAPON_ICON[cls]);
+    });
 
     // Handle WebGL context loss gracefully
     this.game.canvas.addEventListener('webglcontextlost', (e) => {
@@ -107,13 +216,15 @@ export default class BattleScene extends Phaser.Scene {
 
   // ── 2. Create scene ────────────────────────────────────────────────────
   create() {
-    this._createParticleTexture();
+    try {
+      this._createParticleTexture();
     this._buildArena();
     if (!this._isMobile) this._buildFloorFog();
     this._registerAnimations();
     if (!this._isMobile) this._registerWeaponAnimations();
     this._buildOverlays();
     this._buildTopHud();
+    this._setupWeaponDebug();
 
     // Mark ready — textures guaranteed loaded by this point
     this.sceneReady = true;
@@ -121,6 +232,18 @@ export default class BattleScene extends Phaser.Scene {
       this._wireRoom(this._pendingRoom, this._pendingSession);
       this._pendingRoom = null;
       this._pendingSession = null;
+    }
+    } catch (err) {
+      console.error('[BattleScene] create failed', err);
+      this.sceneReady = true;
+      this.add.text(W / 2, H / 2, `Battle scene failed\n${err?.message || 'Unknown error'}`, {
+        fontSize: '18px',
+        fontFamily: 'monospace',
+        color: '#ef4444',
+        align: 'center',
+        backgroundColor: 'rgba(0,0,0,0.75)',
+        padding: { x: 12, y: 10 },
+      }).setOrigin(0.5).setDepth(100);
     }
   }
 
@@ -152,6 +275,24 @@ export default class BattleScene extends Phaser.Scene {
     g4.fillCircle(8, 8, 8);
     g4.generateTexture('fog_particle', 16, 16);
     g4.destroy();
+
+    // Landing dust — sandy burst when character hits the floor
+    const gDust = this.make.graphics({ add: false });
+    gDust.fillStyle(0xb8a878, 1);
+    gDust.fillCircle(5, 5, 5);
+    gDust.generateTexture('dust_particle', 10, 10);
+    gDust.destroy();
+
+    this.dustEmitter = this.add.particles(0, 0, 'dust_particle', {
+      speed: { min: 25, max: 70 },
+      angle: { min: 185, max: 355 },
+      scale: { start: 0.7, end: 0 },
+      alpha: { start: 0.6, end: 0 },
+      lifespan: 380,
+      quantity: 1,
+      emitting: false,
+    });
+    this.dustEmitter.setDepth(2);
 
     this.hitEmitter = this.add.particles(0, 0, 'hit_particle', {
       speed:    { min: 80, max: 220 },
@@ -324,22 +465,25 @@ export default class BattleScene extends Phaser.Scene {
 
   // ── LPC animations ─────────────────────────────────────────────────────
   _registerAnimations() {
-    ['warrior', 'mage', 'rogue'].forEach((cls) => {
-      const key = `${cls}_sheet`;
-      if (!this.textures.exists(key)) return;
-      const cols = CLASS_COLS[cls] ?? 13;
-      const F    = makeF(cols);
-      Object.entries(ANIM_ROW_DEFS).forEach(([name, def]) => {
-        const animKey = `${cls}_${name}`;
-        if (!this.anims.exists(animKey)) {
-          this.anims.create({
-            key:       animKey,
-            frames:    this.anims.generateFrameNumbers(key, { frames: def.rowFn(F) }),
-            frameRate: def.rate,
-            repeat:    def.loop,
-          });
-        }
-      });
+    // Generated user sheets register their own animation keys after lazy-load.
+  }
+
+  _registerBodyAnimations(textureKey, animPrefix, cols, sheetConfig = null) {
+    if (!this.textures.exists(textureKey)) return;
+    const F = makeF(cols);
+    Object.entries(ANIM_ROW_DEFS).forEach(([name, def]) => {
+      const animKey = `${animPrefix}_${name}`;
+      if (!this.anims.exists(animKey)) {
+        const frames = name === 'idle' && sheetConfig?.idleFrame
+          ? [F(sheetConfig.idleFrame.row, sheetConfig.idleFrame.col)]
+          : def.rowFn(F);
+        this.anims.create({
+          key:       animKey,
+          frames:    this.anims.generateFrameNumbers(textureKey, { frames }),
+          frameRate: def.rate,
+          repeat:    def.loop,
+        });
+      }
     });
   }
 
@@ -350,13 +494,17 @@ export default class BattleScene extends Phaser.Scene {
       if (!this.textures.exists(key)) return;
       const Fw   = makeF(WEAPON_SHEET_COLS[cls] ?? 18);
       const rows = WEAPON_ANIM_ROWS[cls];
+      const holdFrame = rows.hold ? Fw(rows.hold.row, rows.hold.col) : Fw(rows.idle, rows.idleCol ?? 0);
+      const attackFrames = rows.attackCols
+        ? rows.attackCols.map((col) => Fw(rows.attack, col))
+        : Array.from({ length: rows.attackFrames }, (_, i) => Fw(rows.attack, i));
       const defs = {
-        idle:   { frames: [Fw(rows.idle, 0)],                                                    rate: 1,  loop: -1 },
-        walk:   { frames: Array.from({ length: rows.walkFrames }, (_, i) => Fw(rows.walk, i)),   rate: 9,  loop: -1 },
-        attack: { frames: Array.from({ length: rows.attackFrames }, (_, i) => Fw(rows.attack, i)), rate: 12, loop: 0 },
-        hurt:   { frames: [Fw(rows.hurt, 0), Fw(rows.hurt, 1), Fw(rows.hurt, 2)],               rate: 8,  loop: 0  },
-        dead:   { frames: Array.from({ length: 6 }, (_, i) => Fw(rows.dead, i)),                rate: 6,  loop: 0  },
-        jump:   { frames: [Fw(rows.idle, 0)],                                                    rate: 1,  loop: -1 },
+        idle:   { frames: [holdFrame],                                                       rate: 1,  loop: -1 },
+        walk:   { frames: rows.staticHold ? [holdFrame] : Array.from({ length: rows.walkFrames }, (_, i) => Fw(rows.walk, (rows.walkStartCol ?? 0) + i)), rate: 9, loop: -1 },
+        attack: { frames: rows.staticHold ? [holdFrame] : attackFrames,                       rate: 10, loop: 0  },
+        hurt:   { frames: rows.staticHold ? [holdFrame] : [Fw(rows.hurt, 0), Fw(rows.hurt, 1), Fw(rows.hurt, 2)], rate: 8,  loop: 0  },
+        dead:   { frames: rows.staticHold ? [holdFrame] : Array.from({ length: 6 }, (_, i) => Fw(rows.dead, i)), rate: 6,  loop: 0  },
+        jump:   { frames: [holdFrame],                                                       rate: 1,  loop: -1 },
       };
       Object.entries(defs).forEach(([name, def]) => {
         const animKey = `${cls}_weapon_${name}`;
@@ -481,6 +629,452 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   // ── 3. Wire Colyseus room ───────────────────────────────────────────────
+  _setupWeaponDebug() {
+    const enabled = new URLSearchParams(window.location.search).get('weaponDebug') === '1';
+    if (!enabled || !this.input?.keyboard) return;
+
+    this.weaponDebug = {
+      enabled: true,
+      state: 'idle',
+      poses: {},
+      bodyAuto: false,
+      lastBodyTick: 0,
+      text: this.add.text(10, 46, '', {
+        fontSize: '10px',
+        fontFamily: 'monospace',
+        color: '#facc15',
+        backgroundColor: 'rgba(0,0,0,0.75)',
+        padding: { x: 6, y: 5 },
+      }).setDepth(30).setScrollFactor(0),
+    };
+
+    this.input.keyboard.on('keydown', (event) => {
+      if (!this.weaponDebug?.enabled) return;
+      const handled = this._handleWeaponDebugKey(event);
+      if (handled) event.preventDefault();
+    });
+
+    console.info('[weaponDebug] enabled. Arrows move, [] col, ;/quote row, -/= scale, ,/. rotate, N/M body frame, T auto body, Z/X state, R reset, P print config.');
+    this._refreshWeaponDebugText();
+  }
+
+  _handleWeaponDebugKey(event) {
+    const active = this._getWeaponDebugTarget();
+    const key = event.key;
+    const stateIdx = WEAPON_DEBUG_STATES.indexOf(this.weaponDebug.state);
+
+    if (key === 'z' || key === 'Z') {
+      this.weaponDebug.state = WEAPON_DEBUG_STATES[(stateIdx - 1 + WEAPON_DEBUG_STATES.length) % WEAPON_DEBUG_STATES.length];
+      this._applyWeaponDebugToActive();
+      return true;
+    }
+    if (key === 'x' || key === 'X') {
+      this.weaponDebug.state = WEAPON_DEBUG_STATES[(stateIdx + 1) % WEAPON_DEBUG_STATES.length];
+      this._applyWeaponDebugToActive();
+      return true;
+    }
+    if (key === 'p' || key === 'P') {
+      this._printWeaponDebugConfig();
+      return true;
+    }
+    if (key === 't' || key === 'T') {
+      this.weaponDebug.bodyAuto = !this.weaponDebug.bodyAuto;
+      this.weaponDebug.lastBodyTick = 0;
+      this._applyWeaponDebugToActive();
+      return true;
+    }
+
+    if (!active) {
+      this._refreshWeaponDebugText('No active weapon sprite');
+      return false;
+    }
+
+    const { s } = active;
+    const pose = this._getWeaponDebugPose(s.cls, this.weaponDebug.state);
+    const step = event.shiftKey ? 5 : 1;
+    const scaleStep = event.shiftKey ? 0.05 : 0.01;
+    const rotationStep = event.shiftKey ? 15 : 3;
+    const maxBodyFrame = this._getWeaponDebugBodyFrames(s.cls, this.weaponDebug.state).length - 1;
+    const maxRow = this._getWeaponMaxRow(s.cls);
+    const maxCol = (WEAPON_SHEET_COLS[s.cls] ?? 18) - 1;
+
+    if (key === 'ArrowLeft') pose.xOff -= step;
+    else if (key === 'ArrowRight') pose.xOff += step;
+    else if (key === 'ArrowUp') pose.yOff -= step;
+    else if (key === 'ArrowDown') pose.yOff += step;
+    else if (key === '[') pose.col = Math.max(0, pose.col - 1);
+    else if (key === ']') pose.col = Math.min(maxCol, pose.col + 1);
+    else if (key === ';') pose.row = Math.max(0, pose.row - 1);
+    else if (key === "'" || key === '"') pose.row = Math.min(maxRow, pose.row + 1);
+    else if (key === '-' || key === '_') pose.scale = Math.max(0.2, Number((pose.scale - scaleStep).toFixed(2)));
+    else if (key === '=' || key === '+') pose.scale = Math.min(2, Number((pose.scale + scaleStep).toFixed(2)));
+    else if (key === ',' || key === '<') pose.rotation = Number((pose.rotation - rotationStep).toFixed(1));
+    else if (key === '.' || key === '>') pose.rotation = Number((pose.rotation + rotationStep).toFixed(1));
+    else if (key === '0') pose.rotation = 0;
+    else if (key === 'n' || key === 'N') pose.bodyFrame = Math.max(0, (pose.bodyFrame || 0) - 1);
+    else if (key === 'm' || key === 'M') pose.bodyFrame = Math.min(maxBodyFrame, (pose.bodyFrame || 0) + 1);
+    else if (key === 'r' || key === 'R') this._resetWeaponDebugPose(s.cls, this.weaponDebug.state);
+    else return false;
+
+    this._applyWeaponDebug(active.sessionId, active.player);
+    return true;
+  }
+
+  _getWeaponDebugTarget() {
+    if (!this.weaponDebug?.enabled || !this.room?.state?.players) return null;
+    const preferred = this.mySessionId && this.sprites.get(this.mySessionId);
+    const preferredPlayer = this.mySessionId && this.room.state.players.get(this.mySessionId);
+    if (preferred?.weapon?.active && preferredPlayer) {
+      return { sessionId: this.mySessionId, s: preferred, player: preferredPlayer };
+    }
+
+    for (const [sessionId, s] of this.sprites.entries()) {
+      const player = this.room.state.players.get(sessionId);
+      if (s.weapon?.active && player) return { sessionId, s, player };
+    }
+    return null;
+  }
+
+  _getWeaponMaxRow(cls) {
+    const texture = this.textures.get(`${cls}_weapon`);
+    const frameCount = Math.max(0, (texture?.frameTotal ?? 1) - 1);
+    return Math.max(0, Math.floor(frameCount / (WEAPON_SHEET_COLS[cls] ?? 18)));
+  }
+
+  _getDefaultWeaponDebugPose(cls, state) {
+    const rows = WEAPON_ANIM_ROWS[cls] ?? WEAPON_ANIM_ROWS.warrior;
+    const anchor = WEAPON_ANCHOR[cls] ?? { xOff: 0, yOff: 0 };
+    let row = rows.idle ?? 0;
+    let col = rows.idleCol ?? 0;
+
+    if (rows.hold && rows.staticHold) {
+      row = rows.hold.row;
+      col = rows.hold.col;
+    } else if (state === 'walk') {
+      row = rows.walk ?? row;
+      col = 0;
+    } else if (state === 'attack') {
+      row = rows.attack ?? row;
+      col = rows.attackCols?.[0] ?? 0;
+    } else if (state === 'hurt') {
+      row = rows.hurt ?? row;
+      col = 0;
+    } else if (state === 'dead') {
+      row = rows.dead ?? row;
+      col = 0;
+    }
+
+    const basePose = {
+      row,
+      col,
+      xOff: anchor.xOff,
+      yOff: anchor.yOff,
+      scale: WEAPON_VISUAL_SCALE[cls] ?? 1,
+      rotation: 0,
+      bodyFrame: 0,
+    };
+    const preset = WEAPON_POSE_PRESETS[cls]?.[state] ?? WEAPON_POSE_PRESETS[cls]?.default;
+    return preset ? { ...basePose, ...preset } : basePose;
+  }
+
+  _getWeaponDebugPose(cls, state) {
+    const key = `${cls}:${state}`;
+    if (!this.weaponDebug.poses[key]) {
+      this.weaponDebug.poses[key] = this._getDefaultWeaponDebugPose(cls, state);
+    }
+    return this.weaponDebug.poses[key];
+  }
+
+  _resetWeaponDebugPose(cls, state) {
+    this.weaponDebug.poses[`${cls}:${state}`] = this._getDefaultWeaponDebugPose(cls, state);
+  }
+
+  _applyWeaponDebugToActive() {
+    const active = this._getWeaponDebugTarget();
+    if (!active) {
+      this._refreshWeaponDebugText('No active weapon sprite');
+      return;
+    }
+    this._applyWeaponDebug(active.sessionId, active.player);
+  }
+
+  _tickWeaponDebug(time) {
+    const active = this._getWeaponDebugTarget();
+    if (!active) {
+      if (time - (this.weaponDebug.lastBodyTick || 0) > 500) {
+        this.weaponDebug.lastBodyTick = time;
+        this._refreshWeaponDebugText('No active weapon sprite');
+      }
+      return;
+    }
+
+    if (!this.weaponDebug.bodyAuto) return;
+    if (time - this.weaponDebug.lastBodyTick <= 140) return;
+
+    const pose = this._getWeaponDebugPose(active.s.cls, this.weaponDebug.state);
+    const frames = this._getWeaponDebugBodyFrames(active.s.cls, this.weaponDebug.state);
+    pose.bodyFrame = ((pose.bodyFrame || 0) + 1) % Math.max(1, frames.length);
+    this.weaponDebug.lastBodyTick = time;
+    this._applyWeaponDebug(active.sessionId, active.player);
+  }
+
+  _applyWeaponDebug(sessionId, player) {
+    const s = this.sprites.get(sessionId);
+    if (!this.weaponDebug?.enabled || !s?.weapon?.active || !player) return;
+
+    const pose = this._getWeaponDebugPose(s.cls, this.weaponDebug.state);
+    const frame = makeF(WEAPON_SHEET_COLS[s.cls] ?? 18)(pose.row, pose.col);
+    const phase = this.room?.state?.phase;
+    const isWaiting = !phase || phase === 'waiting' || phase === 'connecting';
+    const x = isWaiting ? W / 2 : player.x;
+    const visualY = player.y + FOOT_OFFSET;
+    const xMul = player.facingRight ? 1 : -1;
+    const ySquash = s.cls === 'rogue' ? 0.86 : 1;
+
+    s.weapon.stop?.();
+    s.weapon.setFrame?.(frame);
+    s.weapon.setPosition(x + xMul * pose.xOff, visualY + pose.yOff);
+    s.weapon.setScale(SPRITE_SCALE * pose.scale, SPRITE_SCALE * ySquash * pose.scale);
+    s.weapon.setRotation(Phaser.Math.DegToRad((pose.rotation || 0) * xMul));
+    s.weapon.setFlipX(!player.facingRight);
+    s.weapon.setVisible(Boolean(player.hasWeapon));
+
+    this._applyWeaponDebugBodyPose(s, this.weaponDebug.state);
+    this._refreshWeaponDebugText();
+  }
+
+  _applyWeaponDebugBodyPose(s, state) {
+    if (!s?.body?.active || !s.useLPC) return;
+    const pose = this._getWeaponDebugPose(s.cls, state);
+    const frames = this._getWeaponDebugBodyFrames(s.cls, state);
+    s.body.stop();
+    s.body.setFrame(frames[Math.min(pose.bodyFrame || 0, frames.length - 1)]);
+  }
+
+  _getWeaponDebugBodyFrames(cls, state) {
+    const normalizedState = state === 'attack' ? 'attack' : state;
+    const def = ANIM_ROW_DEFS[normalizedState] ?? ANIM_ROW_DEFS.idle;
+    const F = makeF(CLASS_COLS[cls] ?? 13);
+    return def.rowFn(F);
+  }
+
+  _refreshWeaponDebugText(extra = '') {
+    if (!this.weaponDebug?.text?.active) return;
+    const active = this._getWeaponDebugTarget();
+    if (!active) {
+      this.weaponDebug.text.setText(`weaponDebug=1\n${extra || 'Waiting for weapon sprite'}`);
+      return;
+    }
+
+    const pose = this._getWeaponDebugPose(active.s.cls, this.weaponDebug.state);
+    this.weaponDebug.text.setText([
+      'weaponDebug=1',
+      `class=${active.s.cls} state=${this.weaponDebug.state} auto=${this.weaponDebug.bodyAuto ? 'on' : 'off'}`,
+      `row=${pose.row} col=${pose.col} xOff=${pose.xOff} yOff=${pose.yOff} scale=${pose.scale} rot=${pose.rotation || 0}`,
+      `bodyFrame=${pose.bodyFrame || 0}`,
+      'arrows move | [] col | ;/quote row | -/= scale',
+      ',/. rotate | N/M body frame | T auto body | 0 reset rot',
+      'Z/X state | R reset | P print config',
+      extra,
+    ].filter(Boolean).join('\n'));
+  }
+
+  _printWeaponDebugConfig() {
+    const active = this._getWeaponDebugTarget();
+    if (!active) return;
+    const cls = active.s.cls;
+    const config = {};
+    WEAPON_DEBUG_STATES.forEach((state) => {
+      config[state] = this._getWeaponDebugPose(cls, state);
+    });
+    console.info(`[weaponDebug] ${cls} config`, config);
+    console.info(JSON.stringify({ [cls]: config }, null, 2));
+    this._refreshWeaponDebugText('Printed config to console');
+  }
+
+  _createHeldWeapon(cls, x, visualY, player) {
+    const key = `${cls}_held_weapon`;
+    if (!this.textures.exists(key)) return null;
+    const pose = HELD_WEAPON_POSE[cls] ?? HELD_WEAPON_POSE.warrior;
+    const facingRight = this._getVisualFacingRight(player);
+    const xMul = facingRight ? 1 : -1;
+    const weapon = this.add.image(x + xMul * pose.xOff, visualY + pose.yOff, key);
+    weapon.setOrigin(0.5, 0.5);
+    weapon.setScale(pose.scale);
+    weapon.setRotation(Phaser.Math.DegToRad((pose.rotation || 0) * xMul));
+    weapon.setFlipX(!facingRight);
+    weapon.setDepth(2.8);
+    return weapon;
+  }
+
+  _syncHeldWeapon(s, player, x, visualY) {
+    if (!s.weapon?.active) return;
+    const pose = HELD_WEAPON_POSE[s.cls] ?? HELD_WEAPON_POSE.warrior;
+    const facingRight = this._getVisualFacingRight(player);
+    const xMul = facingRight ? 1 : -1;
+    s.weapon.setVisible(player.state !== 'disconnected' && Boolean(player.hasWeapon));
+    s.weapon.setFlipX(!facingRight);
+    if (!s.weaponSwingTween) {
+      s.weapon.setPosition(x + xMul * pose.xOff, visualY + pose.yOff);
+      s.weapon.setScale(pose.scale);
+      s.weapon.setRotation(Phaser.Math.DegToRad((pose.rotation || 0) * xMul));
+    }
+  }
+
+  _swingHeldWeapon(s, player) {
+    if (!s.weapon?.active) return;
+    if (s.weaponSwingTween) s.weaponSwingTween.stop();
+    const pose = HELD_WEAPON_POSE[s.cls] ?? HELD_WEAPON_POSE.warrior;
+    const xMul = player.facingRight ? 1 : -1;
+    const startX = player.x + xMul * pose.xOff;
+    const startY = player.y + FOOT_OFFSET + pose.yOff;
+    const base = (pose.rotation || 0) * xMul;
+    s.weapon.setPosition(startX - xMul * 6, startY + 4);
+    s.weapon.setScale(pose.scale * 1.06);
+    s.weapon.setRotation(Phaser.Math.DegToRad(base - 65 * xMul));
+    s.weaponSwingTween = this.tweens.add({
+      targets: s.weapon,
+      x: startX + xMul * 24,
+      y: startY - 8,
+      scale: pose.scale * 1.18,
+      rotation: Phaser.Math.DegToRad(base + 78 * xMul),
+      duration: 135,
+      yoyo: true,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        s.weaponSwingTween = null;
+        if (s.weapon?.active) {
+          s.weapon.setPosition(startX, startY);
+          s.weapon.setScale(pose.scale);
+          s.weapon.setRotation(Phaser.Math.DegToRad(base));
+        }
+      },
+    });
+  }
+
+  _playAttackBodyMotion(s, player) {
+    if (!s.body?.active || player.state === 'dead' || player.state === 'hurt') return;
+    const attackKey = `${s.animPrefix || s.cls}_attack`;
+    if (!this.anims.exists(attackKey)) return;
+
+    s.body.play(attackKey, false);
+    s.body.once('animationcomplete', (anim) => {
+      if (anim?.key !== attackKey || !s.body?.active) return;
+      const currentState = player.state;
+      if (currentState === 'dead' || currentState === 'hurt' || currentState === 'attacking') return;
+      const nextKey = `${s.animPrefix || s.cls}_${STATE_ANIM[currentState] ?? 'idle'}`;
+      if (this.anims.exists(nextKey)) s.body.play(nextKey, true);
+    });
+  }
+
+  playWeaponSwing(sessionId = this.mySessionId) {
+    const s = this.sprites.get(sessionId);
+    const player = this.room?.state?.players?.get(sessionId);
+    if (!s || !player) return;
+    this._playAttackBodyMotion(s, player);
+    this._swingHeldWeapon(s, player);
+  }
+
+  _getVisualFacingRight(player) {
+    const phase = this.room?.state?.phase;
+    const isWaiting = !phase || phase === 'waiting' || phase === 'connecting';
+    return isWaiting ? true : player.facingRight;
+  }
+
+  _getDynamicBodySheetDescriptor(player) {
+    const cls = String(player.characterClass || 'warrior').toLowerCase();
+    const path = String(player.battleSpritesheetPath || '');
+    const hash = String(player.battleSpritesheetHash || '');
+    if (!path || !hash || !path.startsWith('/generated/')) return null;
+    const safeHash = hash.replace(/[^A-Za-z0-9_-]/g, '_');
+    return {
+      key: `dynamic_body_${safeHash}`,
+      animPrefix: `dynamic_body_${safeHash}`,
+      path,
+      url: resolveRuntimeAssetUrl(path),
+      generated: true,
+      cols: 13,
+      frameWidth: 128,
+      frameHeight: 128,
+      originY: 0.75,
+      cls,
+    };
+  }
+
+  _ensureDynamicBodySheetLoaded(player) {
+    const desc = this._getDynamicBodySheetDescriptor(player);
+    if (!desc || this.textures.exists(desc.key) || this.dynamicSheetLoads.has(desc.key)) return;
+
+    this.dynamicSheetLoads.add(desc.key);
+    this.load.setCORS('anonymous');
+    this.load.spritesheet(desc.key, desc.url, {
+      frameWidth: desc.frameWidth,
+      frameHeight: desc.frameHeight,
+    });
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+      this.dynamicSheetLoads.delete(desc.key);
+      if (!this.textures.exists(desc.key)) return;
+      this._registerBodyAnimations(desc.key, desc.animPrefix, desc.cols, desc);
+      this.room?.state?.players?.forEach((p, sessionId) => {
+        if (String(p.battleSpritesheetHash || '').replace(/[^A-Za-z0-9_-]/g, '_') !== desc.key.replace('dynamic_body_', '')) return;
+        const sprite = this.sprites.get(sessionId);
+        if (sprite) {
+          this._applyGeneratedBodyIfAvailable(sprite, p);
+          this.syncPlayer(sessionId, p);
+        }
+      });
+    });
+    if (!this.load.isLoading()) this.load.start();
+  }
+
+  _getBodySheetDescriptor(player) {
+    const cls = String(player.characterClass || 'warrior').toLowerCase();
+    const dynamic = this._getDynamicBodySheetDescriptor(player);
+    if (dynamic) {
+      if (this.textures.exists(dynamic.key)) return dynamic;
+      this._ensureDynamicBodySheetLoaded(player);
+    }
+    return {
+      key: `missing_body_${cls}`,
+      animPrefix: cls,
+      generated: false,
+      originY: 1,
+    };
+  }
+
+  _applyGeneratedBodyIfAvailable(s, player) {
+    if (!s?.body?.active) return false;
+    const desc = this._getBodySheetDescriptor(player);
+    if (!this.textures.exists(desc.key)) return false;
+    if (s.bodyTextureKey === desc.key) return desc.generated;
+
+    if (!s.useLPC) {
+      const x = s.body.x;
+      const y = s.body.y;
+      const oldBody = s.body;
+      s.body = this.add.sprite(x, y, desc.key);
+      s.body.setDepth(2);
+      oldBody.destroy();
+      s.useLPC = true;
+    } else {
+      s.body.setTexture(desc.key);
+    }
+    s.bodyTextureKey = desc.key;
+    s.animPrefix = desc.animPrefix;
+    s.usesGeneratedSheet = desc.generated;
+    s.body.setOrigin(0.5, desc.originY);
+    s.body.setScale(SPRITE_SCALE);
+    if (s.cls === 'rogue') s.body.setScale(SPRITE_SCALE, SPRITE_SCALE * 0.86);
+
+    const stateKey = `${s.animPrefix}_${STATE_ANIM[player.state] ?? 'idle'}`;
+    if (this.anims.exists(stateKey)) s.body.play(stateKey, true);
+
+    if (desc.generated && s.weapon?.active) {
+      s.weapon.setVisible(false);
+    }
+    return desc.generated;
+  }
+
   setRoom(room, mySessionId) {
     if (!this.sceneReady) {
       // Preload hasn't finished yet — defer until create() completes
@@ -503,14 +1097,17 @@ export default class BattleScene extends Phaser.Scene {
     room.state.onChange(() => this.handlePhaseChange(room.state));
     room.onMessage('damage_number', (d) => this.showDamageNumber(d.x, d.y, d.damage));
     room.onMessage('ability_used',  (d) => this.showAbilityEffect(d));
+    room.onMessage('weapon_swing',  (d) => this.playWeaponSwing(d.sessionId));
   }
 
   // ── 4. Create player visuals ────────────────────────────────────────────
   createPlayerSprite(sessionId, player) {
     const isMe   = sessionId === this.mySessionId;
     const cls    = player.characterClass || 'warrior';
-    const key    = `${cls}_sheet`;
+    const bodyDesc = this._getBodySheetDescriptor(player);
+    const key    = bodyDesc.key;
     const useLPC = this.textures.exists(key);
+    const waitingForGeneratedSheet = Boolean(this._getDynamicBodySheetDescriptor(player)) && !useLPC;
 
     // During waiting/connecting, display all sprites at center regardless of server x position
     const phase = this.room?.state?.phase;
@@ -524,7 +1121,7 @@ export default class BattleScene extends Phaser.Scene {
     const meY   = topY - 36;
 
     // Floor shadow (ellipse under feet)
-    const shadow = this.add.ellipse(spawnX, visualY + 2, 52, 12, 0x000000, 0.35);
+    const shadow = this.add.ellipse(spawnX, visualY + 2, 64, 14, 0x000000, 0.45);
     shadow.setDepth(1);
 
     // Class aura — colored glow circle behind sprite (depth 1, behind body at depth 2)
@@ -534,25 +1131,29 @@ export default class BattleScene extends Phaser.Scene {
     let body;
     let weapon = null;
     if (useLPC) {
+      const facingRight = this._getVisualFacingRight(player);
       body = this.add.sprite(spawnX, visualY, key);
-      body.setOrigin(0.5, 1).setScale(SPRITE_SCALE).setFlipX(!player.facingRight);
-      body.play(`${cls}_idle`);
+      body.setOrigin(0.5, bodyDesc.originY || 1).setScale(SPRITE_SCALE).setFlipX(!facingRight);
+      body.play(`${bodyDesc.animPrefix}_idle`);
       if (cls === 'rogue') body.setScale(SPRITE_SCALE, SPRITE_SCALE * 0.86);
       body.setDepth(2);
 
-      // Weapon overlay — only shown if player has a weapon item equipped in their loadout
-      const weaponKey = `${cls}_weapon`;
-      if (this.textures.exists(weaponKey) && player.hasWeapon) {
-        const wScale = cls === 'rogue' ? [SPRITE_SCALE, SPRITE_SCALE * 0.86] : [SPRITE_SCALE, SPRITE_SCALE];
-        weapon = this.add.sprite(spawnX, visualY, weaponKey);
-        weapon.setOrigin(0.5, 1).setScale(wScale[0], wScale[1]).setFlipX(!player.facingRight);
-        weapon.play(`${cls}_weapon_idle`);
-        weapon.setDepth(2);
+      // Equipped weapons are baked into generated LPC sheets. Keep the separate
+      // held-icon fallback out of battle so it cannot drift away from the hand.
+      if (player.hasWeapon && !bodyDesc.generated) {
+        weapon = this._createHeldWeapon(cls, spawnX, visualY, player);
       }
     } else {
-      body = this.add.rectangle(spawnX, visualY, 42, 72, CLASS_COLORS[cls] ?? 0xe74c3c, 0.9);
+      body = this.add.rectangle(
+        spawnX,
+        visualY,
+        42,
+        72,
+        CLASS_COLORS[cls] ?? 0xe74c3c,
+        waitingForGeneratedSheet ? 0 : 0.9
+      );
       body.setOrigin(0.5, 1);
-      body.setStrokeStyle(2, isMe ? 0xffffff : 0x888888);
+      if (!waitingForGeneratedSheet) body.setStrokeStyle(2, isMe ? 0xffffff : 0x888888);
       body.setDepth(2);
     }
 
@@ -574,14 +1175,29 @@ export default class BattleScene extends Phaser.Scene {
         }).setOrigin(0.5).setDepth(3)
       : null;
 
+    // Enchant glow effect
+    const enchant = player.weaponEnchant || 0;
+    const xMulE = this._getVisualFacingRight(player) ? 1 : -1;
+    const trailX = spawnX + xMulE * 16;
+    const trailY = visualY - (cls === 'rogue' ? 45 : 52);
+    const enchantTrail = applyEnchantFX(this, weapon, enchant, trailX, trailY, cls);
+
     this.sprites.set(sessionId, {
       body, shadow, aura, weapon, useLPC, cls,
+      bodyTextureKey: key,
+      animPrefix: bodyDesc.animPrefix,
+      usesGeneratedSheet: bodyDesc.generated,
       nameLabel, classLabel, hpBg, hpBar, meTag, dcLabel: null, stunLabel: null,
       maxHp: player.maxHp || 100,
       deathPlayed: false,
       hpPulseTween: null,
       lastState: '',
+      wasJumping: false,
+      enchantTrail,
+      lastWeaponEnchant: enchant,
     });
+
+    if (this.weaponDebug?.enabled) this._applyWeaponDebug(sessionId, player);
 
     if (this.hud) {
       const slot = sessionId === this.mySessionId ? 'p1' : 'p2';
@@ -609,33 +1225,51 @@ export default class BattleScene extends Phaser.Scene {
     const visualY = player.y + FOOT_OFFSET;
 
     s.body.setPosition(x, visualY);
-    if (s.useLPC) s.body.setFlipX(!player.facingRight);
+    if (s.useLPC) s.body.setFlipX(!this._getVisualFacingRight(player));
+    const usesGeneratedSheet = this._applyGeneratedBodyIfAvailable(s, player);
     if (s.aura?.active) s.aura.setPosition(x, visualY - SPRITE_HEIGHT / 2);
-    // Lazy-create weapon overlay if loadout fetch completed after initial spawn
-    if (s.useLPC && player.hasWeapon && !s.weapon) {
-      const weaponKey = `${s.cls}_weapon`;
-      if (this.textures.exists(weaponKey)) {
-        const wScale = s.cls === 'rogue' ? [SPRITE_SCALE, SPRITE_SCALE * 0.86] : [SPRITE_SCALE, SPRITE_SCALE];
-        s.weapon = this.add.sprite(x, visualY, weaponKey);
-        s.weapon.setOrigin(0.5, 1).setScale(wScale[0], wScale[1]).setFlipX(!player.facingRight);
-        s.weapon.play(`${s.cls}_weapon_idle`);
-        s.weapon.setDepth(2);
-      }
+    // Lazy-create weapon if loadout fetch completed after initial spawn
+    if (s.useLPC && player.hasWeapon && !usesGeneratedSheet && !s.weapon) {
+      s.weapon = this._createHeldWeapon(s.cls, x, visualY, player);
     }
 
     if (s.weapon?.active) {
-      // Hide weapon when dead/disconnected; otherwise follow hasWeapon flag
-      const alive = player.state !== 'dead' && player.state !== 'disconnected' && !s.deathPlayed;
-      s.weapon.setVisible(alive && Boolean(player.hasWeapon));
-      s.weapon.setPosition(x, visualY);
-      s.weapon.setFlipX(!player.facingRight);
+      if (usesGeneratedSheet) {
+        s.weapon.setVisible(false);
+      } else {
+        this._syncHeldWeapon(s, player, x, visualY);
+      }
+      if (s.enchantTrail?.active) {
+        s.enchantTrail.setVisible(!usesGeneratedSheet && player.state !== 'disconnected' && Boolean(player.hasWeapon));
+      }
     }
 
-    // Floor shadow follows feet, shrinks when jumping
-    const shadowScale = Math.max(0.3, 1 - (FLOOR_Y - player.y) / 200);
+    // Re-apply enchant glow when weaponEnchant changes (async loadout arrives after spawn)
+    const newEnchant = player.weaponEnchant || 0;
+    if (newEnchant !== s.lastWeaponEnchant) {
+      if (s.enchantTrail) { s.enchantTrail.destroy(); s.enchantTrail = null; }
+      const xMulT = this._getVisualFacingRight(player) ? 1 : -1;
+      const tX = x + xMulT * 16;
+      const tY = visualY - (s.cls === 'rogue' ? 45 : 52);
+      s.enchantTrail = applyEnchantFX(this, s.weapon, newEnchant, tX, tY, s.cls);
+      s.lastWeaponEnchant = newEnchant;
+    }
+
+    if (s.enchantTrail && s.weapon) {
+      // Trail must follow where weapon PIXELS actually render, not the raw sprite origin.
+      // The anchor shifts the sprite so idle frame pixel (60,3) lands on the hand.
+      // Derive hand screen coords from that invariant: hand = sprite_pos + (60−32,3−64)*scale.
+      const xMul   = this._getVisualFacingRight(player) ? 1 : -1;
+      const tX = x  + xMul * 16;                        // (60−32)*2 − anchor.xOff = 16
+      const tY = visualY + (s.cls === 'rogue' ? -45 : -52); // 3−64 * scaleY + anchor.yOff
+      s.enchantTrail.setPosition(tX, tY);
+    }
+
+    // Floor shadow — shrinks and fades more dramatically when airborne
+    const shadowScale = Math.max(0.12, 1 - (FLOOR_Y - player.y) / 140);
     s.shadow.setPosition(x, FLOOR_Y + FOOT_OFFSET + 2);
     s.shadow.setScale(shadowScale, shadowScale);
-    s.shadow.setAlpha(0.35 * shadowScale);
+    s.shadow.setAlpha(0.55 * shadowScale);
 
     const topY  = visualY - (s.useLPC ? SPRITE_HEIGHT : 72);
     const hpY   = topY - 10;
@@ -691,6 +1325,21 @@ export default class BattleScene extends Phaser.Scene {
           if (sc?.body?.active) sc.body.clearTint();
         });
       }
+
+      // Landing dust burst — triggers when jumping state ends
+      if (s.wasJumping && st !== 'jumping' && this.dustEmitter?.active) {
+        this.dustEmitter.explode(10, x - 14, FLOOR_Y + FOOT_OFFSET + 2);
+        this.dustEmitter.explode(10, x + 14, FLOOR_Y + FOOT_OFFSET + 2);
+      }
+      s.wasJumping = (st === 'jumping');
+
+      // Attack whoosh — once per attack state entry
+      if (st === 'attacking' && s.lastState !== 'attacking') {
+        const wY = visualY - SPRITE_HEIGHT * 0.55;
+        _spawnWhoosh(this, x, wY, player.facingRight);
+        this._swingHeldWeapon(s, player);
+      }
+
       s.lastState = st;
 
       if (st === 'disconnected') {
@@ -708,25 +1357,50 @@ export default class BattleScene extends Phaser.Scene {
       if (st === 'dead') {
         if (!s.deathPlayed) {
           s.deathPlayed = true;
-          const dk = `${s.cls}_dead`;
+
+          // Death slow-motion — 300ms at 0.3x speed, then snap back
+          // setTimeout is intentional: immune to Phaser timeScale, always fires in real time
+          this.time.timeScale = 0.3;
+          this.tweens.timeScale = 0.3;
+          setTimeout(() => {
+            if (this.time && this.tweens && this.scene?.isActive('BattleScene')) {
+              this.time.timeScale = 1;
+              this.tweens.timeScale = 1;
+            }
+          }, 300);
+
+          const dk = `${s.animPrefix || s.cls}_dead`;
           if (this.anims.exists(dk)) {
             s.body.play(dk, false);
             s.body.once('animationcomplete', () => s.body.setAlpha(0.4));
           } else {
             s.body.setAlpha(0.35);
           }
-          if (s.weapon?.active) s.weapon.setVisible(false);
+          if (s.weapon?.active) {
+            const wk = `${s.cls}_weapon_dead`;
+            s.weapon.setVisible(Boolean(player.hasWeapon));
+            if (this.anims.exists(wk)) {
+              s.weapon.play?.(wk, false);
+              s.weapon.once('animationcomplete', () => {
+                if (s.weapon?.active) s.weapon.setAlpha(0.4);
+              });
+            } else {
+              s.weapon.setAlpha(0.35);
+            }
+          }
         }
         return;
       }
 
-      const animKey = `${s.cls}_${STATE_ANIM[st] ?? 'idle'}`;
+      const animKey = `${s.animPrefix || s.cls}_${STATE_ANIM[st] ?? 'idle'}`;
       if (this.anims.exists(animKey)) s.body.play(animKey, true);
 
       if (s.weapon?.active) {
         const weaponAnimKey = `${s.cls}_weapon_${STATE_ANIM[st] ?? 'idle'}`;
-        if (this.anims.exists(weaponAnimKey)) s.weapon.play(weaponAnimKey, true);
+        if (this.anims.exists(weaponAnimKey)) s.weapon.play?.(weaponAnimKey, true);
       }
+
+      if (this.weaponDebug?.enabled) this._applyWeaponDebug(sessionId, player);
 
     } else {
       const st = player.state;
@@ -774,6 +1448,7 @@ export default class BattleScene extends Phaser.Scene {
     if (!s) return;
     if (s.stunLabel) this.tweens.killTweensOf(s.stunLabel);
     if (s.hpPulseTween) this.tweens.killTweensOf(s.hpBar);
+    if (s.enchantTrail) { s.enchantTrail.destroy(); }
     [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpBar, s.meTag, s.dcLabel, s.stunLabel]
       .forEach((o) => o?.destroy());
     this.sprites.delete(sessionId);
@@ -797,6 +1472,7 @@ export default class BattleScene extends Phaser.Scene {
           if (p) {
             const visualY = p.y + FOOT_OFFSET;
             s.body.setPosition(p.x, visualY);
+            this._syncHeldWeapon(s, p, p.x, visualY);
             if (s.aura?.active) s.aura.setPosition(p.x, visualY - SPRITE_HEIGHT / 2);
             s.shadow.setPosition(p.x, FLOOR_Y + FOOT_OFFSET + 2);
           }
@@ -1167,9 +1843,11 @@ export default class BattleScene extends Phaser.Scene {
       const floatY = Math.sin(time * 0.0025) * 5;
       const vy = p.y + FOOT_OFFSET + floatY;
       s.body.setY(vy);
-      if (s.weapon?.active) s.weapon.setY(vy);
+      this._syncHeldWeapon(s, p, p.x, vy);
       if (s.aura?.active) s.aura.setY(vy - SPRITE_HEIGHT / 2);
     });
+
+    if (this.weaponDebug?.enabled) this._tickWeaponDebug(time);
   }
 
   _playSound(type) {

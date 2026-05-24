@@ -3,8 +3,9 @@ import Phaser from 'phaser';
 import * as Colyseus from 'colyseus.js';
 import BattleScene from './scenes/BattleScene';
 import { CLASS_INFO, CLASS_MODIFIERS } from '../../utils/characters';
-import CharPreview from './CharPreview';
+import CharacterPortrait from './CharacterPortrait';
 import apiClient from '../../api/client';
+import WeaponIcon from '../WeaponIcon';
 
 // Base arena stats (mirrors ArenaRoom.ts constants)
 const BASE_HP        = { warrior: 150, mage: 100, rogue: 120 };
@@ -14,7 +15,15 @@ const ABILITY_DMG    = { warrior: 20, mage: 25, rogue: null };
 const ABILITY_NAMES  = { warrior: 'Bash', mage: 'Fireball', rogue: 'Blink' };
 
 const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
+  const override = new URLSearchParams(window.location.search).get('gameServerUrl');
+  if (override) return override;
+
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  if (window.location.protocol === 'https:' || !isLocal) {
+    return `${proto}//${window.location.host}/colyseus`;
+  }
+
   return `${proto}//${window.location.hostname}:2567`;
 })();
 
@@ -171,6 +180,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const [playerClass, setPlayerClass] = useState('warrior');
   const [isPortrait, setIsPortrait] = useState(() => window.innerHeight > window.innerWidth);
   const [loadoutStats, setLoadoutStats] = useState({});
+  const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
   const updatePhase = useCallback((p) => {
     phaseRef.current = p;
     setPhase(p);
@@ -179,19 +189,40 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   // ── Fetch equipped item bonuses ───────────────────────────────────────────
   useEffect(() => {
     apiClient.get('/me/equipped')
-      .then(res => setLoadoutStats(res.data?.loadout_effective_stats || {}))
-      .catch(() => {});
+      .then(res => {
+        setLoadoutStats(res.data?.loadout_effective_stats || {});
+        setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
+      })
+      .catch(() => {
+        setLoadoutStats({});
+        setEquipped({ weapon: null, armor: null, ability: null });
+      });
   }, [user?.id]); // eslint-disable-line
 
   // ── 0. Telegram expand + orientation tracking ────────────────────────────
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
+    const safeTelegramCall = (fn) => {
+      try {
+        fn?.();
+      } catch (err) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[Telegram.WebApp] optional method ignored', err?.message || err);
+        }
+      }
+    };
+
     if (tg) {
-      tg.expand?.();
-      tg.enableClosingConfirmation?.();
-      tg.requestFullscreen?.();
+      safeTelegramCall(() => tg.expand?.());
+      safeTelegramCall(() => tg.enableClosingConfirmation?.());
+      safeTelegramCall(() => tg.requestFullscreen?.());
     }
-    screen.orientation?.lock?.('landscape').catch(() => {});
+    try {
+      const lockResult = window.screen?.orientation?.lock?.('landscape');
+      lockResult?.catch?.(() => {});
+    } catch {
+      // Orientation lock is best-effort only; desktop/local browsers often reject it.
+    }
 
     const onResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
     window.addEventListener('resize', onResize);
@@ -199,10 +230,14 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
     return () => {
       if (tg) {
-        tg.exitFullscreen?.();
-        tg.disableClosingConfirmation?.();
+        safeTelegramCall(() => tg.exitFullscreen?.());
+        safeTelegramCall(() => tg.disableClosingConfirmation?.());
       }
-      screen.orientation?.unlock?.();
+      try {
+        window.screen?.orientation?.unlock?.();
+      } catch {
+        // Ignore unsupported orientation APIs during cleanup.
+      }
       window.removeEventListener('resize', onResize);
       window.removeEventListener('orientationchange', onResize);
     };
@@ -231,19 +266,25 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       input: { keyboard: false },
     };
 
-    gameRef.current = new Phaser.Game(config);
+    try {
+      gameRef.current = new Phaser.Game(config);
 
-    // Wait for scene to be ready
-    gameRef.current.events.once('ready', () => {
-      sceneRef.current = gameRef.current.scene.getScene('BattleScene');
-    });
+      // Wait for scene to be ready
+      gameRef.current.events.once('ready', () => {
+        sceneRef.current = gameRef.current.scene.getScene('BattleScene');
+      });
+    } catch (err) {
+      console.error('Failed to initialize battle renderer', err);
+      updatePhase('error');
+      setErrorMsg(err?.message || 'Could not start battle renderer');
+    }
 
     return () => {
       gameRef.current?.destroy(true);
       gameRef.current = null;
       sceneRef.current = null;
     };
-  }, []);
+  }, [updatePhase]);
 
   // ── 2. Connect to Colyseus ────────────────────────────────────────────────
   useEffect(() => {
@@ -395,10 +436,14 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       }
     }
 
-    connect();
+    // React dev/StrictMode can mount, unmount, then mount effects again.
+    // Delay the actual socket join so the first dev-only mount is cancelled
+    // before Colyseus receives a duplicate player.
+    const connectTimer = setTimeout(connect, 100);
 
     return () => {
       cancelled = true;
+      clearTimeout(connectTimer);
       clearInterval(inputIntervalRef.current);
       if (roomRef.current) {
         roomRef.current.leave();
@@ -416,7 +461,11 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
   // ── Input helpers ─────────────────────────────────────────────────────────
   const setKey = useCallback((key, value) => {
+    const wasPressed = Boolean(inputRef.current[key]);
     inputRef.current = { ...inputRef.current, [key]: value };
+    if (value && !wasPressed && (key === 'attack' || key === 'ability')) {
+      sceneRef.current?.playWeaponSwing?.(roomRef.current?.sessionId);
+    }
   }, []);
 
   // ── Keyboard support (desktop dev) ────────────────────────────────────────
@@ -593,9 +642,9 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         const cls = (user?.class_name || 'warrior').toLowerCase();
         const info = CLASS_INFO[cls] || CLASS_INFO.warrior;
         const loadoutSlots = [
-          { icon: '🗡️', label: 'WEAPON' },
-          { icon: '🛡️', label: 'ARMOR' },
-          { icon: '✨', label: 'ABILITY' },
+          { icon: '🗡️', label: 'WEAPON', item: equipped.weapon },
+          { icon: '🛡️', label: 'ARMOR',  item: equipped.armor  },
+          { icon: '✨', label: 'ABILITY', item: equipped.ability },
         ];
 
         // Compute full stats: base + class modifier + item bonuses
@@ -626,7 +675,13 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
             }}>
               <div style={{ position: 'absolute', left: -20, bottom: -20, width: 100, height: 100, background: `radial-gradient(circle, ${info.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
 
-              <CharPreview cls={cls} size={72} />
+              <CharacterPortrait
+                cls={cls}
+                size={72}
+                weapon={equipped?.weapon || null}
+                badgeSize={24}
+                sheetPath={user?.character_spritesheet_path || null}
+              />
 
               <div style={{ flex: 1, zIndex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.14em', color: '#c9a84c', textTransform: 'uppercase', marginBottom: 3 }}>Your Fighter</div>
@@ -684,12 +739,21 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
                 {loadoutSlots.map(slot => (
                   <div key={slot.label} style={{
                     borderRadius: 10, padding: '7px 4px', minHeight: 52,
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px dashed rgba(201,168,76,0.2)',
+                    background: slot.item ? 'rgba(201,168,76,0.06)' : 'rgba(255,255,255,0.02)',
+                    border: slot.item ? '1px solid rgba(201,168,76,0.3)' : '1px dashed rgba(201,168,76,0.2)',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
                   }}>
-                    <span style={{ fontSize: 17, opacity: 0.28 }}>{slot.icon}</span>
-                    <span style={{ color: '#334155', fontSize: 8, fontWeight: 800, letterSpacing: '0.08em' }}>{slot.label}</span>
+                    {slot.item?.image_path && slot.label === 'WEAPON' ? (
+                      <WeaponIcon imagePath={slot.item.image_path} size={28} borderRadius={6} />
+                    ) : slot.item?.image_path ? (
+                      <img src={slot.item.image_path} alt={slot.item.name}
+                        style={{ width: 28, height: 28, objectFit: 'contain' }} />
+                    ) : (
+                      <span style={{ fontSize: 17, opacity: 0.28 }}>{slot.icon}</span>
+                    )}
+                    <span style={{ color: slot.item ? '#c9a84c' : '#334155', fontSize: 8, fontWeight: 800, letterSpacing: '0.08em', textAlign: 'center', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {slot.item ? slot.item.name : slot.label}
+                    </span>
                   </div>
                 ))}
               </div>

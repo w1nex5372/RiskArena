@@ -9,6 +9,13 @@ const ICON_FRAME = {
   '/items/mage_staff.png':      { row: 64, col: 1 },
   '/items/rogue_scimitar.png':  { row: 67, col: 4 },
 };
+
+const UI_ICON_SRC = {
+  '/items/warrior_katana.png':  '/items/icons/warrior_katana_icon.png',
+  '/items/mage_staff.png':      '/items/icons/mage_staff_icon.png',
+  '/items/rogue_scimitar.png':  '/items/icons/rogue_scimitar_icon.png',
+};
+
 const FRAME_SIZE = 64;
 const ALPHA_THRESHOLD = 12;
 const PADDING = 3;
@@ -67,10 +74,17 @@ function detectAndDraw(ctx, img, imagePath, canvasSize) {
 export default function WeaponIcon({ imagePath, size = 60, borderRadius = 10, style = {} }) {
   const canvasRef = useRef(null);
   const [failed, setFailed] = useState(false);
+  const [iconFailed, setIconFailed] = useState(false);
+  const iconSrc = UI_ICON_SRC[imagePath] || null;
+
+  useEffect(() => {
+    setIconFailed(false);
+  }, [imagePath]);
 
   useEffect(() => {
     if (!imagePath) return;
     setFailed(false);
+    if (iconSrc && !iconFailed) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -79,9 +93,28 @@ export default function WeaponIcon({ imagePath, size = 60, borderRadius = 10, st
     img.src = imagePath;
     img.onload = () => detectAndDraw(ctx, img, imagePath, size);
     img.onerror = () => setFailed(true);
-  }, [imagePath, size]);
+  }, [imagePath, iconSrc, iconFailed, size]);
 
   if (failed) return null;
+
+  if (iconSrc && !iconFailed) {
+    return (
+      <img
+        src={iconSrc}
+        alt=""
+        onError={() => setIconFailed(true)}
+        style={{
+          width: size,
+          height: size,
+          objectFit: 'contain',
+          borderRadius,
+          flexShrink: 0,
+          display: 'block',
+          ...style,
+        }}
+      />
+    );
+  }
 
   return (
     <canvas

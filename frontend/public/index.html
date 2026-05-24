@@ -128,8 +128,18 @@
             // EXTREME CACHE CLEARING - v8.0 WINNER FIX
             console.log('🔥 NUCLEAR CACHE CLEAR v8.0: Starting...');
             
+            const IS_LOCAL_DEV = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
             // Register service worker v9.0 - SYNC FIX BUILD
-            if ('serviceWorker' in navigator) {
+            if ('serviceWorker' in navigator && IS_LOCAL_DEV) {
+                navigator.serviceWorker.getRegistrations()
+                    .then(function(registrations) {
+                        registrations.forEach(function(registration) {
+                            console.log('Local dev: unregistering service worker:', registration.scope);
+                            registration.unregister();
+                        });
+                    });
+            } else if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/sw.js', { scope: '/' })
                     .then(function(registration) {
                         console.log('✅ SW v9.0 registered:', registration.scope);

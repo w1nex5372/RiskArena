@@ -19,7 +19,8 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: riskarena-backend
     restart: unless-stopped
     depends_on:
@@ -33,7 +34,7 @@ services:
       PG_PASSWORD: postgres
       ADMIN_KEY: ${ADMIN_KEY:?ADMIN_KEY is required}
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
-      ALLOW_INSECURE_DEV_AUTH: "false"
+      ALLOW_INSECURE_DEV_AUTH: ${ALLOW_INSECURE_DEV_AUTH:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-YOUR_TELEGRAM_BOT_TOKEN_HERE}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}

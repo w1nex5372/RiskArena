@@ -76,8 +76,19 @@ export class ArenaRoom extends Room<ArenaState> {
   // ── Auth: validate session token against FastAPI ────────────────────────────
   async onAuth(_client: Client, options: { sessionToken?: string; devUsername?: string }) {
     if (SKIP_AUTH) {
+      // In dev mode: try to get the real user via session token so loadout fetch works.
+      // Falls back to a placeholder if the backend isn't reachable.
+      if (options.sessionToken) {
+        try {
+          const res = await axios.get(`${FASTAPI_URL}/api/me`, {
+            headers: { Authorization: `Bearer ${options.sessionToken}` },
+            timeout: 3000,
+          });
+          return res.data;
+        } catch {}
+      }
       return {
-        id: String(Math.random()),
+        id: "dev-user-1",
         first_name: options.devUsername || "Player",
         class_name: "warrior",
       };
@@ -103,6 +114,9 @@ export class ArenaRoom extends Room<ArenaState> {
     player.userId = String(auth?.id ?? auth?.user_id ?? client.sessionId);
     player.username = auth?.first_name || auth?.username || "Player";
     player.characterClass = (auth?.class_name || "warrior").toLowerCase();
+    player.characterBuildJson = JSON.stringify(auth?.character_build_json || {});
+    player.battleSpritesheetPath = String(auth?.character_spritesheet_path || "");
+    player.battleSpritesheetHash = String(auth?.character_spritesheet_hash || "");
     player.slotIndex = this.state.players.size; // 0 = left, 1 = right
     player.x = SLOT_START_X[player.slotIndex] ?? 400;
     player.y = FLOOR_Y;
@@ -171,9 +185,13 @@ export class ArenaRoom extends Room<ArenaState> {
       const d = res.data;
       player.attackBonus    = Number(d.attack_bonus    || 0);
       player.abilityBonus   = Number(d.ability_bonus   || 0);
-      player.defendReduction = Math.min(0.5, Number(d.defend_reduction || 0) / 100); // cap at 50%
+      player.defendReduction = Math.min(0.5, Number(d.defend_reduction || 0)); // already a ratio from backend
       player.hpBonus        = Number(d.hp_bonus        || 0);
       player.hasWeapon      = Boolean(d.has_weapon);
+      player.weaponEnchant = Number(d.weapon_enchant) || 0;
+      player.battleSpritesheetPath = String(d.battle_spritesheet_path || "");
+      player.battleSpritesheetHash = String(d.battle_spritesheet_hash || "");
+      player.characterBuildJson = JSON.stringify(d.character_build_json || {});
       // Apply HP bonus
       player.maxHp += player.hpBonus;
       player.hp     = player.maxHp;
@@ -255,6 +273,7 @@ export class ArenaRoom extends Room<ArenaState> {
           player.lastAttackTime = now;
           player.state = "attacking";
           player.attackUntil = now + ATTACK_ANIM_MS;
+          this.broadcast("weapon_swing", { sessionId, cls: player.characterClass });
 
           this.state.players.forEach((opp, oppSid) => {
             if (oppSid === sessionId || opp.state === "dead") return;
@@ -271,6 +290,7 @@ export class ArenaRoom extends Room<ArenaState> {
         if (input.ability && player.abilityCharges > 0) {
           player.abilityCharges = 0;
           const cls = player.characterClass;
+          this.broadcast("weapon_swing", { sessionId, cls });
 
           if (cls === "warrior") {
             // Bash — close-range stun

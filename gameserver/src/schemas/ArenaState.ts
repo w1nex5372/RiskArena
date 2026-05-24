@@ -12,6 +12,7 @@ export class Player extends Schema {
   @type("string") state: string = "idle"; // idle | walking | attacking | hurt | dead | disconnected
   @type("boolean") facingRight: boolean = true;
   @type("string") characterClass: string = "warrior";
+  @type("string") characterBuildJson: string = "";
   @type("number") slotIndex: number = 0;
   velocityY: number = 0;              // server-only physics, not synced
   @type("boolean") isGrounded: boolean = true;
@@ -22,6 +23,9 @@ export class Player extends Schema {
   @type("number") defendReduction: number = 0; // 0.0–1.0 damage multiplier from armor
   @type("number") hpBonus:        number = 0;  // from armor/items
   @type("boolean") hasWeapon:     boolean = false; // true if a weapon item is equipped
+  @type("number") weaponEnchant: number = 0;
+  @type("string") battleSpritesheetPath: string = "";
+  @type("string") battleSpritesheetHash: string = "";
 
   // Server-only — not synced to clients
   lastAttackTime: number = 0;

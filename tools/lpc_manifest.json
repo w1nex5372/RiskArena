@@ -1,0 +1,144 @@
+{
+  "version": "lpc-v1.5",
+  "universalLpcRoot": "tools/lpc_spritesheets",
+  "frame": { "width": 64, "height": 64 },
+  "sheet": { "width": 832, "height": 3456, "cols": 13 },
+  "classes": {
+    "warrior": {
+      "body": "frontend/public/characters/warrior_sheet.png",
+      "bodyCols": 13,
+      "outputFrameWidth": 128,
+      "outputFrameHeight": 128,
+      "bodyX": 32,
+      "bodyY": 32,
+      "output": "frontend/public/generated/characters/warrior_weapon_v1.png",
+      "recipeOutput": "frontend/public/generated/characters/warrior_weapon_v2.png",
+      "recipe": {
+        "layers": [
+          { "base": "body/bodies/male" },
+          { "base": "legs/pants2/thin", "variant": "black" },
+          { "base": "feet/boots/rimmed/thin", "variant": "black" },
+          { "base": "torso/armour/plate/male" },
+          { "base": "hair/bedhead/adult" }
+        ]
+      },
+      "weaponLayers": [
+        {
+          "phase": "behind",
+          "path": "tools/lpc_spritesheets/weapon/sword/katana/walk/behind/katana.png",
+          "bodyRow": 11,
+          "sourceRow": 3,
+          "frames": 9,
+          "sourceFrameWidth": 128,
+          "sourceFrameHeight": 128
+        },
+        {
+          "phase": "front",
+          "path": "tools/lpc_spritesheets/weapon/sword/katana/walk/katana.png",
+          "bodyRow": 11,
+          "sourceRow": 3,
+          "frames": 9,
+          "sourceFrameWidth": 128,
+          "sourceFrameHeight": 128
+        },
+        {
+          "phase": "behind",
+          "path": "tools/lpc_spritesheets/weapon/sword/katana/slash/behind/katana.png",
+          "bodyRow": 15,
+          "sourceRow": 3,
+          "frames": 6,
+          "sourceFrameWidth": 128,
+          "sourceFrameHeight": 128
+        },
+        {
+          "phase": "front",
+          "path": "tools/lpc_spritesheets/weapon/sword/katana/slash/katana.png",
+          "bodyRow": 15,
+          "sourceRow": 3,
+          "frames": 6,
+          "sourceFrameWidth": 128,
+          "sourceFrameHeight": 128
+        }
+      ]
+    },
+    "mage": {
+      "body": "frontend/public/characters/mage_sheet.png",
+      "bodyCols": 13,
+      "weapon": "frontend/public/items/mage_staff.png",
+      "weaponCols": 24,
+      "output": "frontend/public/generated/characters/mage_weapon_v1.png",
+      "recipeOutput": "frontend/public/generated/characters/mage_weapon_v2.png",
+      "recipe": {
+        "layers": [
+          { "base": "body/bodies/male" },
+          { "base": "legs/pants2/thin", "variant": "navy" },
+          { "base": "feet/sandals/thin", "variant": "leather" },
+          { "base": "torso/clothes/vest_open/male", "variant": "blue" },
+          { "base": "torso/waist/belt_robe/male", "variant": "teal" },
+          { "base": "hair/xlong/male" }
+        ]
+      },
+      "weaponRows": {
+        "walk": { "bodyRow": 11, "weaponRow": 11, "frames": 9, "xOff": 0, "yOff": 0 },
+        "attack": { "bodyRow": 15, "weaponRow": 64, "weaponCols": [1, 1, 4, 4, 7, 7], "xOff": 0, "yOff": 0 }
+      }
+    },
+    "rogue": {
+      "body": "frontend/public/characters/rogue_sheet.png",
+      "bodyCols": 18,
+      "outputFrameWidth": 128,
+      "outputFrameHeight": 128,
+      "bodyX": 32,
+      "bodyY": 32,
+      "output": "frontend/public/generated/characters/rogue_weapon_v1.png",
+      "recipeOutput": "frontend/public/generated/characters/rogue_weapon_v2.png",
+      "recipe": {
+        "layers": [
+          { "base": "body/bodies/male" },
+          { "base": "legs/pants2/thin", "variant": "brown" },
+          { "base": "feet/boots/rimmed/thin", "variant": "leather" },
+          { "base": "torso/armour/leather/male" },
+          { "base": "hair/bangslong/adult" }
+        ]
+      },
+      "weaponLayers": [
+        {
+          "phase": "behind",
+          "path": "tools/lpc_spritesheets/weapon/sword/scimitar/walk/behind/scimitar.png",
+          "bodyRow": 11,
+          "sourceRow": 3,
+          "frames": 9,
+          "sourceFrameWidth": 128,
+          "sourceFrameHeight": 128
+        },
+        {
+          "phase": "front",
+          "path": "tools/lpc_spritesheets/weapon/sword/scimitar/walk/scimitar.png",
+          "bodyRow": 11,
+          "sourceRow": 3,
+          "frames": 9,
+          "sourceFrameWidth": 128,
+          "sourceFrameHeight": 128
+        },
+        {
+          "phase": "behind",
+          "path": "tools/lpc_spritesheets/weapon/sword/scimitar/slash/behind/scimitar.png",
+          "bodyRow": 15,
+          "sourceRow": 3,
+          "frames": 6,
+          "sourceFrameWidth": 128,
+          "sourceFrameHeight": 128
+        },
+        {
+          "phase": "front",
+          "path": "tools/lpc_spritesheets/weapon/sword/scimitar/slash/scimitar.png",
+          "bodyRow": 15,
+          "sourceRow": 3,
+          "frames": 6,
+          "sourceFrameWidth": 128,
+          "sourceFrameHeight": 128
+        }
+      ]
+    }
+  }
+}
