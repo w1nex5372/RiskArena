@@ -20,8 +20,6 @@ const phaseFromHp = (hp, maxHp) => {
   return 3;
 };
 
-const PHASE_COLOR = { 1: 'text-blue-600', 2: 'text-amber-500', 3: 'text-rose-600' };
-
 export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [bossState, setBossState] = useState(null);
   const [loadError, setLoadError] = useState(null); // 'no_raid' | 'failed' | null
@@ -47,7 +45,6 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       setBossState((prev) => (prev ? { ...prev, ...data } : data));
       if (data.top_dealers) setTopDealers(data.top_dealers.slice(0, 3));
       // Only the attacker's client updates its own damage counter.
-      // data.attacker_id is set by the backend on every attack broadcast.
       if (
         typeof data.my_damage === 'number' &&
         String(data.attacker_id) === String(user?.id)
@@ -58,7 +55,6 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
     const onRaidFinished = (data) => {
       setRaidEnded(true);
-      // data.rewards is a per-participant list; find this client's own entry.
       if (Array.isArray(data.rewards) && user?.id) {
         const mine = data.rewards.find(
           (r) => String(r.user_id) === String(user.id)
@@ -90,7 +86,6 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     setLoadError(null);
     setBossState(null);
     try {
-      // TODO: Implement GET /api/boss-raid/current on backend
       const res = await apiClient.get('/boss-raid/current');
       setBossState(res.data);
       if (res.data.top_dealers) setTopDealers(res.data.top_dealers.slice(0, 3));
@@ -124,17 +119,15 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     }, 1000);
 
     try {
-      // TODO: Implement POST /api/boss-raid/attack on backend
-      const res = await apiClient.post('/boss-raid/attack', { user_id: user?.id });
-      if (typeof res.data.damage === 'number') {
-        const dmg = res.data.damage;
-        setMyDamage((prev) => prev + dmg);
-        setBossState((prev) =>
-          prev ? { ...prev, boss_hp: Math.max(0, prev.boss_hp - dmg) } : prev
-        );
+      const res = await apiClient.post('/boss-raid/attack');
+      // Update boss state from response (current_hp, phase, my_damage, player_count)
+      if (res.data) {
+        setBossState((prev) => prev ? { ...prev, ...res.data } : res.data);
+        if (res.data.top_dealers) setTopDealers(res.data.top_dealers.slice(0, 3));
+        if (typeof res.data.my_damage === 'number') setMyDamage(res.data.my_damage);
       }
     } catch {
-      // attack API not yet available — silent
+      // silent — socket update will still arrive with accurate state
     }
   };
 
@@ -182,10 +175,11 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     );
   }
 
-  const hpPct = bossState.boss_max_hp
-    ? Math.max(0, Math.min(100, Math.round((bossState.boss_hp / bossState.boss_max_hp) * 100)))
+  // Backend fields: current_hp, max_hp, name, level, phase, status, raid_end_at
+  const hpPct = bossState.max_hp
+    ? Math.max(0, Math.min(100, Math.round((bossState.current_hp / bossState.max_hp) * 100)))
     : 0;
-  const phase = phaseFromHp(bossState.boss_hp, bossState.boss_max_hp);
+  const phase = phaseFromHp(bossState.current_hp, bossState.max_hp);
 
   // ── Loot result panel (raid finished) ─────────────────────────────────────
   if (raidEnded && lootResult) {
@@ -198,7 +192,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             </div>
             <div>
               <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#c9a84c' }}>Raid Complete</p>
-              <h2 className="text-xl font-extrabold" style={{ color: '#e8e0d0' }}>{bossState.boss_name || 'Boss'} Defeated</h2>
+              <h2 className="text-xl font-extrabold" style={{ color: '#e8e0d0' }}>{bossState.name || 'Boss'} Defeated</h2>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3 mb-4">
@@ -257,31 +251,26 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       <section className="rounded-[24px] p-4" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.2)', boxShadow: '0 12px 30px rgba(0,0,0,0.3)' }}>
         <div className="flex items-start justify-between gap-3">
           <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-            {/* Skull icon */}
             <div
               style={{
-                width: 60,
-                height: 60,
+                width: 60, height: 60,
                 background: 'linear-gradient(135deg, #3d0000, #8b0000)',
                 borderRadius: 18,
                 border: '1px solid rgba(139,0,0,0.5)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
                 boxShadow: '0 4px 16px rgba(139,0,0,0.4)',
                 flexShrink: 0,
               }}
             >
               <Skull className="w-8 h-8" style={{ color: '#ef4444' }} />
             </div>
-            {/* Text content */}
             <div>
               <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#c9a84c' }}>Boss Raid</p>
               <h2 className="text-2xl font-extrabold mt-1" style={{ color: '#e8e0d0' }}>
-                {bossState.boss_name || 'Unknown Boss'}
+                {bossState.name || 'Unknown Boss'}
               </h2>
               <p className="text-sm font-medium" style={{ color: '#64748b' }}>
-                Level {bossState.boss_level || '?'} •{' '}
+                Level {bossState.level || '?'} •{' '}
                 <span className="font-extrabold" style={{ color: phase === 3 ? '#ef4444' : phase === 2 ? '#f59e0b' : '#c9a84c' }}>Phase {phase}</span>
               </p>
             </div>
@@ -302,7 +291,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           <div>
             <h3 className="font-extrabold" style={{ color: '#e8e0d0' }}>Boss HP</h3>
             <p className="text-xs" style={{ color: '#64748b' }}>
-              {(bossState.boss_hp || 0).toLocaleString()} / {(bossState.boss_max_hp || 0).toLocaleString()}
+              {(bossState.current_hp || 0).toLocaleString()} / {(bossState.max_hp || 0).toLocaleString()}
             </p>
           </div>
           <span className="text-2xl font-extrabold" style={{ color: phase === 3 ? '#ef4444' : phase === 2 ? '#f59e0b' : '#c9a84c' }}>
@@ -327,7 +316,6 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             }}
           />
         </div>
-        {/* Phase indicator */}
         <div className="flex gap-2 mt-3">
           {[1, 2, 3].map((p) => (
             <div
@@ -397,8 +385,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         ) : (
           <div className="space-y-3">
             {topDealers.slice(0, 3).map((dealer, i) => {
-              const maxDmg = topDealers[0]?.damage || 1;
-              const pct = Math.round((dealer.damage / maxDmg) * 100);
+              const maxDmg = topDealers[0]?.total_damage || 1;
+              const pct = Math.round((dealer.total_damage / maxDmg) * 100);
               const isMe = String(dealer.user_id) === String(user?.id);
               const medalColor = i === 0 ? '#c9a84c' : i === 1 ? '#94a3b8' : '#cd7f32';
               return (
@@ -417,7 +405,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
                       {isMe ? 'You' : dealer.first_name || dealer.username || 'Unknown'}
                     </span>
                     <span className="font-semibold" style={{ color: '#64748b' }}>
-                      {(dealer.damage || 0).toLocaleString()}
+                      {(dealer.total_damage || 0).toLocaleString()}
                     </span>
                   </div>
                   <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
@@ -441,11 +429,11 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-extrabold" style={{ color: '#e8e0d0' }}>Loot on boss kill</p>
-            <p className="text-xs font-medium" style={{ color: '#64748b' }}>Coins, XP, possible item drop.</p>
+            <p className="text-xs font-medium" style={{ color: '#64748b' }}>Coins × 2 per damage dealt + XP. Chance for item drop.</p>
           </div>
           <div className="flex items-center gap-1 font-extrabold" style={{ color: '#c9a84c' }}>
             <Coins className="w-4 h-4" />
-            {bossState.loot_coins_preview ? `${bossState.loot_coins_preview}+` : '—'}
+            {myDamage > 0 ? `${myDamage * 2}+` : '—'}
           </div>
         </div>
       </section>

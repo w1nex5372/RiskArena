@@ -1,33 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, ClipboardList, Clock3, Gift, RefreshCw, Swords, Trophy, Zap } from 'lucide-react';
+import { ChevronRight, ClipboardList, Clock3, Gift, RefreshCw, Skull, Swords, Trophy, Zap } from 'lucide-react';
 import apiClient from '../../api/client';
 
 const GAME_MODES = [
   {
     id: 'arena',
     label: 'ARENA',
-    sub: '1v1 Duels — High Stakes',
+    sub: '1v1 Duels — Earn XP & Climb Ranks',
     Icon: Swords,
     live: true,
     bg: 'linear-gradient(135deg, #1a0a0a 0%, #3d0000 100%)',
     glow: '0 4px 24px rgba(139,0,0,0.45)',
     iconColor: '#f87171',
     arrowBg: 'rgba(139,0,0,0.6)',
-    betRange: '200–450 coins',
+    betRange: null,
     badge: null,
   },
   {
     id: 'boss',
     label: 'BOSS RAID',
     sub: 'Team up. Deal damage. Loot.',
-    Icon: Zap,
+    Icon: Skull,
     live: false,
-    bg: 'linear-gradient(135deg, #0a0a2e 0%, #1a1a5e 100%)',
-    glow: '0 4px 20px rgba(74,144,217,0.35)',
-    iconColor: '#93c5fd',
-    arrowBg: 'rgba(74,144,217,0.3)',
+    bg: 'linear-gradient(135deg, #1a0a0a 0%, #3d0d0d 100%)',
+    glow: '0 4px 20px rgba(139,0,0,0.35)',
+    iconColor: '#f87171',
+    arrowBg: 'rgba(139,0,0,0.3)',
     betRange: null,
-    badge: 'SOON',
+    badge: null,
   },
   {
     id: 'tournament',
@@ -122,6 +122,7 @@ export default function HomeScreen({
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [chest, chest?.next_available_at, chest?.reset_at, fetchChest]);
+
 
   const chestCopy = useMemo(() => {
     if (chestLoading) {
@@ -465,9 +466,11 @@ export default function HomeScreen({
               </div>
 
               {/* CTA / Arrow */}
-              {id === 'arena' ? (
+              {(id === 'arena' || id === 'boss') ? (
                 <div style={{
-                  background: 'linear-gradient(135deg, #c0392b, #8b0000)',
+                  background: id === 'arena'
+                    ? 'linear-gradient(135deg, #c0392b, #8b0000)'
+                    : 'linear-gradient(135deg, #8b0000, #3d0000)',
                   color: 'white',
                   borderRadius: 999,
                   padding: '8px 16px',
@@ -478,7 +481,7 @@ export default function HomeScreen({
                   flexShrink: 0,
                   whiteSpace: 'nowrap',
                 }}>
-                  JOIN →
+                  {id === 'arena' ? 'JOIN →' : 'RAID →'}
                 </div>
               ) : (
                 <div style={{
@@ -495,45 +498,6 @@ export default function HomeScreen({
         </div>
       </div>
 
-      {/* ── SECTION C: Quick Stats ───────────────────────────── */}
-      <div style={{ margin: '24px 16px 0' }}>
-        <SectionLabel>Overview</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {[
-            { icon: '📅', label: 'DAILY QUESTS', value: 'View Quests', muted: false, onClick: () => setActiveTab?.('quests') },
-            { icon: '🎁', label: 'FREE CHEST', value: chestError ? 'Unavailable' : chest?.available ? 'Ready to open' : chest?.claimed_today ? chestCountdown : 'View Chest', muted: false, onClick: () => setActiveTab?.('dailyChest') },
-            {
-              icon: '🏆',
-              label: 'SEASON 1',
-              value: null,
-              custom: (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 6px rgba(34,197,94,0.7)', flexShrink: 0 }} />
-                  <span style={{ color: '#22c55e', fontWeight: 700, fontSize: 14 }}>Active</span>
-                </div>
-              ),
-            },
-            { icon: '📊', label: 'RANK', value: rank ? `#${rank}` : 'Unranked' },
-          ].map(({ icon, label, value, muted, custom, onClick }) => (
-            <div key={label} onClick={onClick} style={{
-              background: 'rgba(26,26,46,0.6)',
-              border: '1px solid rgba(201,168,76,0.1)',
-              borderRadius: 12, padding: '12px 14px',
-              cursor: onClick ? 'pointer' : 'default',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
-                <span style={{ fontSize: 16 }}>{icon}</span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', letterSpacing: '0.07em' }}>{label}</span>
-              </div>
-              {custom || (
-                <p style={{ color: muted ? '#475569' : 'white', fontWeight: muted ? 500 : 700, fontSize: 14, margin: 0, fontStyle: muted ? 'italic' : 'normal' }}>
-                  {value}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
 
     </div>
   );

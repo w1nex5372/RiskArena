@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "generated_character.v1",
+  "source": "Universal LPC Spritesheet Character Generator",
+  "className": "warrior",
+  "bodyType": "male",
+  "weaponEnchantLevel": 0,
+  "assets": [
+    {
+      "slot": "body",
+      "asset": "body.male",
+      "variant": null
+    },
+    {
+      "slot": "legs",
+      "asset": "legs.pants2",
+      "variant": "black"
+    },
+    {
+      "slot": "feet",
+      "asset": "feet.boots.rimmed",
+      "variant": "black"
+    },
+    {
+      "slot": "head",
+      "asset": "head.human.male",
+      "variant": null
+    },
+    {
+      "slot": "torso",
+      "asset": "torso.armour.plate",
+      "variant": null
+    },
+    {
+      "slot": "face",
+      "asset": "face.male.neutral",
+      "variant": null
+    },
+    {
+      "slot": "eyes",
+      "asset": "eyes.human.neutral",
+      "variant": "blue"
+    },
+    {
+      "slot": "hair",
+      "asset": "hair.bedhead",
+      "variant": "red"
+    }
+  ]
+}

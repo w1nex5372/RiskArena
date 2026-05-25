@@ -63,7 +63,21 @@
       "Bash(python3 -c \"import json,sys; items=json.load\\(sys.stdin\\); [print\\(i.get\\('name'\\), '|', i.get\\('image_path'\\), '|', i.get\\('slot'\\)\\) for i in \\(items.get\\('items'\\) or items\\)[:5]]\")",
       "Bash(python3 -m json.tool)",
       "PowerShell(netstat *)",
-      "PowerShell(Get-Process *)"
+      "PowerShell(Get-Process *)",
+      "Bash(git checkout *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python *)",
+      "Bash(C:\\\\Users\\\\Puras\\\\OneDrive\\\\Desktop\\\\RiskArena\\\\backend\\\\.venv\\\\Scripts\\\\pip install *)",
+      "Bash(C:UsersPurasOneDriveDesktopRiskArenabackend.venvScriptspython -c ' *)",
+      "Bash(grep -v \"console\\\\|setWinner\\\\|//\\\\|&&.*&&\\\\|&&$\")",
+      "PowerShell(py *)",
+      "Bash(grep -v \"console\\\\.\\\\|//\")",
+      "Bash(where.exe cloudflared *)",
+      "Read(//c/Program Files/**)",
+      "PowerShell([System.Environment]::SetEnvironmentVariable\\(\"PATH\", $env:PATH + \";C:\\\\Program Files \\(x86\\)\\\\cloudflared\", \"User\"\\))",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Puras\\\\OneDrive\\\\Desktop\\\\RiskArena\" -Recurse -Depth 2)",
+      "Bash(Select-Object -Property FullName)",
+      "PowerShell(python -c \"import json; json.load\\(open\\('C:/Users/Puras/OneDrive/Desktop/RiskArena/tools/lpc_character_catalog.json', encoding='utf-8'\\)\\); print\\('OK'\\)\")"
     ]
   }
 }
