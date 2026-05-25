@@ -596,13 +596,21 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
       ability: equipped.ability || null,
     });
     setLoadoutEffectiveStats(data?.loadout_effective_stats || {});
-    if (data?.battle_spritesheet_path || data?.battle_spritesheet_hash) {
+    const nextBattleSheetPath = data?.battle_spritesheet_path || '';
+    const nextBattleSheetHash = data?.battle_spritesheet_hash || '';
+    if (
+      (nextBattleSheetPath || nextBattleSheetHash) &&
+      (
+        nextBattleSheetPath !== (user?.battle_spritesheet_path || '') ||
+        nextBattleSheetHash !== (user?.battle_spritesheet_hash || '')
+      )
+    ) {
       onUserUpdate?.({
-        battle_spritesheet_path: data?.battle_spritesheet_path || '',
-        battle_spritesheet_hash: data?.battle_spritesheet_hash || '',
+        battle_spritesheet_path: nextBattleSheetPath,
+        battle_spritesheet_hash: nextBattleSheetHash,
       });
     }
-  }, [onUserUpdate]);
+  }, [onUserUpdate, user?.battle_spritesheet_hash, user?.battle_spritesheet_path]);
 
   const refreshItems = useCallback(async ({ showLoading = false } = {}) => {
     if (showLoading) {
