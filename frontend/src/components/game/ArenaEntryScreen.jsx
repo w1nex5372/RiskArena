@@ -61,6 +61,7 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
   const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
   const [loadoutEffectiveStats, setLoadoutEffectiveStats] = useState({});
   const [timeToNext, setTimeToNext] = useState('');
+  const [localSheetPath, setLocalSheetPath] = useState(null);
 
   const [selectedClass, setSelectedClass] = useState(
     () => (user?.class_name || 'warrior').toLowerCase()
@@ -104,6 +105,9 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
           if (!cancelled) {
             setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
             setLoadoutEffectiveStats(res.data?.loadout_effective_stats || {});
+            if (res.data?.battle_spritesheet_path) {
+              setLocalSheetPath(res.data.battle_spritesheet_path);
+            }
           }
         })
         .catch(() => {
@@ -280,7 +284,7 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
               cls={selectedClass}
               size={150}
               weapon={equipped?.weapon || null}
-              sheetPath={user?.battle_spritesheet_path || user?.character_spritesheet_path || null}
+              sheetPath={localSheetPath || user?.battle_spritesheet_path || user?.character_spritesheet_path || null}
             />
           </div>
         </div>
