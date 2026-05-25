@@ -1,95 +1,59 @@
-// Service Worker v9.1 - NO CACHING - ALWAYS FRESH
-console.log('SW v9.1: NO CACHE MODE - Always fetch fresh');
+// RiskArena service worker - no caching, always fresh.
+const SW_VERSION = 'v10.0-RISKARENA-20260525';
 
-const SW_VERSION = 'v9.1-NO-CACHE-20250116-1205';
-
-// Unregister this service worker on install
 self.addEventListener('install', (event) => {
-  console.log('🔧 SW v9.1: Unregistering service worker - no caching needed');
-  event.waitUntil(
-    self.registration.unregister().then(() => {
-      console.log('✅ SW: Unregistered successfully');
-    })
-  );
+  event.waitUntil(self.registration.unregister());
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('✅ SW v9.1: Cleaning up and unregistering');
-  
   event.waitUntil(
     Promise.all([
-      // Delete ALL caches
-      caches.keys().then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            console.log('🗑️ Deleting cache:', cacheName);
-            return caches.delete(cacheName);
-          })
-        );
-      }),
-      // Take control briefly before unregistering
+      caches.keys().then((cacheNames) => Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)))),
       self.clients.claim(),
-      // Unregister self
-      self.registration.unregister()
-    ]).then(() => {
-      console.log('🎉 SW: All caches deleted and service worker unregistered');
-    })
+      self.registration.unregister(),
+    ])
   );
 });
 
-// NO FETCH HANDLING - Just let browser handle everything
-self.addEventListener('fetch', (event) => {
-  // Do nothing - let browser fetch directly
+self.addEventListener('fetch', () => {
   return;
 });
 
-// Message handler for manual cache refresh
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-  
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
-    console.log('SW: Manual cache clear requested');
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+
+  if (event.data?.type === 'CLEAR_CACHE') {
     caches.keys().then((cacheNames) => {
-      cacheNames.forEach((cacheName) => {
-        if (cacheName.includes('casino-battle')) {
-          caches.delete(cacheName);
-          console.log('SW: Deleted cache:', cacheName);
-        }
-      });
+      cacheNames.forEach((cacheName) => caches.delete(cacheName));
     });
   }
 });
 
-// Push notification handler
 self.addEventListener('push', (event) => {
   const options = {
-    body: event.data ? event.data.text() : 'New game starting!',
+    body: event.data ? event.data.text() : 'New arena event starting!',
     icon: '/icon-192x192.png',
     badge: '/icon-72x72.png',
     vibrate: [200, 100, 200],
     data: {
       dateOfArrival: Date.now(),
-      primaryKey: 1
+      primaryKey: 1,
     },
     actions: [
       {
         action: 'explore',
         title: 'Join Now',
-        icon: '/icon-192x192.png'
+        icon: '/icon-192x192.png',
       },
       {
         action: 'close',
         title: 'Close',
-        icon: '/icon-192x192.png'
-      }
-    ]
+        icon: '/icon-192x192.png',
+      },
+    ],
   };
 
-  event.waitUntil(
-    self.registration.showNotification('Casino Battle Royale', options)
-  );
+  event.waitUntil(self.registration.showNotification('RiskArena', options));
 });
 
-console.log('🚀 SW v9.1: Service Worker loaded - Will unregister to disable caching');
+console.log('RiskArena service worker loaded:', SW_VERSION);

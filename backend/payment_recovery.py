@@ -18,7 +18,7 @@ class PaymentRecoverySystem:
     
     def __init__(self, db=None, processor=None):
         self.processor = processor
-        logs_root = os.environ.get("CASINO_LOG_DIR")
+        logs_root = os.environ.get("RISKARENA_LOG_DIR")
         if logs_root:
             self.logs_dir = Path(logs_root)
         else:

@@ -73,10 +73,10 @@ from itemization import (
 
 # Get environment variables
 PG_HOST = os.environ.get('PG_HOST', 'localhost')
-PG_DB   = os.environ.get('PG_DB', 'casino_db')
+PG_DB   = os.environ.get('PG_DB', 'riskarena_db')
 CORS_ORIGINS = [
-    "https://erniocasino.vercel.app",
-    "https://www.erniocasino.vercel.app",
+    "https://riskarena.vercel.app",
+    "https://www.riskarena.vercel.app",
     "http://localhost:3000",
     # Telegram WebApp origins â€” required for Mini App preflight requests
     "https://web.telegram.org",
@@ -91,8 +91,8 @@ RATE_LIMIT_ADMIN_MAX = int(os.environ.get('RATE_LIMIT_ADMIN_MAX', '60'))
 
 # Solana Configuration for devnet (test environment as requested)
 SOLANA_RPC_URL = os.environ.get('SOLANA_RPC_URL', 'https://api.devnet.solana.com')
-CASINO_WALLET_PRIVATE_KEY = os.environ.get('CASINO_WALLET_PRIVATE_KEY', '')
-CASINO_WALLET_ADDRESS = os.environ.get('CASINO_WALLET_ADDRESS', 'YourWalletAddressHere12345678901234567890123456789')
+RISKARENA_WALLET_PRIVATE_KEY = os.environ.get('RISKARENA_WALLET_PRIVATE_KEY', '')
+RISKARENA_WALLET_ADDRESS = os.environ.get('RISKARENA_WALLET_ADDRESS', 'YourWalletAddressHere12345678901234567890123456789')
 ADMIN_KEY = os.environ.get('ADMIN_KEY', '')
 
 def verify_admin_key(admin_key: str) -> bool:
@@ -153,7 +153,7 @@ class SolanaWalletDerivation:
         """Derive a unique address for a user from master wallet"""
         try:
             # Create deterministic seed from user identifiers
-            seed_string = f"casino_user_{user_id}_{telegram_id}"
+            seed_string = f"riskarena_user_{user_id}_{telegram_id}"
             
             # Generate a random keypair and create a deterministic address string
             # This is simpler and more reliable than trying to create valid Solana keypairs
@@ -220,12 +220,12 @@ class SolanaWalletDerivation:
             return False
 
 # Initialize wallet derivation system
-wallet_derivation = SolanaWalletDerivation(CASINO_WALLET_PRIVATE_KEY)
+wallet_derivation = SolanaWalletDerivation(RISKARENA_WALLET_PRIVATE_KEY)
 
 # PostgreSQL pool is initialized in the startup event (see lifespan below)
 
 # FastAPI app
-app = FastAPI(title="Solana Casino Battle Royale")
+app = FastAPI(title="RiskArena API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -461,6 +461,9 @@ ALLOWED_CHARACTER_BUILD_ASSETS = {
     "feet.sandals",
     "torso.armour.plate",
     "torso.armour.leather",
+    "torso.armour.legion",
+    "torso.armour.chainmail",
+    "torso.armour.bandage",
     "torso.clothes.vest_open",
     "torso.waist.belt_robe",
     "hair.bedhead",
@@ -1274,7 +1277,7 @@ class PaymentMonitor:
             message += f"Hello {username}!\n\n"
             message += f"âœ… Received: <b>{sol_amount} SOL</b>\n"
             message += f"ðŸ’¶ EUR Value: <b>â‚¬{eur_value:.2f}</b> (1 SOL = â‚¬{sol_eur_price:.4f})\n"
-            message += f"ðŸŽ° Credited: <b>{tokens_credited:,} Casino Tokens</b>\n\n"
+            message += f"ðŸŽ° Credited: <b>{tokens_credited:,} RiskArena Tokens</b>\n\n"
             message += f"ðŸ’¡ <i>Rate: 1 EUR = 100 tokens</i>\n\n"
             message += "Your tokens are ready for battle! Good luck! ðŸŽ¯"
             
@@ -1318,7 +1321,7 @@ async def connect(sid, environ, auth=None):
         logging.info(f"Authenticated socket {sid[:8]} as user {authenticated_user_id}")
     
     await sio.emit('connected', {
-        'status': 'Connected to casino!',
+        'status': 'Connected to RiskArena!',
         'socket_id': sid,
         'platform': platform,
         'authenticated': bool(authenticated_user_id),
@@ -2042,20 +2045,7 @@ async def initialize_rooms():
 # API Routes
 @api_router.get("/")
 async def root():
-    return {"message": "Solana Casino Battle Royale API"}
-
-@api_router.get("/casino-wallet")
-async def get_casino_wallet():
-    """Get casino wallet address for payments - DEPRECATED, use /user/{user_id}/wallet"""
-    return {
-        "wallet_address": "DEPRECATED - Use personal wallet endpoint",
-        "network": "devnet",
-        "conversion_rate": {
-            "sol_to_tokens": 1000,
-            "description": "1 SOL = 1,000 Casino Tokens"
-        },
-        "message": "This endpoint is deprecated. Each user now gets a personal wallet address."
-    }
+    return {"message": "RiskArena API"}
 
 @api_router.get("/user/{user_id}/derived-wallet")
 async def get_user_derived_wallet(user_id: str, http_request: Request):
@@ -2118,23 +2108,23 @@ async def get_sol_eur_price():
         logging.error(f"Error getting SOL price: {e}")
         raise HTTPException(status_code=500, detail="Failed to get price")
 
-@api_router.get("/casino-wallet")
-async def get_casino_wallet():
-    """Get casino wallet address and current pricing"""
+@api_router.get("/riskarena-wallet")
+async def get_riskarena_wallet():
+    """Get RiskArena wallet address and current pricing"""
     try:
         sol_price = await price_oracle.get_sol_eur_price()
         return {
-            "wallet_address": CASINO_WALLET_ADDRESS,
+            "wallet_address": RISKARENA_WALLET_ADDRESS,
             "network": "devnet",
             "current_sol_eur_price": sol_price,
             "conversion_rate": {
                 "eur_to_tokens": 100,
-                "description": "1 EUR = 100 Casino Tokens (real-time SOL pricing)"
+                "description": "1 EUR = 100 RiskArena tokens (real-time SOL pricing)"
             },
             "instructions": "Users get personal derived addresses for payments"
         }
     except Exception as e:
-        logging.error(f"Error getting casino wallet info: {e}")
+        logging.error(f"Error getting RiskArena wallet info: {e}")
         raise HTTPException(status_code=500, detail="Failed to get wallet info")
 
 @api_router.post("/admin/add-tokens")
@@ -3749,6 +3739,17 @@ def _character_build_for_equipped_visuals(
 ) -> Dict[str, Any]:
     build = copy.deepcopy(character_build or _default_character_build(class_name))
     build["className"] = class_name
+
+    # Apply equipped armor: replace existing torso layer with equipped armor asset
+    armor_visual = _coerce_json_dict((equipped.get("armor") or {}).get("lpc_visual"))
+    armor_asset = str(armor_visual.get("asset") or "").strip()
+    if armor_asset and armor_asset in ALLOWED_CHARACTER_BUILD_ASSETS:
+        build["layers"] = [
+            layer for layer in build.get("layers", [])
+            if layer.get("slot") != "torso"
+        ]
+        build["layers"].append({"slot": "torso", "asset": armor_asset, "variant": None})
+
     weapon = build.get("weapon") if isinstance(build.get("weapon"), dict) else {}
     weapon_visual = _coerce_json_dict((equipped.get("weapon") or {}).get("lpc_visual"))
     weapon_asset = str(weapon_visual.get("asset") or "").strip()
@@ -5276,9 +5277,9 @@ async def startup_event():
     except Exception as e:
         logging.error(f"âŒ [Startup] Failed to clear game history: {e}")
 
-    logging.info("ðŸŽ° Casino Battle Royale API started!")
+    logging.info("RiskArena API started")
     logging.info(f"ðŸ  Active rooms: {len(active_rooms)}")
-    logging.info(f"ðŸ’³ Solana monitoring: {'Enabled' if CASINO_WALLET_ADDRESS != 'YourWalletAddressHere12345678901234567890123456789' else 'Disabled (set CASINO_WALLET_ADDRESS)'}")
+    logging.info(f"Solana monitoring: {'Enabled' if RISKARENA_WALLET_ADDRESS != 'YourWalletAddressHere12345678901234567890123456789' else 'Disabled (set RISKARENA_WALLET_ADDRESS)'}")
     logging.info("ðŸ” Redundant payment scanner: Enabled (15s interval - FAST detection)")
     logging.info("ðŸ§¹ Wallet cleanup scheduler: Enabled (72h grace period)")
 
@@ -5426,7 +5427,7 @@ async def shutdown_event():
     """Cleanup on application shutdown"""
     payment_monitor.monitoring = False
     await close_pool()
-    logging.info("ðŸ›‘ Casino Battle Royale API shutting down")
+    logging.info("RiskArena API shutting down")
 
 # Export the socket app for uvicorn
 

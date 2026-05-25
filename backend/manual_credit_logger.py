@@ -16,7 +16,7 @@ class ManualCreditLogger:
     """Logs all manual token credits for audit trail"""
 
     def __init__(self, db=None):
-        logs_root = os.environ.get("CASINO_LOG_DIR")
+        logs_root = os.environ.get("RISKARENA_LOG_DIR")
         if logs_root:
             self.logs_dir = Path(logs_root)
         else:

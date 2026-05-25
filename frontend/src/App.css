@@ -1,7 +1,7 @@
-/* Global styles for SpinWar */
+/* Global styles for RiskArena */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600;700&display=swap');
 
-/* SpinWar CSS Variables */
+/* RiskArena CSS Variables */
 :root {
   --sw-red: #dc2626;
   --sw-red-dark: #991b1b;
@@ -236,8 +236,8 @@ h1, h2, h3, .heading {
   animation: gradientShift 8s ease infinite;
 }
 
-/* SpinWar Card */
-.spinwar-card {
+/* RiskArena Card */
+.riskarena-card {
   background: #0d0d1a;
   background-image: linear-gradient(135deg, #0d0d1a 0%, #120818 100%);
   border: 1px solid transparent;
@@ -249,8 +249,8 @@ h1, h2, h3, .heading {
     inset 0 1px 0 rgba(168, 85, 247, 0.08);
 }
 
-/* SpinWar Primary Button */
-.spinwar-btn-primary {
+/* RiskArena Primary Button */
+.riskarena-btn-primary {
   background: linear-gradient(135deg, #dc2626 0%, #7c3aed 100%);
   color: #fff;
   font-family: 'Exo 2', sans-serif;
@@ -261,14 +261,14 @@ h1, h2, h3, .heading {
   transition: all 0.2s ease;
   letter-spacing: 0.03em;
 }
-.spinwar-btn-primary:hover {
+.riskarena-btn-primary:hover {
   background: linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%);
   box-shadow: 0 0 22px rgba(220, 38, 38, 0.65), 0 4px 14px rgba(0,0,0,0.5);
   transform: translateY(-1px);
 }
 
-/* SpinWar Secondary Button */
-.spinwar-btn-secondary {
+/* RiskArena Secondary Button */
+.riskarena-btn-secondary {
   background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
   color: #fff;
   font-family: 'Exo 2', sans-serif;
@@ -278,29 +278,29 @@ h1, h2, h3, .heading {
   box-shadow: 0 0 12px rgba(124, 58, 237, 0.35), 0 2px 8px rgba(0,0,0,0.4);
   transition: all 0.2s ease;
 }
-.spinwar-btn-secondary:hover {
+.riskarena-btn-secondary:hover {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
   box-shadow: 0 0 28px rgba(124, 58, 237, 0.6), 0 4px 16px rgba(0,0,0,0.5);
   transform: translateY(-1px);
 }
 
-/* SpinWar Header */
-.spinwar-header {
+/* RiskArena Header */
+.riskarena-header {
   background: rgba(8, 8, 15, 0.95);
   backdrop-filter: blur(12px);
   border-bottom: 2px solid transparent;
   border-image: linear-gradient(90deg, #dc2626 0%, #a855f7 50%, #7c3aed 100%) 1;
 }
 
-/* SpinWar Nav Active */
-.spinwar-nav-active {
+/* RiskArena Nav Active */
+.riskarena-nav-active {
   color: #dc2626;
   background: rgba(220, 38, 38, 0.15);
   box-shadow: 0 0 12px rgba(220, 38, 38, 0.3);
 }
 
-/* SpinWar Title */
-.spinwar-title {
+/* RiskArena Title */
+.riskarena-title {
   font-family: 'Orbitron', monospace;
   font-weight: 900;
   background: linear-gradient(135deg, #dc2626 0%, #a855f7 100%);
@@ -311,8 +311,8 @@ h1, h2, h3, .heading {
   filter: drop-shadow(0 0 8px rgba(220, 38, 38, 0.6));
 }
 
-/* SpinWar Room Card */
-.spinwar-room-card {
+/* RiskArena Room Card */
+.riskarena-room-card {
   background: #0d0d1a;
   border: 1px solid rgba(220, 38, 38, 0.2);
   border-left: 3px solid #dc2626;
@@ -320,7 +320,7 @@ h1, h2, h3, .heading {
   box-shadow: 0 0 12px rgba(124, 58, 237, 0.1);
   transition: all 0.25s ease;
 }
-.spinwar-room-card:hover {
+.riskarena-room-card:hover {
   border-color: rgba(220, 38, 38, 0.5);
   box-shadow: 0 0 20px rgba(220, 38, 38, 0.25), 0 0 40px rgba(124, 58, 237, 0.15);
   transform: translateY(-2px);

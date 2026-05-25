@@ -40,7 +40,7 @@ Backend (`.env` in `backend/`):
 - `SESSION_SECRET` — **required** for signing session tokens
 - `ADMIN_KEY` — **required** for admin endpoints (sent as `x-admin-key` header)
 - `TELEGRAM_BOT_TOKEN` — for Mini App auth and bot messaging
-- `SOLANA_RPC_URL`, `CASINO_WALLET_PRIVATE_KEY`, `CASINO_WALLET_ADDRESS`
+- `SOLANA_RPC_URL`, `RISKARENA_WALLET_PRIVATE_KEY`, `RISKARENA_WALLET_ADDRESS`
 - `ALLOW_INSECURE_DEV_AUTH=true` — allows skipping Telegram hash verification in local dev
 
 Frontend (`.env` in `frontend/`):
@@ -79,7 +79,7 @@ payment_recovery.py — Startup sweep recovery for missed SOL payments
 
 Session tokens are custom HMAC-SHA256 signed (not JWT). The token is stored two ways:
 - As an `arena_session` HTTP cookie (set by the auth endpoint)
-- In `localStorage` as `casino_user.session_token` (read by the axios interceptor)
+- In `localStorage` as `riskarena_user.session_token` (read by the axios interceptor)
 
 Auth flow: Telegram Mini App sends `initData` → backend verifies HMAC using `TELEGRAM_BOT_TOKEN` → issues session token. `get_authenticated_user_id(request)` in `auth.py` checks Bearer header first, then cookie.
 
@@ -115,7 +115,7 @@ Each match has rounds. Players submit one of: `attack`, `defend`, `ability`, `ri
 
 ### Solana Payments
 
-Each user gets a deterministic derived Solana address (SHA256 of `casino_user_{id}_{telegram_id}`). The `SolanaPaymentProcessor` monitors these addresses for incoming SOL, converts to tokens at `SOL_TO_TOKEN_RATE`, and sweeps funds to the main casino wallet.
+Each user gets a deterministic derived Solana address (SHA256 of `riskarena_user_{id}_{telegram_id}`). The `SolanaPaymentProcessor` monitors these addresses for incoming SOL, converts to tokens at `SOL_TO_TOKEN_RATE`, and sweeps funds to the main RiskArena wallet.
 
 ### Testing
 

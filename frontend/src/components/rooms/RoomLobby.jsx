@@ -4,16 +4,9 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { ROOM_CONFIGS } from '../../utils/constants';
+import { getStoredSessionToken } from '../../utils/storage';
 import apiClient from '../../api/client';
 import ArenaBattleLobby from '../game/ArenaBattleLobby';
-
-function getStoredSessionToken() {
-  try {
-    return JSON.parse(localStorage.getItem('casino_user') || '{}')?.session_token || '';
-  } catch {
-    return '';
-  }
-}
 
 // ── Main lobby dispatcher ───────────────────────────────────────────────────
 export default function RoomLobby({

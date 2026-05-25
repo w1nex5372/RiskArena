@@ -1,8 +1,17 @@
+import {
+  LAST_EUR_AMOUNT_KEY,
+  LAST_SOL_EUR_PRICE_KEY,
+  LEGACY_LAST_EUR_AMOUNT_KEY,
+  LEGACY_LAST_SOL_EUR_PRICE_KEY,
+  LEGACY_USER_SESSION_KEY,
+  LEGACY_SOCKET_SESSION_KEY,
+  USER_SESSION_KEY,
+} from './storage';
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || window.location.origin;
 const API = `${BACKEND_URL}/api`;
 
-// App version for cache busting - WITH SERVICE WORKER v9.1
-const APP_VERSION = '9.1-WORK-FOR-CASINO-20250116120000';
+const APP_VERSION = '10.0-RISKARENA-20260525';
 
 // SIMPLIFIED VERSION CHECK - NO AUTO RELOAD
 // Just update the version in storage, let service worker handle caching
@@ -12,7 +21,16 @@ if (storedVersion !== APP_VERSION) {
   localStorage.setItem('app_version', APP_VERSION);
   
   // Clear other cached data (but keep important user data)
-  const keysToKeep = ['casino_last_eur_amount', 'casino_last_sol_eur_price', 'app_version', 'casino_user'];
+  const keysToKeep = [
+    LAST_EUR_AMOUNT_KEY,
+    LAST_SOL_EUR_PRICE_KEY,
+    LEGACY_LAST_EUR_AMOUNT_KEY,
+    LEGACY_LAST_SOL_EUR_PRICE_KEY,
+    'app_version',
+    USER_SESSION_KEY,
+    LEGACY_USER_SESSION_KEY,
+    LEGACY_SOCKET_SESSION_KEY,
+  ];
   const allKeys = Object.keys(localStorage);
   
   allKeys.forEach(key => {

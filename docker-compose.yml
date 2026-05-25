@@ -4,7 +4,7 @@ services:
     container_name: riskarena-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: casino_db
+      POSTGRES_DB: ${PG_DB:-riskarena_db}
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
@@ -12,7 +12,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d casino_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${PG_DB:-riskarena_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,7 +29,7 @@ services:
     environment:
       PG_HOST: postgres
       PG_PORT: "5432"
-      PG_DB: casino_db
+      PG_DB: ${PG_DB:-riskarena_db}
       PG_USER: postgres
       PG_PASSWORD: postgres
       ADMIN_KEY: ${ADMIN_KEY:?ADMIN_KEY is required}
@@ -38,8 +38,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-YOUR_TELEGRAM_BOT_TOKEN_HERE}
       SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
-      CASINO_WALLET_PRIVATE_KEY: ${CASINO_WALLET_PRIVATE_KEY:-}
-      CASINO_WALLET_ADDRESS: ${CASINO_WALLET_ADDRESS:-YourWalletAddressHere12345678901234567890123456789}
+      RISKARENA_WALLET_PRIVATE_KEY: ${RISKARENA_WALLET_PRIVATE_KEY:-}
+      RISKARENA_WALLET_ADDRESS: ${RISKARENA_WALLET_ADDRESS:-YourWalletAddressHere12345678901234567890123456789}
       INTERNAL_SECRET: ${INTERNAL_SECRET:?INTERNAL_SECRET is required}
       PORT: "8001"
     ports:

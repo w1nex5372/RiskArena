@@ -1,22 +1,22 @@
 {
-  "short_name": "SpinWar",
-  "name": "SpinWar",
-  "description": "Spin the wheel, win the pool. 3 players battle for the prize!",
+  "short_name": "RiskArena",
+  "name": "RiskArena",
+  "description": "Real-time arena battles, character progression, and token-powered rewards.",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23fbbf24'/%3E%3Cpath d='M30 35h40l-5 30H35l-5-30z' fill='%230f172a'/%3E%3Ccircle cx='50' cy='50' r='8' fill='%23fbbf24'/%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23fbbf24'/%3E%3Cpath d='M50 18 72 30v18c0 18-9 29-22 36-13-7-22-18-22-36V30l22-12z' fill='%230f172a'/%3E%3Cpath d='M36 52h28v8H36z' fill='%23fbbf24'/%3E%3C/svg%3E",
       "sizes": "192x192",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     },
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23fbbf24'/%3E%3Cpath d='M30 35h40l-5 30H35l-5-30z' fill='%230f172a'/%3E%3Ccircle cx='50' cy='50' r='8' fill='%23fbbf24'/%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23fbbf24'/%3E%3Cpath d='M50 18 72 30v18c0 18-9 29-22 36-13-7-22-18-22-36V30l22-12z' fill='%230f172a'/%3E%3Cpath d='M36 52h28v8H36z' fill='%23fbbf24'/%3E%3C/svg%3E",
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
   ],
-  "start_url": "/?source=pwa&v=20250114182000",
+  "start_url": "/?source=pwa&v=20260525",
   "display": "standalone",
   "theme_color": "#fbbf24",
   "background_color": "#0f172a",
@@ -26,28 +26,16 @@
   "lang": "en-US",
   "shortcuts": [
     {
-      "name": "Spin Rooms",
-      "short_name": "Rooms",
-      "description": "Join spin rooms",
-      "url": "/?tab=rooms",
-      "icons": [
-        {
-          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%23fbbf24' viewBox='0 0 24 24'%3E%3Cpath d='M16 4c0-1.11.89-2 2-2s2 .89 2 2-.89 2-2 2-2-.89-2-2zm4 18v-6h2.5l-2.54-7.63A2.987 2.987 0 0 0 17.5 7c-.8 0-1.54.37-2.01 1.01L13 12l-2.5-4c-.47-.64-1.21-1.01-2.01-1.01-.83 0-1.58.34-2.13.89C5.87 8.34 5.53 9.09 5.53 9.92c0 .41.08.8.22 1.17L8.5 18H11v2H6v-2h1.5l-2.75-6.83A4.937 4.937 0 0 1 4.5 9.92c0-1.36.55-2.59 1.44-3.48S8.56 5 9.92 5c1.11 0 2.17.45 2.93 1.24L14 8l1.15-1.76C15.91 5.45 16.97 5 18.08 5c1.36 0 2.59.55 3.48 1.44S23 8.56 23 9.92c0 .41-.08.8-.22 1.17L20.5 18H22v2h-5v-2z'/%3E%3C/svg%3E",
-          "sizes": "96x96"
-        }
-      ]
+      "name": "Arena Rooms",
+      "short_name": "Arena",
+      "description": "Join arena rooms",
+      "url": "/?tab=rooms"
     },
     {
       "name": "Buy Tokens",
       "short_name": "Tokens",
-      "description": "Purchase SpinWar tokens",
-      "url": "/?tab=tokens",
-      "icons": [
-        {
-          "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%2310b981' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath fill='white' d='M12 6v6l4 2'/%3E%3C/svg%3E",
-          "sizes": "96x96"
-        }
-      ]
+      "description": "Purchase RiskArena tokens",
+      "url": "/?tab=tokens"
     }
   ]
 }

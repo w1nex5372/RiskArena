@@ -21,14 +21,14 @@ async def create_pool() -> asyncpg.Pool:
         _pool = await asyncpg.create_pool(
             host=os.environ.get('PG_HOST', 'localhost'),
             port=int(os.environ.get('PG_PORT', '5432')),
-            database=os.environ.get('PG_DB', 'casino_db'),
+            database=os.environ.get('PG_DB', 'riskarena_db'),
             user=os.environ.get('PG_USER', 'postgres'),
             password=os.environ.get('PG_PASSWORD', 'postgres'),
             min_size=5,
             max_size=20,
             command_timeout=30,
         )
-        logging.info(f"🐘 PostgreSQL: Connected to '{os.environ.get('PG_DB', 'casino_db')}'")
+        logging.info(f"🐘 PostgreSQL: Connected to '{os.environ.get('PG_DB', 'riskarena_db')}'")
     return _pool
 
 

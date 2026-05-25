@@ -2,6 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Copy, Check, Loader2, QrCode } from 'lucide-react';
 import { toast } from 'sonner';
 import apiClient from '../api/client';
+import {
+  getStoredNumber,
+  LAST_EUR_AMOUNT_KEY,
+  LAST_SOL_EUR_PRICE_KEY,
+  LEGACY_LAST_EUR_AMOUNT_KEY,
+  LEGACY_LAST_SOL_EUR_PRICE_KEY,
+  setStoredValue,
+} from '../utils/storage';
 
 export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: initialTokenAmount, initialEurAmount, onConfirm }) {
   // step: 'configure' = user sets amount | 'invoice' = wallet created, waiting for payment
@@ -9,7 +17,7 @@ export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: ini
 
   const getInitialEur = () => {
     if (initialEurAmount) return initialEurAmount;
-    const saved = localStorage.getItem('casino_last_eur_amount');
+    const saved = localStorage.getItem(LAST_EUR_AMOUNT_KEY) || localStorage.getItem(LEGACY_LAST_EUR_AMOUNT_KEY);
     if (saved) return parseFloat(saved);
     return (initialTokenAmount || 1000) / 100;
   };
@@ -63,10 +71,10 @@ export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: ini
         const res = await apiClient.get('/sol-eur-price');
         if (!cancelled && res.data?.sol_eur_price) {
           setSolPrice(res.data.sol_eur_price);
-          localStorage.setItem('casino_last_sol_eur_price', res.data.sol_eur_price.toString());
+          setStoredValue(LAST_SOL_EUR_PRICE_KEY, res.data.sol_eur_price.toString(), LEGACY_LAST_SOL_EUR_PRICE_KEY);
         }
       } catch {
-        const fallback = parseFloat(localStorage.getItem('casino_last_sol_eur_price')) || 120;
+        const fallback = getStoredNumber(LAST_SOL_EUR_PRICE_KEY, LEGACY_LAST_SOL_EUR_PRICE_KEY, 120);
         if (!cancelled) setSolPrice(fallback);
       } finally {
         if (!cancelled) setPriceLoading(false);
@@ -162,7 +170,7 @@ export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: ini
     if (n < 0.1)  { setValidationError('Minimum 0.1 EUR'); return; }
     setValidationError('');
     setEurAmount(n);
-    localStorage.setItem('casino_last_eur_amount', n.toString());
+    setStoredValue(LAST_EUR_AMOUNT_KEY, n.toString(), LEGACY_LAST_EUR_AMOUNT_KEY);
   };
 
   const handleEurBlur = () => {
@@ -170,11 +178,11 @@ export default function PaymentModal({ isOpen, onClose, userId, tokenAmount: ini
     if (isNaN(n) || n < 0.1) {
       setEurAmount(0.1); setEurInput('0.10');
       setValidationError('');
-      localStorage.setItem('casino_last_eur_amount', '0.1');
+      setStoredValue(LAST_EUR_AMOUNT_KEY, '0.1', LEGACY_LAST_EUR_AMOUNT_KEY);
     } else {
       setEurInput(n.toFixed(2));
       setEurAmount(n);
-      localStorage.setItem('casino_last_eur_amount', n.toString());
+      setStoredValue(LAST_EUR_AMOUNT_KEY, n.toString(), LEGACY_LAST_EUR_AMOUNT_KEY);
     }
   };
 

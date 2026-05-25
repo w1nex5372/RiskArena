@@ -5,6 +5,7 @@ import BattleScene from './scenes/BattleScene';
 import { CLASS_INFO, CLASS_MODIFIERS } from '../../utils/characters';
 import CharacterPortrait from './CharacterPortrait';
 import apiClient from '../../api/client';
+import { getStoredSessionToken } from '../../utils/storage';
 import WeaponIcon from '../WeaponIcon';
 
 // Base arena stats (mirrors ArenaRoom.ts constants)
@@ -347,10 +348,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
     async function connect() {
       try {
-        const sessionToken = (() => {
-          try { return JSON.parse(localStorage.getItem('casino_user') || '{}')?.session_token || ''; }
-          catch { return ''; }
-        })();
+        const sessionToken = getStoredSessionToken();
 
         const client = new Colyseus.Client(GAME_SERVER_URL);
         const room = await client.joinOrCreate('arena_room', {

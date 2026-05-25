@@ -15,7 +15,7 @@ class RPCAlertSystem:
     """Monitors RPC health and logs critical failures"""
     
     def __init__(self):
-        logs_root = os.environ.get("CASINO_LOG_DIR")
+        logs_root = os.environ.get("RISKARENA_LOG_DIR")
         if logs_root:
             self.logs_dir = Path(logs_root)
         else:

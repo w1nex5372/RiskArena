@@ -34,7 +34,7 @@ SOLANA_RPC_FALLBACKS = [
     os.environ.get('SOLANA_RPC_FALLBACK_2', 'https://solana-api.projectserum.com'),
 ]
 MAIN_WALLET_ADDRESS = os.environ.get('MAIN_WALLET_ADDRESS', 'EC2cPxi4VbyzGoWMucHQ6LwkWz1W9vZE7ZApcY9PFsMy')
-CASINO_WALLET_PRIVATE_KEY = os.environ.get('CASINO_WALLET_PRIVATE_KEY', '')
+RISKARENA_WALLET_PRIVATE_KEY = os.environ.get('RISKARENA_WALLET_PRIVATE_KEY', '')
 SOL_TO_TOKEN_RATE = int(os.environ.get('SOL_TO_TOKEN_RATE', 100))  # 1 EUR = 100 tokens
 LAMPORTS_PER_SOL = 1_000_000_000  # 1 SOL = 1 billion lamports
 
@@ -211,16 +211,16 @@ class SolanaPaymentProcessor:
         logger.info("=" * 80)
         
         # Load forwarding keypair from private key
-        if CASINO_WALLET_PRIVATE_KEY:
+        if RISKARENA_WALLET_PRIVATE_KEY:
             try:
-                private_key_bytes = base58.b58decode(CASINO_WALLET_PRIVATE_KEY)
+                private_key_bytes = base58.b58decode(RISKARENA_WALLET_PRIVATE_KEY)
                 self.forwarding_keypair = Keypair.from_bytes(private_key_bytes)
                 logger.info(f"🔑 Forwarding wallet initialized: {self.forwarding_keypair.pubkey()}")
             except Exception as e:
                 logger.error(f"Failed to load forwarding keypair: {e}")
                 self.forwarding_keypair = None
         else:
-            logger.warning("No CASINO_WALLET_PRIVATE_KEY configured!")
+            logger.warning("No RISKARENA_WALLET_PRIVATE_KEY configured!")
             self.forwarding_keypair = None
         
     async def create_payment_wallet(self, user_id: str, token_amount: int) -> Dict[str, Any]:

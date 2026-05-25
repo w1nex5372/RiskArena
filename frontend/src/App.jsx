@@ -37,15 +37,8 @@ import TosScreen from './components/settings/TosScreen';
 import PrivacyScreen from './components/settings/PrivacyScreen';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
+import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
 import './App.css';
-
-function getStoredSessionToken() {
-  try {
-    return JSON.parse(localStorage.getItem('casino_user') || '{}')?.session_token || '';
-  } catch {
-    return '';
-  }
-}
 
 function authConfig() {
   const token = getStoredSessionToken();
@@ -182,7 +175,6 @@ function App() {
   // UI state
   const [activeTab, setActiveTab] = useState('rooms');
   const [isMobile, setIsMobile] = useState(false);
-  const [casinoWalletAddress, setCasinoWalletAddress] = useState('Loading...');
   const [isRefreshingHistory, setIsRefreshingHistory] = useState(false);
   const [anonModal, setAnonModal] = useState(null); // { roomType, betAmount } when open
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -465,8 +457,9 @@ function App() {
 
   function openTelegramShop() {
     const currentUser = userRef.current || user;
-    const startParam = currentUser?.telegram_id ? `spinwar_${currentUser.telegram_id}` : 'spinwar';
-    const url = `https://t.me/SpinWarPlayBot?start=${encodeURIComponent(startParam)}`;
+    const botUsername = process.env.REACT_APP_TELEGRAM_BOT_USERNAME || 'RiskArenaBot';
+    const startParam = currentUser?.telegram_id ? `riskarena_${currentUser.telegram_id}` : 'riskarena';
+    const url = `https://t.me/${botUsername}?start=${encodeURIComponent(startParam)}`;
 
     if (window.Telegram?.WebApp?.openTelegramLink) {
       window.Telegram.WebApp.openTelegramLink(url);
@@ -557,7 +550,7 @@ function App() {
       // Only authentication success/failure will show toasts
       
       // Register user to socket mapping if user is logged in
-      const storedUser = JSON.parse(localStorage.getItem('casino_user_session') || '{}');
+      const storedUser = getStoredUser();
       if (storedUser && storedUser.id) {
         console.log('📝 Registering user to socket:', storedUser.id, platform);
         newSocket.emit('register_user', {
@@ -617,7 +610,7 @@ function App() {
       }
       
       // Re-register user after reconnection
-      const storedUser = JSON.parse(localStorage.getItem('casino_user_session') || '{}');
+      const storedUser = getStoredUser();
       if (storedUser && storedUser.id) {
         console.log('📝 Re-registering user after reconnection:', storedUser.id);
         newSocket.emit('register_user', {
@@ -1148,7 +1141,7 @@ function App() {
           }
         } catch (err) {
           console.error('Dev auth failed, falling back to Telegram auth:', err);
-          localStorage.removeItem('casino_user');
+          clearStoredUser();
         }
       };
 
@@ -1157,16 +1150,15 @@ function App() {
     }
     
     // Check for saved user session first
-    const savedUser = localStorage.getItem('casino_user');
-    if (savedUser) {
+    const userData = getStoredUser();
+    if (userData?.id || userData?.session_token) {
       try {
-        const userData = JSON.parse(savedUser);
         console.log('✅ Found saved user session:', userData);
         
         // CRITICAL FIX: If user ID is null/undefined, force re-auth
         if (!userData.id || userData.id === 'null' || userData.id === 'undefined') {
           console.warn('⚠️ Invalid user ID in cache - forcing re-authentication');
-          localStorage.removeItem('casino_user');
+          clearStoredUser();
           authenticateFromTelegram();
           return;
         }
@@ -1174,7 +1166,7 @@ function App() {
         // CRITICAL: Validate telegram_id exists in cached data
         if (!userData.telegram_id) {
           console.warn('⚠️ Cached user missing telegram_id - forcing re-authentication');
-          localStorage.removeItem('casino_user');
+          clearStoredUser();
           authenticateFromTelegram();
           return;
         }
@@ -1183,7 +1175,7 @@ function App() {
         // DISABLED: This prevents admin from staying logged in
         // if (userData.telegram_id === 7983427898) {
         //   console.warn('👑 Admin detected in cache - forcing fresh authentication for data integrity');
-        //   localStorage.removeItem('casino_user');
+        //   clearStoredUser();
         //   authenticateFromTelegram();
         //   return;
         // }
@@ -1211,7 +1203,7 @@ function App() {
           } catch (refreshError) {
             console.error('❌ Session validation failed:', refreshError);
             // If session is invalid, clear it and try Telegram auth
-            localStorage.removeItem('casino_user');
+            clearStoredUser();
             toast.warning('Session expired. Please log in again.');
             authenticateFromTelegram();
           }
@@ -1221,7 +1213,7 @@ function App() {
         return;
       } catch (e) {
         console.error('Failed to parse saved user:', e);
-        localStorage.removeItem('casino_user');
+        clearStoredUser();
       }
     }
     
@@ -1437,7 +1429,7 @@ function App() {
         keys: userData ? Object.keys(userData) : []
       });
 
-      localStorage.setItem('casino_user', JSON.stringify(userData));
+      saveStoredUser(userData);
       console.log('✅ User session saved to localStorage');
     } catch (e) {
       console.error('❌ Failed to save user session:', e);
@@ -1721,12 +1713,10 @@ function App() {
     try {
       if (!user || !user.id) return;
       
-      const response = await axios.get(`${API}/user/${user.id}/derived-wallet`, authConfig());
-      setCasinoWalletAddress(response.data.derived_wallet_address);
+      await axios.get(`${API}/user/${user.id}/derived-wallet`, authConfig());
       toast.success('Your personal wallet loaded! 🎯');
     } catch (error) {
       console.error('Failed to load derived wallet:', error);
-      setCasinoWalletAddress('Error loading wallet');
       toast.error('Failed to load wallet address');
     }
   };
@@ -2144,7 +2134,7 @@ function App() {
               <span className="text-2xl">⚠️</span>
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Telegram Web App Required</h3>
-            <p className="text-slate-400 mb-4">SpinWar must be opened as a Telegram Web App, not in a regular browser.</p>
+            <p className="text-slate-400 mb-4">RiskArena must be opened as a Telegram Web App, not in a regular browser.</p>
             
             <div className="space-y-3 text-left mb-4">
               <div className="flex items-start gap-3">
@@ -2153,7 +2143,7 @@ function App() {
               </div>
               <div className="flex items-start gap-3">
                 <span className="text-yellow-400 font-bold text-lg">🔍</span>
-                <p className="text-sm text-slate-300">Find your SpinWar bot or Web App</p>
+                <p className="text-sm text-slate-300">Find your RiskArena bot or Web App</p>
               </div>
               <div className="flex items-start gap-3">
                 <span className="text-yellow-400 font-bold text-lg">🚀</span>
@@ -2427,7 +2417,7 @@ function App() {
               <div className="rounded-lg p-4" style={{background: 'rgba(13,13,26,0.8)', border: '1px solid rgba(220,38,38,0.2)'}}>
                 <div className="text-xs text-slate-400 uppercase tracking-wide mb-1">Your Balance</div>
                 <div className="text-2xl font-bold" style={{color: 'var(--sw-gold)'}}>{user.token_balance}</div>
-                <div className="text-xs text-slate-500">SpinWar Tokens</div>
+                <div className="text-xs text-slate-500">RiskArena Tokens</div>
               </div>
             </div>
           </nav>
@@ -2988,14 +2978,7 @@ function App() {
                   <div style={{ borderTop: '1px solid rgba(220,38,38,0.15)', paddingTop: 12 }}>
                     <p className="text-xs text-slate-500 text-center mb-2">Spend your tokens in the shop</p>
                     <button
-                      onClick={() => {
-                        const startParam = `spinwar_${user.telegram_id}`;
-                        if (window.Telegram?.WebApp?.openTelegramLink) {
-                          window.Telegram.WebApp.openTelegramLink(`https://t.me/SpinWarPlayBot?start=${startParam}`);
-                        } else {
-                          window.open(`https://t.me/SpinWarPlayBot?start=${startParam}`, '_blank');
-                        }
-                      }}
+                      onClick={openTelegramShop}
                       style={{ width: '100%', background: 'linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%)', border: '1px solid rgba(168,85,247,0.4)', borderRadius: 10, padding: '10px 16px', color: 'white', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer' }}
                     >
                       🛍️ Buy Items with Tokens
@@ -3016,7 +2999,7 @@ function App() {
                         <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Balance</span>
                       </div>
                       <div className="text-4xl font-black text-yellow-400" style={{ fontFamily: 'Orbitron, monospace' }}>{(user.token_balance || 0).toLocaleString()}</div>
-                      <div className="text-xs text-slate-500 mt-1">SpinWar Tokens</div>
+                      <div className="text-xs text-slate-500 mt-1">RiskArena Tokens</div>
                     </div>
                     <button
                       onClick={() => setShowPaymentModal(true)}
@@ -3074,18 +3057,11 @@ function App() {
                   <div style={{ background: 'rgba(13,13,26,0.95)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 14, padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                     <div>
                       <p className="text-sm font-bold text-white mb-1">🛍️ Shop — Buy Items with Tokens</p>
-                      <p className="text-xs text-slate-400">Use your SpinWar tokens to purchase items in the shop</p>
+                      <p className="text-xs text-slate-400">Use your RiskArena tokens to purchase items in the shop</p>
                       <p className="text-xs mt-1" style={{ color: '#a855f7' }}>Available: <span className="font-bold text-yellow-400">{(user.token_balance || 0).toLocaleString()} tokens</span></p>
                     </div>
                     <button
-                      onClick={() => {
-                        const startParam = `spinwar_${user.telegram_id}`;
-                        if (window.Telegram?.WebApp?.openTelegramLink) {
-                          window.Telegram.WebApp.openTelegramLink(`https://t.me/SpinWarPlayBot?start=${startParam}`);
-                        } else {
-                          window.open(`https://t.me/SpinWarPlayBot?start=${startParam}`, '_blank');
-                        }
-                      }}
+                      onClick={openTelegramShop}
                       style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%)', border: '1px solid rgba(168,85,247,0.4)', borderRadius: 10, padding: '10px 20px', color: 'white', fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 0 16px rgba(124,58,237,0.3)' }}
                     >
                       🛍️ Open Shop
