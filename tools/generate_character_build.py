@@ -84,7 +84,13 @@ def normalize_build(build: dict[str, Any], catalog: dict[str, Any]) -> dict[str,
     }
 
 
-def generate_user_sheet(user_id: str, build: dict[str, Any], catalog: dict[str, Any], out_path: Path | None = None) -> Path:
+def generate_user_sheet(
+    user_id: str,
+    build: dict[str, Any],
+    catalog: dict[str, Any],
+    out_path: Path | None = None,
+    enchant_level: int = 0,
+) -> Path:
     validate_user_id(user_id)
     frame_w = int(catalog["frame"]["width"])
     frame_h = int(catalog["frame"]["height"])
@@ -115,7 +121,7 @@ def generate_user_sheet(user_id: str, build: dict[str, Any], catalog: dict[str, 
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = out_path.with_suffix(".tmp.png")
-    save_baked_sheet(body, cfg, tmp_path, frame_w, frame_h)
+    save_baked_sheet(body, cfg, tmp_path, frame_w, frame_h, enchant_level=enchant_level)
     os.replace(tmp_path, out_path)
 
     meta_path = out_path.with_suffix(".credits.json")
@@ -124,6 +130,7 @@ def generate_user_sheet(user_id: str, build: dict[str, Any], catalog: dict[str, 
         "source": "Universal LPC Spritesheet Character Generator",
         "className": normalized["className"],
         "bodyType": normalized["bodyType"],
+        "weaponEnchantLevel": max(0, min(10, int(enchant_level or 0))),
         "assets": [
             {"slot": layer["slot"], "asset": layer["asset"], "variant": layer.get("variant")}
             for layer in normalized["layers"]
@@ -138,11 +145,12 @@ def main() -> None:
     parser.add_argument("--user-id", required=True)
     parser.add_argument("--build-json", required=True, type=Path)
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--enchant-level", type=int, default=0)
     args = parser.parse_args()
 
     catalog = load_json(CATALOG_PATH)
     build = load_json(args.build_json)
-    out = generate_user_sheet(args.user_id, build, catalog, args.out)
+    out = generate_user_sheet(args.user_id, build, catalog, args.out, enchant_level=args.enchant_level)
     print(out.relative_to(ROOT))
 
 

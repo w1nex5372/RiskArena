@@ -745,7 +745,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
                   }}>
                     {slot.item?.image_path && slot.label === 'WEAPON' ? (
-                      <WeaponIcon imagePath={slot.item.image_path} size={28} borderRadius={6} />
+                      <WeaponIcon imagePath={slot.item.image_path} size={28} borderRadius={6} enchantLevel={slot.item?.enchant_level || 0} />
                     ) : slot.item?.image_path ? (
                       <img src={slot.item.image_path} alt={slot.item.name}
                         style={{ width: 28, height: 28, objectFit: 'contain' }} />

@@ -18,7 +18,7 @@ function SlotImage({ item, FallbackIcon, size = 44 }) {
   if (slot === 'weapon' && imagePath && !failed) {
     return (
       <div style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 10, overflow: 'hidden' }}>
-        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} />
+        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} enchantLevel={item?.enchant_level || 0} />
       </div>
     );
   }

@@ -47,7 +47,7 @@ function ItemImage({ item, size = 80 }) {
           boxShadow: `0 0 14px ${theme.glow}`,
         }}
       >
-        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} />
+        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} enchantLevel={item?.enchant_level || 0} />
       </div>
     );
   }

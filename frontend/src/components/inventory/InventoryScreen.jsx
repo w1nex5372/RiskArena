@@ -72,7 +72,7 @@ function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
   const imagePath = item?.image_path;
   const isWeapon = getSlotKey(item) === 'weapon';
   if (isWeapon && imagePath && !failed) {
-    return <WeaponIcon imagePath={imagePath} size={54} borderRadius={10} />;
+    return <WeaponIcon imagePath={imagePath} size={54} borderRadius={10} enchantLevel={item?.enchant_level || 0} />;
   }
   if (!src || failed) {
     return <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />;
@@ -120,7 +120,7 @@ function ItemImage({ item, size = 52 }) {
   if (slot === 'weapon' && imagePath && !failed) {
     return (
       <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
-        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} />
+        <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} enchantLevel={item?.enchant_level || 0} />
       </div>
     );
   }

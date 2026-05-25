@@ -82,7 +82,12 @@ export default function CharacterPortrait({
             justifyContent: 'center',
           }}
         >
-          <WeaponIcon imagePath={weaponPath} size={Math.round(badgeSize * 0.78)} borderRadius={9} />
+          <WeaponIcon
+            imagePath={weaponPath}
+            size={Math.round(badgeSize * 0.78)}
+            borderRadius={9}
+            enchantLevel={weapon?.enchant_level || 0}
+          />
         </div>
       ) : null}
     </div>

@@ -3705,7 +3705,12 @@ def _safe_generated_user_id(user_id: str) -> str:
     return safe[:80] or "user"
 
 
-def _ensure_runtime_character_sheet(user_id: str, character_build: Dict[str, Any], sheet_hash: str) -> Optional[str]:
+def _ensure_runtime_character_sheet(
+    user_id: str,
+    character_build: Dict[str, Any],
+    sheet_hash: str,
+    enchant_level: int = 0,
+) -> Optional[str]:
     safe_user_id = _safe_generated_user_id(user_id)
     if not SAFE_GENERATED_ID.match(safe_user_id) or not SAFE_GENERATED_ID.match(sheet_hash):
         return None
@@ -3725,7 +3730,13 @@ def _ensure_runtime_character_sheet(user_id: str, character_build: Dict[str, Any
         from generate_character_build import generate_user_sheet, load_json  # type: ignore
 
         catalog = load_json(tools_dir / "lpc_character_catalog.json")
-        generate_user_sheet(f"{safe_user_id}_{sheet_hash}", character_build, catalog, out_path)
+        generate_user_sheet(
+            f"{safe_user_id}_{sheet_hash}",
+            character_build,
+            catalog,
+            out_path,
+            enchant_level=max(0, min(10, int(enchant_level or 0))),
+        )
         return f"/generated/characters/{safe_user_id}/{sheet_hash}.png"
     except Exception as exc:
         logging.warning("[character-build] failed to generate sheet for user=%s hash=%s: %s", user_id, sheet_hash, exc)
@@ -3789,11 +3800,11 @@ def _battle_spritesheet_for_loadout(
         "weapon": weapon.get("lpc_visual"),
         "armor": armor.get("lpc_visual"),
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:10]
-    sheet_hash = hashlib.sha1(f"lpc-v2:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
-    generated_path = _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash)
+    sheet_hash = hashlib.sha1(f"lpc-v3:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
+    generated_path = _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash, enchant_level=enchant)
     return {
         "path": generated_path or "",
-        "hash": f"lpc-v2:{sheet_hash}",
+        "hash": f"lpc-v3:{sheet_hash}",
     }
 
 

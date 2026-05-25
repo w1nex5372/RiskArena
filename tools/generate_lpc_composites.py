@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +29,20 @@ ANIMATION_LAYOUT = {
 
 DEFAULT_ACTIONS = ("walk", "slash", "hurt", "idle", "jump", "run", "thrust", "spellcast")
 
+ENCHANT_FX = [
+    None,
+    {"color": (153, 204, 255), "radius": 1.3, "alpha": 90},
+    {"color": (85, 170, 255), "radius": 1.6, "alpha": 105},
+    {"color": (34, 119, 255), "radius": 1.9, "alpha": 120},
+    {"color": (0, 68, 221), "radius": 2.2, "alpha": 135},
+    {"color": (0, 34, 153), "radius": 2.6, "alpha": 155},
+    {"color": (136, 0, 255), "radius": 2.9, "alpha": 165},
+    {"color": (204, 0, 238), "radius": 3.2, "alpha": 175},
+    {"color": (255, 170, 0), "radius": 3.5, "alpha": 185},
+    {"color": (255, 102, 0), "radius": 3.8, "alpha": 200},
+    {"color": (255, 34, 0), "radius": 4.2, "alpha": 220},
+]
+
 HAIR_RECOLOR_PALETTE = {
     "raven": (30, 24, 28),
     "brown": (104, 64, 34),
@@ -43,6 +57,30 @@ def frame_box(col: int, row: int, frame_w: int, frame_h: int) -> tuple[int, int,
     left = col * frame_w
     top = row * frame_h
     return left, top, left + frame_w, top + frame_h
+
+
+def enchant_fx_for_level(level: int | None) -> dict | None:
+    try:
+        n = max(0, min(10, int(level or 0)))
+    except (TypeError, ValueError):
+        return None
+    return ENCHANT_FX[n]
+
+
+def weapon_enchant_glow(src: Image.Image, level: int | None) -> Image.Image | None:
+    fx = enchant_fx_for_level(level)
+    if not fx:
+        return None
+    alpha = src.getchannel("A")
+    if not alpha.getbbox():
+        return None
+    radius = float(fx["radius"])
+    glow_alpha = alpha.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(radius=radius))
+    opacity = int(fx["alpha"])
+    glow_alpha = glow_alpha.point(lambda p: min(255, int(p * opacity / 255)))
+    glow = Image.new("RGBA", src.size, (*fx["color"], 0))
+    glow.putalpha(glow_alpha)
+    return glow
 
 
 def paste_frame(
@@ -61,6 +99,7 @@ def paste_frame(
     dest_frame_h: int | None = None,
     x_off: int = 0,
     y_off: int = 0,
+    enchant_level: int = 0,
 ) -> None:
     src_frame_w = source_frame_w or frame_w
     src_frame_h = source_frame_h or frame_h
@@ -69,7 +108,11 @@ def paste_frame(
     src = overlay_sheet.crop(frame_box(weapon_col, weapon_row, src_frame_w, src_frame_h))
     if not src.getbbox():
         return
-    output.alpha_composite(src, (body_col * out_frame_w + x_off, body_row * out_frame_h + y_off))
+    dest = (body_col * out_frame_w + x_off, body_row * out_frame_h + y_off)
+    glow = weapon_enchant_glow(src, enchant_level)
+    if glow:
+        output.alpha_composite(glow, dest)
+    output.alpha_composite(src, dest)
 
 
 def centered_body_sheet(body: Image.Image, cfg: dict, frame_w: int, frame_h: int) -> Image.Image:
@@ -168,7 +211,7 @@ def compose_recipe(cfg: dict, manifest: dict, frame_w: int, frame_h: int) -> Ima
     return output
 
 
-def bake_weapon(output: Image.Image, weapon: Image.Image, cfg: dict, frame_w: int, frame_h: int) -> None:
+def bake_weapon(output: Image.Image, weapon: Image.Image, cfg: dict, frame_w: int, frame_h: int, enchant_level: int = 0) -> None:
     out_frame_w = int(cfg.get("outputFrameWidth", frame_w))
     out_frame_h = int(cfg.get("outputFrameHeight", frame_h))
     source_frame_w = int(cfg.get("weaponFrameWidth", frame_w))
@@ -198,6 +241,7 @@ def bake_weapon(output: Image.Image, weapon: Image.Image, cfg: dict, frame_w: in
                     dest_frame_h=out_frame_h,
                     x_off=x_off,
                     y_off=y_off,
+                    enchant_level=enchant_level,
                 )
         else:
             frames = int(row_cfg["frames"])
@@ -218,10 +262,11 @@ def bake_weapon(output: Image.Image, weapon: Image.Image, cfg: dict, frame_w: in
                     dest_frame_h=out_frame_h,
                     x_off=x_off,
                     y_off=y_off,
+                    enchant_level=enchant_level,
                 )
 
 
-def bake_weapon_layers(output: Image.Image, cfg: dict, phase: str, frame_w: int, frame_h: int) -> None:
+def bake_weapon_layers(output: Image.Image, cfg: dict, phase: str, frame_w: int, frame_h: int, enchant_level: int = 0) -> None:
     out_frame_w = int(cfg.get("outputFrameWidth", frame_w))
     out_frame_h = int(cfg.get("outputFrameHeight", frame_h))
     for layer in cfg.get("weaponLayers", []):
@@ -255,16 +300,17 @@ def bake_weapon_layers(output: Image.Image, cfg: dict, phase: str, frame_w: int,
                     dest_frame_h=out_frame_h,
                     x_off=x_off,
                     y_off=y_off,
+                    enchant_level=enchant_level,
                 )
 
-def save_baked_sheet(body: Image.Image, cfg: dict, out_path: Path, frame_w: int, frame_h: int) -> Path:
+def save_baked_sheet(body: Image.Image, cfg: dict, out_path: Path, frame_w: int, frame_h: int, enchant_level: int = 0) -> Path:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     output = centered_body_sheet(body, cfg, frame_w, frame_h)
-    bake_weapon_layers(output, cfg, "behind", frame_w, frame_h)
+    bake_weapon_layers(output, cfg, "behind", frame_w, frame_h, enchant_level=enchant_level)
     if "weaponRows" in cfg and cfg.get("weapon"):
         with Image.open(ROOT / cfg["weapon"]).convert("RGBA") as weapon:
-            bake_weapon(output, weapon, cfg, frame_w, frame_h)
-    bake_weapon_layers(output, cfg, "front", frame_w, frame_h)
+            bake_weapon(output, weapon, cfg, frame_w, frame_h, enchant_level=enchant_level)
+    bake_weapon_layers(output, cfg, "front", frame_w, frame_h, enchant_level=enchant_level)
     output.save(out_path)
     return out_path
 

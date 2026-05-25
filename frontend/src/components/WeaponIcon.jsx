@@ -20,6 +20,26 @@ const FRAME_SIZE = 64;
 const ALPHA_THRESHOLD = 12;
 const PADDING = 3;
 
+function getEnchantColor(level) {
+  const n = Number(level || 0);
+  if (n >= 10) return '#ff2200';
+  if (n >= 8) return '#ff8a00';
+  if (n >= 6) return '#aa00ff';
+  if (n >= 5) return '#002299';
+  if (n >= 1) return '#3399ff';
+  return '';
+}
+
+function getEnchantStyle(level) {
+  const n = Number(level || 0);
+  const color = getEnchantColor(n);
+  if (!color) return {};
+  const strength = n >= 10 ? 13 : n >= 8 ? 11 : n >= 6 ? 9 : n >= 5 ? 8 : 6;
+  return {
+    filter: `drop-shadow(0 0 ${strength}px ${color}) drop-shadow(0 0 ${Math.max(3, Math.round(strength * 0.45))}px ${color})`,
+  };
+}
+
 function detectAndDraw(ctx, img, imagePath, canvasSize) {
   const { row, col } = ICON_FRAME[imagePath] || { row: 64, col: 3 };
   const srcX = col * FRAME_SIZE;
@@ -71,7 +91,7 @@ function detectAndDraw(ctx, img, imagePath, canvasSize) {
   ctx.drawImage(img, srcX + bx, srcY + by, bw, bh, dx, dy, dw, dh);
 }
 
-export default function WeaponIcon({ imagePath, size = 60, borderRadius = 10, style = {} }) {
+export default function WeaponIcon({ imagePath, size = 60, borderRadius = 10, enchantLevel = 0, style = {} }) {
   const canvasRef = useRef(null);
   const [failed, setFailed] = useState(false);
   const [iconFailed, setIconFailed] = useState(false);
@@ -110,6 +130,7 @@ export default function WeaponIcon({ imagePath, size = 60, borderRadius = 10, st
           borderRadius,
           flexShrink: 0,
           display: 'block',
+          ...getEnchantStyle(enchantLevel),
           ...style,
         }}
       />
@@ -121,7 +142,7 @@ export default function WeaponIcon({ imagePath, size = 60, borderRadius = 10, st
       ref={canvasRef}
       width={size}
       height={size}
-      style={{ imageRendering: 'pixelated', borderRadius, flexShrink: 0, ...style }}
+      style={{ imageRendering: 'pixelated', borderRadius, flexShrink: 0, ...getEnchantStyle(enchantLevel), ...style }}
     />
   );
 }
