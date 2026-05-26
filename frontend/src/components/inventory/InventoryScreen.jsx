@@ -336,7 +336,7 @@ function mergeStatTotals(...statSources) {
   }, {});
 }
 
-function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary }) {
+function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, equippedBySlot }) {
   const activeKey = String(user?.class_name || 'warrior').trim().toLowerCase();
   const info = CLASS_INFO[activeKey] || CLASS_INFO.warrior;
   const classBonusSummary = getStatEntries(
@@ -945,6 +945,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
             user={user}
             loadoutEffectiveStats={loadoutEffectiveStats}
             loadoutPowerSummary={loadoutPowerSummary}
+            equippedBySlot={equippedBySlot}
             onClassChange={onClassChange}
           />
 
