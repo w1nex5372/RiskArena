@@ -7,6 +7,7 @@ import CharacterPortrait from './CharacterPortrait';
 import apiClient from '../../api/client';
 import { getStoredSessionToken } from '../../utils/storage';
 import WeaponIcon from '../WeaponIcon';
+import ArmorIcon from '../ArmorIcon';
 
 // Base arena stats (mirrors ArenaRoom.ts constants)
 const BASE_HP        = { warrior: 150, mage: 100, rogue: 120 };
@@ -896,6 +897,8 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
                   }}>
                     {slot.item?.image_path && slot.label === 'WEAPON' ? (
                       <WeaponIcon imagePath={slot.item.image_path} size={28} borderRadius={6} enchantLevel={slot.item?.enchant_level || 0} />
+                    ) : slot.item?.image_path && slot.label === 'ARMOR' ? (
+                      <ArmorIcon imagePath={slot.item.image_path} size={28} borderRadius={6} />
                     ) : slot.item?.image_path ? (
                       <img src={slot.item.image_path} alt={slot.item.name}
                         style={{ width: 28, height: 28, objectFit: 'contain' }} />
