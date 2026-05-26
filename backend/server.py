@@ -2336,7 +2336,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
             energy_data = await _get_and_regen_energy(str(existing_user['id']), _econn)
         user_payload = attach_session(response, existing_user)
         user_payload.update(energy_data)
-        user_payload.update(_character_preview_fields_for_user(existing_user))
+        user_payload.update(await _character_preview_fields_for_user(existing_user))
         user_payload.update(await _runtime_character_sprite_payload_for_user(str(existing_user["id"])))
         return User(**user_payload)
     
@@ -2392,7 +2392,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
             energy_data2 = await _get_and_regen_energy(str(existing_user['id']), _econn2)
         user_payload2 = attach_session(response, existing_user)
         user_payload2.update(energy_data2)
-        user_payload2.update(_character_preview_fields_for_user(existing_user))
+        user_payload2.update(await _character_preview_fields_for_user(existing_user))
         user_payload2.update(await _runtime_character_sprite_payload_for_user(str(existing_user["id"])))
         return User(**user_payload2)
 
@@ -2400,7 +2400,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
 
     new_user_payload = attach_session(response, user.dict())
     new_user_payload.update({"energy": 10, "max_energy": 10, "next_energy_at": None})
-    new_user_payload.update(_character_preview_fields_for_user(new_user_payload))
+    new_user_payload.update(await _character_preview_fields_for_user(new_user_payload))
     new_user_payload.update({"battle_spritesheet_path": "", "battle_spritesheet_hash": ""})
     return User(**new_user_payload)
 
@@ -2417,7 +2417,7 @@ async def dev_auth(response: Response, username: str = "DevUser", uid: int = 1):
         async with get_pool().acquire() as conn:
             energy_data = await _get_and_regen_energy(str(existing["id"]), conn)
         payload.update(energy_data)
-        payload.update(_character_preview_fields_for_user(existing))
+        payload.update(await _character_preview_fields_for_user(existing))
         payload.update(await _runtime_character_sprite_payload_for_user(str(existing["id"])))
         return User(**payload)
     new_user = User(
@@ -2434,7 +2434,7 @@ async def dev_auth(response: Response, username: str = "DevUser", uid: int = 1):
     created = await dbq.get_user_by_telegram_id(fake_telegram_id)
     payload = attach_session(response, created)
     payload.update({"energy": 10, "max_energy": 10, "next_energy_at": None})
-    payload.update(_character_preview_fields_for_user(created))
+    payload.update(await _character_preview_fields_for_user(created))
     payload.update({"battle_spritesheet_path": "", "battle_spritesheet_hash": ""})
     return User(**payload)
 
@@ -2785,7 +2785,7 @@ async def get_current_user(http_request: Request):
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
     character_build = _character_build_for_user_payload(user_doc)
-    preview_fields = _character_preview_fields_for_user(user_doc)
+    preview_fields = await _character_preview_fields_for_user(user_doc)
     battle_fields = await _runtime_character_sprite_payload_for_user(user_id)
     return {
         "id": user_doc.get("id"),
@@ -2998,8 +2998,8 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
         await sio.emit('balance_updated', {'user_id': request.user_id, 'new_balance': new_balance_after_join}, room=joining_sid)
     
     equipped = await _fetch_equipped_snapshot(request.user_id)
-    character_preview = _character_preview_fields_for_user(dict(user_doc))
-    battle_sprite = _battle_spritesheet_for_loadout(
+    character_preview = await _character_preview_fields_for_user(dict(user_doc))
+    battle_sprite = await _battle_spritesheet_for_loadout(
         request.user_id,
         user_doc.get("class_name"),
         equipped,
@@ -3407,7 +3407,7 @@ async def get_user_by_telegram_id(telegram_id: int, http_request: Request):
 
     await _require_self_or_admin(http_request, user_doc.get("id"))
     character_build = _character_build_for_user_payload(user_doc)
-    preview_fields = _character_preview_fields_for_user(user_doc)
+    preview_fields = await _character_preview_fields_for_user(user_doc)
 
     return {
         "id": user_doc.get('id'),
@@ -3475,7 +3475,7 @@ async def set_my_class(body: ClassUpdateBody, http_request: Request):
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
     character_build = _character_build_for_user_payload(user_doc)
-    preview_fields = _character_preview_fields_for_user(user_doc)
+    preview_fields = await _character_preview_fields_for_user(user_doc)
     return {
         "id": user_doc.get("id"),
         "class_name": user_doc.get("class_name"),
@@ -3492,7 +3492,7 @@ async def get_my_character_build(http_request: Request):
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
     character_build = _character_build_for_user_payload(user_doc)
-    preview_fields = _character_preview_fields_for_user(user_doc)
+    preview_fields = await _character_preview_fields_for_user(user_doc)
     return {
         "class_name": user_doc.get("class_name"),
         "character_build_json": character_build,
@@ -3506,7 +3506,7 @@ async def preview_my_character_build(body: CharacterBuildUpdateBody, http_reques
     async with get_pool().acquire() as conn:
         current_class = await conn.fetchval("SELECT class_name FROM users WHERE id = $1", user_id)
     validated = _validate_character_build(body.character_build, current_class)
-    preview_fields = _character_preview_spritesheet_for_user(user_id, validated["className"], validated)
+    preview_fields = await _character_preview_spritesheet_for_user(user_id, validated["className"], validated)
     return {
         "class_name": validated["className"],
         "character_build_json": validated,
@@ -3526,7 +3526,7 @@ async def update_my_character_build(body: CharacterBuildUpdateBody, http_request
             "UPDATE users SET class_name = $2, character_build_json = $3::jsonb WHERE id = $1",
             user_id, class_name, json.dumps(validated),
         )
-    preview_fields = _character_preview_spritesheet_for_user(user_id, class_name, validated)
+    preview_fields = await _character_preview_spritesheet_for_user(user_id, class_name, validated)
     return {
         "class_name": class_name,
         "character_build_json": validated,
@@ -3548,7 +3548,7 @@ async def get_user_data(user_id: str, http_request: Request):
             energy_data = await _get_and_regen_energy(str(user_id), conn)
 
         character_build = _character_build_for_user_payload(user_doc)
-        preview_fields = _character_preview_fields_for_user(user_doc)
+        preview_fields = await _character_preview_fields_for_user(user_doc)
         return {
             "id": user_doc.get('id'),
             "telegram_id": user_doc.get('telegram_id'),
@@ -3707,7 +3707,7 @@ def _safe_generated_user_id(user_id: str) -> str:
     return safe[:80] or "user"
 
 
-def _ensure_runtime_character_sheet(
+async def _ensure_runtime_character_sheet(
     user_id: str,
     character_build: Dict[str, Any],
     sheet_hash: str,
@@ -3726,23 +3726,25 @@ def _ensure_runtime_character_sheet(
         logging.warning("[character-build] generator missing at %s", tools_dir)
         return None
 
-    try:
-        if str(tools_dir) not in sys.path:
-            sys.path.insert(0, str(tools_dir))
-        from generate_character_build import generate_user_sheet, load_json  # type: ignore
+    def _run_generation():
+        try:
+            if str(tools_dir) not in sys.path:
+                sys.path.insert(0, str(tools_dir))
+            from generate_character_build import generate_user_sheet, load_json  # type: ignore
+            catalog = load_json(tools_dir / "lpc_character_catalog.json")
+            generate_user_sheet(
+                f"{safe_user_id}_{sheet_hash}",
+                character_build,
+                catalog,
+                out_path,
+                enchant_level=max(0, min(10, int(enchant_level or 0))),
+            )
+            return f"/generated/characters/{safe_user_id}/{sheet_hash}.png"
+        except Exception as exc:
+            logging.warning("[character-build] failed to generate sheet for user=%s hash=%s: %s", user_id, sheet_hash, exc)
+            return None
 
-        catalog = load_json(tools_dir / "lpc_character_catalog.json")
-        generate_user_sheet(
-            f"{safe_user_id}_{sheet_hash}",
-            character_build,
-            catalog,
-            out_path,
-            enchant_level=max(0, min(10, int(enchant_level or 0))),
-        )
-        return f"/generated/characters/{safe_user_id}/{sheet_hash}.png"
-    except Exception as exc:
-        logging.warning("[character-build] failed to generate sheet for user=%s hash=%s: %s", user_id, sheet_hash, exc)
-        return None
+    return await asyncio.to_thread(_run_generation)
 
 
 def _character_build_for_equipped_visuals(
@@ -3782,7 +3784,7 @@ def _character_build_for_equipped_visuals(
         return _validate_character_build(fallback, class_name)
 
 
-def _battle_spritesheet_for_loadout(
+async def _battle_spritesheet_for_loadout(
     user_id: str,
     class_name: Optional[str],
     equipped: Dict[str, Any],
@@ -3803,7 +3805,7 @@ def _battle_spritesheet_for_loadout(
         "armor": armor.get("lpc_visual"),
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:10]
     sheet_hash = hashlib.sha1(f"lpc-v3:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
-    generated_path = _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash, enchant_level=enchant)
+    generated_path = await _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash, enchant_level=enchant)
     return {
         "path": generated_path or "",
         "hash": f"lpc-v3:{sheet_hash}",
@@ -3819,7 +3821,7 @@ async def _runtime_character_sprite_payload_for_user(user_id: str) -> Dict[str, 
         )
     class_name = user_row["class_name"] if user_row else None
     character_build = _character_build_for_user_payload(dict(user_row) if user_row else {"class_name": class_name})
-    battle_sprite = _battle_spritesheet_for_loadout(user_id, class_name, equipped_rows, character_build)
+    battle_sprite = await _battle_spritesheet_for_loadout(user_id, class_name, equipped_rows, character_build)
     return {
         "character_build_json": character_build,
         "battle_spritesheet_path": battle_sprite["path"],
@@ -3827,7 +3829,7 @@ async def _runtime_character_sprite_payload_for_user(user_id: str) -> Dict[str, 
     }
 
 
-def _character_preview_spritesheet_for_user(
+async def _character_preview_spritesheet_for_user(
     user_id: str,
     class_name: Optional[str],
     character_build: Optional[Dict[str, Any]] = None,
@@ -3843,18 +3845,18 @@ def _character_preview_spritesheet_for_user(
 
     build_hash = _stable_character_build_hash(base_build)
     sheet_hash = hashlib.sha1(f"{cls}:{build_hash}:base-preview".encode("utf-8")).hexdigest()[:16]
-    generated_path = _ensure_runtime_character_sheet(user_id, base_build, sheet_hash)
+    generated_path = await _ensure_runtime_character_sheet(user_id, base_build, sheet_hash)
     return {
         "character_spritesheet_path": generated_path or "",
         "character_spritesheet_hash": f"lpc-base:{sheet_hash}" if generated_path else "",
     }
 
 
-def _character_preview_fields_for_user(user_doc: Dict[str, Any]) -> Dict[str, str]:
+async def _character_preview_fields_for_user(user_doc: Dict[str, Any]) -> Dict[str, str]:
     if not user_doc or not user_doc.get("class_name"):
         return {"character_spritesheet_path": "", "character_spritesheet_hash": ""}
     character_build = _character_build_for_user_payload(user_doc)
-    return _character_preview_spritesheet_for_user(
+    return await _character_preview_spritesheet_for_user(
         str(user_doc.get("id") or ""),
         user_doc.get("class_name"),
         character_build,
@@ -4125,15 +4127,15 @@ async def get_my_equipped(http_request: Request):
         )
         class_name = user_row["class_name"] if user_row else None
         character_build = _character_build_for_user_payload(dict(user_row) if user_row else {"class_name": class_name})
-        battle_sprite = _battle_spritesheet_for_loadout(user_id, class_name, equipped, character_build)
-        return {
-            "equipped": equipped,
-            "equipped_items": equipped_items,
-            "character_build_json": character_build,
-            "battle_spritesheet_path": battle_sprite["path"],
-            "battle_spritesheet_hash": battle_sprite["hash"],
-            "loadout_effective_stats": modifiers_to_dict(aggregate_item_modifiers([dict(row) for row in rows])),
-        }
+    battle_sprite = await _battle_spritesheet_for_loadout(user_id, class_name, equipped, character_build)
+    return {
+        "equipped": equipped,
+        "equipped_items": equipped_items,
+        "character_build_json": character_build,
+        "battle_spritesheet_path": battle_sprite["path"],
+        "battle_spritesheet_hash": battle_sprite["hash"],
+        "loadout_effective_stats": modifiers_to_dict(aggregate_item_modifiers([dict(row) for row in rows])),
+    }
 
 
 class EquipBody(BaseModel):
@@ -5090,6 +5092,8 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
         loser_uuid  = uuid.UUID(body.loser_user_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid participant id")
+    winner_id = str(winner_uuid)
+    loser_id = str(loser_uuid)
 
     async with _realtime_result_lock:
         if body.room_id in _processed_realtime_result_rooms:
@@ -5098,14 +5102,14 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
         async with get_pool().acquire() as conn:
             async with conn.transaction():
                 participant_rows = await conn.fetch(
-                    "SELECT id, xp FROM users WHERE id = ANY($1::uuid[]) FOR UPDATE",
-                    [winner_uuid, loser_uuid],
+                    "SELECT id, xp FROM users WHERE id = ANY($1::text[]) FOR UPDATE",
+                    [winner_id, loser_id],
                 )
                 participants = {str(row["id"]): row for row in participant_rows}
-                if body.winner_user_id not in participants or body.loser_user_id not in participants:
+                if winner_id not in participants or loser_id not in participants:
                     raise HTTPException(status_code=404, detail="Match participant not found")
 
-                w_row = participants[body.winner_user_id]
+                w_row = participants[winner_id]
                 w_xp_res = _progression.award_xp_result(int(w_row["xp"]), RT_WINNER_XP)
                 await conn.execute(
                     """UPDATE users
@@ -5114,7 +5118,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                            level         = $4,
                            wins          = wins + 1
                        WHERE id = $1""",
-                    winner_uuid,
+                    winner_id,
                     RT_WINNER_COINS,
                     w_xp_res["new_xp"],
                     w_xp_res["new_level"],
@@ -5126,17 +5130,17 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                            max_win_streak     = GREATEST(max_win_streak, current_win_streak + 1)
                        WHERE id = $1
                        RETURNING current_win_streak""",
-                    winner_uuid,
+                    winner_id,
                 )
                 new_streak = streak_row["current_win_streak"] if streak_row else 0
                 streak_bonus = _RT_STREAK_MILESTONES.get(new_streak, 0)
                 if streak_bonus:
                     await conn.execute(
                         "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
-                        winner_uuid, streak_bonus,
+                        winner_id, streak_bonus,
                     )
 
-                l_row = participants[body.loser_user_id]
+                l_row = participants[loser_id]
                 l_xp_res = _progression.award_xp_result(int(l_row["xp"]), RT_LOSER_XP)
                 await conn.execute(
                     """UPDATE users
@@ -5146,7 +5150,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                            losses             = losses + 1,
                            current_win_streak = 0
                        WHERE id = $1""",
-                    loser_uuid,
+                    loser_id,
                     RT_LOSER_COINS,
                     l_xp_res["new_xp"],
                     l_xp_res["new_level"],
@@ -5188,8 +5192,8 @@ async def get_user_loadout_internal(user_id: str, request: Request):
         )
     class_name = user_row["class_name"] if user_row else None
     character_build = _character_build_for_user_payload(dict(user_row) if user_row else {"class_name": class_name})
-    battle_sprite = _battle_spritesheet_for_loadout(user_id, class_name, equipped_rows, character_build)
-    # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slotâ†’item
+    battle_sprite = await _battle_spritesheet_for_loadout(user_id, class_name, equipped_rows, character_build)
+    # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slot→item
     item_list = [v for v in equipped_rows.values() if v is not None]
     stats = modifiers_to_dict(aggregate_item_modifiers(item_list))
     return {
