@@ -203,15 +203,24 @@ function JoystickControl({ onChange }) {
 // ── Ability button with SVG circular cooldown timer ──────────────────────────
 const CLASS_COOLDOWNS = { warrior: 8000, mage: 6000, rogue: 5000 };
 
-function AbilityButton({ abilityReady, playerClass, onActivate }) {
+function AbilityButton({ abilityReady, playerClass, equippedAbility, onActivate }) {
   const [progress, setProgress] = React.useState(0); // 0..1, 1 = cooldown done
   const rafRef = React.useRef(null);
   const startRef = React.useRef(null);
+  const abilityName = equippedAbility?.name || ABILITY_NAMES[playerClass] || 'Ability';
+  const imagePath = equippedAbility?.image_path || '';
+  const cooldownMs = Number(
+    equippedAbility?.ability_cooldown_ms ||
+    equippedAbility?.cooldown_ms ||
+    CLASS_COOLDOWNS[playerClass] ||
+    6000
+  );
+  const cooldownText = `${abilityName} - ${Math.round(cooldownMs / 1000)}s cooldown`;
 
   React.useEffect(() => {
     if (!abilityReady) {
       // Start filling arc from 0 to 1
-      const duration = CLASS_COOLDOWNS[playerClass] || 6000;
+      const duration = cooldownMs;
       startRef.current = Date.now();
       setProgress(0);
 
@@ -226,7 +235,7 @@ function AbilityButton({ abilityReady, playerClass, onActivate }) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       setProgress(0);
     }
-  }, [abilityReady, playerClass]);
+  }, [abilityReady, cooldownMs]);
 
   const r = 27;
   const circ = 2 * Math.PI * r;
@@ -247,6 +256,8 @@ function AbilityButton({ abilityReady, playerClass, onActivate }) {
         cursor: abilityReady ? 'pointer' : 'default',
         flexShrink: 0,
       }}
+      title={cooldownText}
+      aria-label={cooldownText}
     >
       {/* SVG ring */}
       <svg
@@ -289,7 +300,24 @@ function AbilityButton({ abilityReady, playerClass, onActivate }) {
         opacity: abilityReady ? 1 : 0.55,
         transition: 'background 0.25s, opacity 0.25s, box-shadow 0.25s',
       }}>
-        {abilityReady ? '✨' : '⏳'}
+        {imagePath ? (
+          <img
+            src={imagePath}
+            alt=""
+            draggable={false}
+            style={{
+              width: 38,
+              height: 38,
+              objectFit: 'contain',
+              filter: abilityReady ? 'drop-shadow(0 0 6px rgba(255,255,255,0.28))' : 'grayscale(1)',
+              pointerEvents: 'none',
+            }}
+          />
+        ) : (
+          <span style={{ fontSize: 20, lineHeight: 1 }}>
+            {abilityReady ? abilityName.slice(0, 1).toUpperCase() : Math.ceil(cooldownMs / 1000)}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -940,6 +968,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
             <AbilityButton
               abilityReady={abilityReady}
               playerClass={playerClass}
+              equippedAbility={equipped?.ability || null}
               onActivate={() => {
                 setKey('ability', true);
                 setTimeout(() => setKey('ability', false), 150);

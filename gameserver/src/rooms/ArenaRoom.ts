@@ -21,6 +21,10 @@ const BASH_RANGE = 120;
 const BASH_DMG = 20;
 const BASH_STUN_MS = 1500;
 const BASH_COOLDOWN_MS = 8000;
+const GUARDBREAK_RANGE = 105;
+const GUARDBREAK_DMG = 18;
+const GUARDBREAK_STUN_MS = 650;
+const GUARDBREAK_COOLDOWN_MS = 7000;
 
 const FIREBALL_DMG = 25;
 const FIREBALL_KNOCKBACK = 100;
@@ -193,6 +197,10 @@ export class ArenaRoom extends Room<ArenaState> {
       player.weaponEnchant = Number(d.weapon_enchant) || 0;
       player.battleSpritesheetPath = String(d.battle_spritesheet_path || "");
       player.battleSpritesheetHash = String(d.battle_spritesheet_hash || "");
+      player.activeAbilityKey = String(d.active_ability_key || "");
+      player.activeAbilityName = String(d.active_ability_name || "");
+      player.activeAbilityIcon = String(d.active_ability_icon || "");
+      player.activeAbilityCooldownMs = Number(d.active_ability_cooldown_ms || 0);
       player.characterBuildJson = JSON.stringify(d.character_build_json || {});
       // Apply HP bonus
       player.maxHp += player.hpBonus;
@@ -310,11 +318,34 @@ export class ArenaRoom extends Room<ArenaState> {
         if (!player.isBlocking && abilityPressed && player.abilityCharges > 0) {
           player.abilityCharges = 0;
           const cls = player.characterClass;
+          const abilityKey = player.activeAbilityKey || `${cls}_default`;
           this.broadcast("weapon_swing", { sessionId, cls });
 
-          if (cls === "warrior") {
+          if (abilityKey === "warrior_guardbreak") {
+            player.abilityCooldownUntil = now + (player.activeAbilityCooldownMs || GUARDBREAK_COOLDOWN_MS);
+            player.state = "attacking";
+            player.attackUntil = now + ATTACK_ANIM_MS;
+
+            let hit = false;
+            let brokeBlock = false;
+            this.state.players.forEach((opp, oppSid) => {
+              if (oppSid === sessionId || opp.state === "dead") return;
+              const dist  = Math.abs(player.x - opp.x);
+              const yDist = Math.abs(player.y - opp.y);
+              if (dist <= GUARDBREAK_RANGE && !(opp.isGrounded === false && yDist > 40)) {
+                hit = true;
+                brokeBlock = brokeBlock || opp.isBlocking;
+                opp.isBlocking = false;
+                opp.stunUntil = now + GUARDBREAK_STUN_MS;
+                opp.isStunned = true;
+                this.dealDamage(sessionId, opp, oppSid, GUARDBREAK_DMG + player.abilityBonus, now, { ignoreBlock: true });
+              }
+            });
+            this.broadcast("ability_used", { sessionId, cls: "warrior", abilityKey, fromX: player.x, fromY: player.y, hit, brokeBlock });
+
+          } else if (abilityKey === "warrior_bash" || (!player.activeAbilityKey && cls === "warrior")) {
             // Bash — close-range stun
-            player.abilityCooldownUntil = now + BASH_COOLDOWN_MS;
+            player.abilityCooldownUntil = now + (player.activeAbilityCooldownMs || BASH_COOLDOWN_MS);
             player.state = "attacking";
             player.attackUntil = now + ATTACK_ANIM_MS;
 
@@ -330,18 +361,18 @@ export class ArenaRoom extends Room<ArenaState> {
                 this.dealDamage(sessionId, opp, oppSid, BASH_DMG + player.abilityBonus, now);
               }
             });
-            this.broadcast("ability_used", { sessionId, cls: "warrior", fromX: player.x, fromY: player.y, hit });
+            this.broadcast("ability_used", { sessionId, cls: "warrior", abilityKey, fromX: player.x, fromY: player.y, hit });
 
-          } else if (cls === "mage") {
+          } else if (abilityKey === "mage_fireball" || (!player.activeAbilityKey && cls === "mage")) {
             // Fireball — ranged, dodgeable by jumping, knockback
-            player.abilityCooldownUntil = now + FIREBALL_COOLDOWN_MS;
+            player.abilityCooldownUntil = now + (player.activeAbilityCooldownMs || FIREBALL_COOLDOWN_MS);
 
             this.state.players.forEach((opp, oppSid) => {
               if (oppSid === sessionId || opp.state === "dead") return;
               const yDist  = Math.abs(player.y - opp.y);
               const dodged = !opp.isGrounded && yDist > 60;
               this.broadcast("ability_used", {
-                sessionId, cls: "mage",
+                sessionId, cls: "mage", abilityKey,
                 fromX: player.x, fromY: player.y,
                 toX: opp.x, toY: opp.y, hit: !dodged,
               });
@@ -353,21 +384,23 @@ export class ArenaRoom extends Room<ArenaState> {
               }
             });
 
-          } else if (cls === "rogue") {
+          } else if (abilityKey === "rogue_blink" || (!player.activeAbilityKey && cls === "rogue")) {
             // Blink — teleport to opposite side of opponent
-            player.abilityCooldownUntil = now + BLINK_COOLDOWN_MS;
+            player.abilityCooldownUntil = now + (player.activeAbilityCooldownMs || BLINK_COOLDOWN_MS);
 
             this.state.players.forEach((opp, oppSid) => {
               if (oppSid === sessionId || opp.state === "dead") return;
               const dir  = opp.x > player.x ? 1 : -1;
               const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * BLINK_OFFSET));
               this.broadcast("ability_used", {
-                sessionId, cls: "rogue",
+                sessionId, cls: "rogue", abilityKey,
                 fromX: player.x, fromY: player.y, toX: newX, toY: player.y, hit: true,
               });
               player.x = newX;
               player.facingRight = player.x < opp.x;
             });
+          } else {
+            player.abilityCharges = 1;
           }
         }
       }
@@ -394,13 +427,29 @@ export class ArenaRoom extends Room<ArenaState> {
   }
 
   // Applies damage and broadcasts the floating number at target's position
-  private dealDamage(attackerSid: string, target: Player, targetSid: string, dmg: number, now: number) {
-    this.dealDamageAt(attackerSid, target, targetSid, dmg, target.x, target.y, now);
+  private dealDamage(
+    attackerSid: string,
+    target: Player,
+    targetSid: string,
+    dmg: number,
+    now: number,
+    options: { ignoreBlock?: boolean } = {},
+  ) {
+    this.dealDamageAt(attackerSid, target, targetSid, dmg, target.x, target.y, now, options);
   }
 
-  private dealDamageAt(attackerSid: string, target: Player, targetSid: string, dmg: number, nx: number, ny: number, now: number) {
+  private dealDamageAt(
+    attackerSid: string,
+    target: Player,
+    targetSid: string,
+    dmg: number,
+    nx: number,
+    ny: number,
+    now: number,
+    options: { ignoreBlock?: boolean } = {},
+  ) {
     const attacker = this.state.players.get(attackerSid);
-    const blocked = Boolean(attacker && target.isBlocking && this.isAttackerInFront(target, attacker));
+    const blocked = Boolean(!options.ignoreBlock && attacker && target.isBlocking && this.isAttackerInFront(target, attacker));
     const passiveMultiplier = 1 - target.defendReduction;
     const blockMultiplier = blocked ? 1 - ACTIVE_BLOCK_REDUCTION : 1;
     const effectiveDmg = Math.max(1, Math.round(dmg * passiveMultiplier * blockMultiplier));

@@ -201,6 +201,8 @@ CREATE TABLE IF NOT EXISTS items (
     passive_value    REAL DEFAULT 0.0,
     image_path       TEXT,
     lpc_visual       JSONB,
+    ability_key      TEXT,
+    ability_cooldown_ms INTEGER DEFAULT 0,
     created_at       TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(name, class_name, tier)
 );
@@ -462,6 +464,8 @@ async def init():
         await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS passive_type TEXT;")
         await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS passive_value REAL DEFAULT 0.0;")
         await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS lpc_visual JSONB;")
+        await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS ability_key TEXT;")
+        await conn.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS ability_cooldown_ms INTEGER DEFAULT 0;")
         await conn.execute("ALTER TABLE inventory ADD COLUMN IF NOT EXISTS enchant_level INTEGER NOT NULL DEFAULT 0;")
         await conn.execute("""
             DO $$
@@ -558,11 +562,13 @@ async def init():
             INSERT INTO items
                 (name, description, class_name, slot, tier, price,
                  attack_bonus, ability_bonus, defend_reduction, hp_bonus,
-                 risk_win_chance, passive_type, passive_value, image_path, lpc_visual)
+                 risk_win_chance, passive_type, passive_value, image_path, lpc_visual,
+                 ability_key, ability_cooldown_ms)
             VALUES
                 ($1, $2, $3, $4, $5, $6,
                  $7, $8, $9, $10,
-                 $11, $12, $13, $14, $15::jsonb)
+                 $11, $12, $13, $14, $15::jsonb,
+                 $16, $17)
             ON CONFLICT (class_name, slot, tier) DO UPDATE
             SET name = EXCLUDED.name,
                 description = EXCLUDED.description,
@@ -575,7 +581,9 @@ async def init():
                 passive_type = EXCLUDED.passive_type,
                 passive_value = EXCLUDED.passive_value,
                 image_path = EXCLUDED.image_path,
-                lpc_visual = EXCLUDED.lpc_visual
+                lpc_visual = EXCLUDED.lpc_visual,
+                ability_key = EXCLUDED.ability_key,
+                ability_cooldown_ms = EXCLUDED.ability_cooldown_ms
             """,
             seed_rows(),
         )

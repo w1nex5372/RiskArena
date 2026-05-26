@@ -3673,6 +3673,7 @@ _TIER_ORDER = {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5}
 def _serialize_item_row(row: Any) -> Dict[str, Any]:
     item = dict(row)
     item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
+    item["ability_cooldown_ms"] = int(item.get("ability_cooldown_ms", 0) or 0)
     item["item_id"] = item.get("item_id") or item.get("id")
     item["lpc_visual"] = _coerce_json_dict(item.get("lpc_visual")) or None
     item["rarity"] = tier_to_rarity(item.get("tier"))
@@ -3684,6 +3685,7 @@ def _serialize_item_row(row: Any) -> Dict[str, Any]:
 def _serialize_inventory_row(row: Any) -> Dict[str, Any]:
     item = dict(row)
     item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
+    item["ability_cooldown_ms"] = int(item.get("ability_cooldown_ms", 0) or 0)
     item["inventory_id"] = item["id"]
     item["item_id"] = item["catalog_item_id"]
     item["type"] = item["slot"]
@@ -3990,7 +3992,8 @@ async def get_upgrade_state(http_request: Request):
                    inv.item_id AS catalog_item_id,
                    i.name, i.description, i.class_name, i.slot, i.tier, i.price,
                    i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
-                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path, i.lpc_visual
+                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path, i.lpc_visual,
+                   i.ability_key, i.ability_cooldown_ms
             FROM inventory inv
             JOIN items i ON i.id = inv.item_id
             WHERE inv.user_id = $1 AND i.slot IN ('weapon', 'armor')
@@ -4046,7 +4049,8 @@ async def get_my_inventory(http_request: Request):
                    inv.item_id AS catalog_item_id,
                    i.name, i.description, i.class_name, i.slot, i.tier, i.price,
                    i.attack_bonus, i.ability_bonus, i.defend_reduction, i.hp_bonus,
-                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path, i.lpc_visual
+                   i.risk_win_chance, i.passive_type, i.passive_value, i.image_path, i.lpc_visual,
+                   i.ability_key, i.ability_cooldown_ms
             FROM inventory inv
             LEFT JOIN items i ON i.id = inv.item_id
             WHERE inv.user_id = $1
@@ -5196,6 +5200,7 @@ async def get_user_loadout_internal(user_id: str, request: Request):
     # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slot→item
     item_list = [v for v in equipped_rows.values() if v is not None]
     stats = modifiers_to_dict(aggregate_item_modifiers(item_list))
+    ability_item = equipped_rows.get("ability") or {}
     return {
         "user_id": user_id,
         "attack_bonus": stats.get("attack_bonus", 0),
@@ -5204,6 +5209,10 @@ async def get_user_loadout_internal(user_id: str, request: Request):
         "hp_bonus": stats.get("hp_bonus", 0),
         "has_weapon": equipped_rows.get("weapon") is not None,
         "weapon_enchant": int((equipped_rows.get("weapon") or {}).get("enchant_level", 0) or 0),
+        "active_ability_key": ability_item.get("ability_key"),
+        "active_ability_name": ability_item.get("name"),
+        "active_ability_icon": ability_item.get("image_path"),
+        "active_ability_cooldown_ms": int(ability_item.get("ability_cooldown_ms", 0) or 0),
         "character_build_json": character_build,
         "battle_spritesheet_path": battle_sprite["path"],
         "battle_spritesheet_hash": battle_sprite["hash"],

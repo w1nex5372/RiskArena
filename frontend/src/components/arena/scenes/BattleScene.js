@@ -1801,9 +1801,86 @@ export default class BattleScene extends Phaser.Scene {
   // ── 9. Ability visual effects ─────────────────────────────────────────────
   showAbilityEffect(d) {
     this._playSound('ability');
+    const abilityKey = String(d.abilityKey || d.ability_key || '');
+    if (abilityKey === 'warrior_guardbreak') {
+      this._showGuardBreakEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit);
+      return;
+    }
     if (d.cls === 'warrior') this._showBashEffect(d.fromX, d.fromY, d.hit);
     if (d.cls === 'mage')    this._showFireballEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit);
     if (d.cls === 'rogue')   this._showBlinkEffect(d.fromX, d.fromY, d.toX);
+  }
+
+  _showGuardBreakEffect(fromX, fromY, toX, toY, hit) {
+    const asNumber = (value, fallback) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const impactX = asNumber(toX, asNumber(fromX, W / 2));
+    const impactY = asNumber(toY, asNumber(fromY, FLOOR_Y)) - 34;
+
+    const lbl = this.add.text(impactX, impactY - 44, 'GUARD BREAK!', {
+      fontSize: '18px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#facc15', stroke: '#020617', strokeThickness: 5,
+    }).setOrigin(0.5).setDepth(13);
+    this.tweens.add({
+      targets: lbl,
+      y: impactY - 86,
+      alpha: 0,
+      scaleX: 1.12,
+      scaleY: 1.12,
+      duration: 680,
+      ease: 'Power1',
+      onComplete: () => { if (lbl.active) lbl.destroy(); },
+    });
+
+    const ring = this.add.graphics().setDepth(9);
+    ring.lineStyle(4, 0xfacc15, 0.95);
+    ring.strokeCircle(impactX, impactY, 18);
+    ring.lineStyle(2, 0x60a5fa, 0.85);
+    ring.strokeCircle(impactX, impactY, 28);
+    ring.lineStyle(3, 0xf8fafc, 0.9);
+    for (let i = 0; i < 6; i += 1) {
+      const a = (Math.PI * 2 * i) / 6;
+      ring.beginPath();
+      ring.moveTo(impactX + Math.cos(a) * 8, impactY + Math.sin(a) * 8);
+      ring.lineTo(impactX + Math.cos(a) * 44, impactY + Math.sin(a) * 44);
+      ring.strokePath();
+    }
+    this.tweens.add({
+      targets: ring,
+      alpha: 0,
+      scaleX: 2.4,
+      scaleY: 2.4,
+      duration: 380,
+      ease: 'Power2',
+      onComplete: () => { if (ring.active) ring.destroy(); },
+    });
+
+    const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xfacc15, 0.12).setDepth(7);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 220,
+      ease: 'Power2',
+      onComplete: () => { if (flash.active) flash.destroy(); },
+    });
+
+    const burstCount = this._isMobile ? 10 : 22;
+    const burst = this.add.particles(impactX, impactY, 'dust_particle', {
+      speed: { min: 80, max: 210 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 0.75, end: 0 },
+      alpha: { start: 0.85, end: 0 },
+      tint: [0xfacc15, 0x60a5fa, 0xf8fafc],
+      lifespan: 340,
+      quantity: burstCount,
+      emitting: false,
+    }).setDepth(8);
+    burst.explode(burstCount);
+    this.time.delayedCall(430, () => { if (burst.active) burst.destroy(); });
+
+    this.cameras.main.shake(hit ? 170 : 100, hit ? 0.011 : 0.005);
   }
 
   _showBashEffect(x, y, hit) {

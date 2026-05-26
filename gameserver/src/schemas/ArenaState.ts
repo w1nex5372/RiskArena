@@ -27,6 +27,10 @@ export class Player extends Schema {
   @type("number") weaponEnchant: number = 0;
   @type("string") battleSpritesheetPath: string = "";
   @type("string") battleSpritesheetHash: string = "";
+  @type("string") activeAbilityKey: string = "";
+  @type("string") activeAbilityName: string = "";
+  @type("string") activeAbilityIcon: string = "";
+  @type("number") activeAbilityCooldownMs: number = 0;
 
   // Server-only — not synced to clients
   lastAttackTime: number = 0;
