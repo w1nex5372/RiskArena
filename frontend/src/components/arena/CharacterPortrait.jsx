@@ -115,7 +115,6 @@ export default function CharacterPortrait({
             imagePath={armor.image_path}
             size={Math.round(badgeSize * 0.78)}
             borderRadius={9}
-            enchantLevel={armor?.enchant_level || 0}
           />
         </div>
       ) : null}

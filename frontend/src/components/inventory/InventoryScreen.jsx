@@ -76,7 +76,7 @@ function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
     return <WeaponIcon imagePath={imagePath} size={54} borderRadius={10} enchantLevel={item?.enchant_level || 0} />;
   }
   if (slot === 'armor' && imagePath && !failed) {
-    return <ArmorIcon imagePath={imagePath} size={54} borderRadius={10} enchantLevel={item?.enchant_level || 0} />;
+    return <ArmorIcon imagePath={imagePath} size={54} borderRadius={10} />;
   }
   if (!src || failed) {
     return <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />;
@@ -132,7 +132,7 @@ function ItemImage({ item, size = 52 }) {
   if (slot === 'armor' && imagePath && !failed) {
     return (
       <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
-        <ArmorIcon imagePath={imagePath} size={size} borderRadius={0} enchantLevel={item?.enchant_level || 0} />
+        <ArmorIcon imagePath={imagePath} size={size} borderRadius={0} />
       </div>
     );
   }
