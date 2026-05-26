@@ -76,7 +76,7 @@ function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
     return <WeaponIcon imagePath={imagePath} size={54} borderRadius={10} enchantLevel={item?.enchant_level || 0} />;
   }
   if (slot === 'armor' && imagePath && !failed) {
-    return <ArmorIcon imagePath={imagePath} size={54} borderRadius={10} />;
+    return <ArmorIcon imagePath={imagePath} size={54} borderRadius={10} enchantLevel={item?.enchant_level || 0} />;
   }
   if (!src || failed) {
     return <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />;
@@ -132,7 +132,7 @@ function ItemImage({ item, size = 52 }) {
   if (slot === 'armor' && imagePath && !failed) {
     return (
       <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
-        <ArmorIcon imagePath={imagePath} size={size} borderRadius={0} />
+        <ArmorIcon imagePath={imagePath} size={size} borderRadius={0} enchantLevel={item?.enchant_level || 0} />
       </div>
     );
   }
@@ -643,18 +643,27 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
       setLoadError(false);
     }
 
-    const [inventoryResponse, equippedResponse, upgradeResponse, scrollShopResponse] = await Promise.all([
-      apiClient.get('/inventory'),
-      apiClient.get('/me/equipped').catch(() => ({ data: {} })),
-      apiClient.get('/me/upgrade').catch(() => ({ data: { items: [], scrolls: {} } })),
-      apiClient.get('/shop/scrolls').catch(() => ({ data: { scrolls: [] } })),
+    const inventoryRequest = apiClient.get('/inventory');
+    const equippedRequest = apiClient.get('/me/equipped').catch(() => ({ data: {} }));
+    const upgradeRequest = apiClient.get('/me/upgrade').catch(() => ({ data: { items: [], scrolls: {} } }));
+    const scrollShopRequest = apiClient.get('/shop/scrolls').catch(() => ({ data: { scrolls: [] } }));
+
+    const [inventoryResponse, equippedResponse] = await Promise.all([
+      inventoryRequest,
+      equippedRequest,
     ]);
 
     const items = Array.isArray(inventoryResponse.data) ? inventoryResponse.data : inventoryResponse.data?.items ?? [];
-    const nextUpgradeItems = upgradeResponse.data?.items || [];
 
     setInventory(items);
     applyEquippedState(equippedResponse.data);
+
+    const [upgradeResponse, scrollShopResponse] = await Promise.all([
+      upgradeRequest,
+      scrollShopRequest,
+    ]);
+    const nextUpgradeItems = upgradeResponse.data?.items || [];
+
     setUpgradeItems(nextUpgradeItems);
     setScrolls(upgradeResponse.data?.scrolls || {});
     setScrollShop(scrollShopResponse.data?.scrolls || []);

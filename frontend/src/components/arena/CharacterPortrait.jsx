@@ -1,4 +1,5 @@
 import WeaponIcon from '../WeaponIcon';
+import ArmorIcon from '../ArmorIcon';
 import CharPreview from './CharPreview';
 import { getClassInfo, normalizeCharacterClass } from '../../utils/characters';
 
@@ -110,11 +111,11 @@ export default function CharacterPortrait({
             overflow: 'hidden',
           }}
         >
-          <img
-            src={armor.image_path}
-            alt={armor.name || 'armor'}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
-            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          <ArmorIcon
+            imagePath={armor.image_path}
+            size={Math.round(badgeSize * 0.78)}
+            borderRadius={9}
+            enchantLevel={armor?.enchant_level || 0}
           />
         </div>
       ) : null}
