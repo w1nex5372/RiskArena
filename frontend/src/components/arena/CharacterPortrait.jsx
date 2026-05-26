@@ -11,11 +11,13 @@ const PORTRAIT_SRC = {
 export default function CharacterPortrait({
   cls = 'warrior',
   weapon = null,
+  armor = null,
   size = 150,
   badgeSize = 44,
   active = true,
   sheetPath = null,
   showWeaponBadge = true,
+  showArmorBadge = true,
   style = {},
 }) {
   const classKey = normalizeCharacterClass(cls) || 'warrior';
@@ -87,6 +89,32 @@ export default function CharacterPortrait({
             size={Math.round(badgeSize * 0.78)}
             borderRadius={9}
             enchantLevel={weapon?.enchant_level || 0}
+          />
+        </div>
+      ) : null}
+      {showArmorBadge && armor?.image_path ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: 7,
+            bottom: 7,
+            width: badgeSize,
+            height: badgeSize,
+            borderRadius: 14,
+            background: 'linear-gradient(180deg, rgba(15,23,42,0.94), rgba(5,8,16,0.98))',
+            border: '1px solid rgba(201,168,76,0.36)',
+            boxShadow: '0 8px 18px rgba(0,0,0,0.42), 0 0 14px rgba(201,168,76,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          <img
+            src={armor.image_path}
+            alt={armor.name || 'armor'}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
           />
         </div>
       ) : null}

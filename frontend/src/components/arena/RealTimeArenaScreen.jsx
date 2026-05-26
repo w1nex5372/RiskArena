@@ -19,14 +19,20 @@ const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
   const override = new URLSearchParams(window.location.search).get('gameServerUrl');
   if (override) return override;
 
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-  if (window.location.protocol === 'https:' || !isLocal) {
-    return `${proto}//${window.location.host}/colyseus`;
-  }
-
-  return `${proto}//${window.location.hostname}:2567`;
+  return `${window.location.origin}/colyseus`;
 })();
+
+function formatConnectionError(err) {
+  if (!err) return 'Could not connect to game server';
+  if (err.message) return err.message;
+  if (err.type === 'error' && err.target?.responseURL) {
+    return `Network error connecting to ${err.target.responseURL}`;
+  }
+  if (err.type === 'error') {
+    return 'Network error while connecting to game server';
+  }
+  return String(err);
+}
 
 // Game world dimensions
 const GAME_W = 800;
@@ -348,7 +354,10 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
     async function connect() {
       try {
-        const sessionToken = getStoredSessionToken();
+        const sessionToken = user?.session_token || getStoredSessionToken();
+        if (!sessionToken) {
+          throw new Error('No active session token. Refresh dev login and try again.');
+        }
 
         const client = new Colyseus.Client(GAME_SERVER_URL);
         const room = await client.joinOrCreate('arena_room', {
@@ -431,8 +440,9 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
       } catch (err) {
         if (!cancelled) {
+          console.error('Failed to connect to game server', err);
           updatePhase('error');
-          setErrorMsg(err?.message || 'Could not connect to game server');
+          setErrorMsg(formatConnectionError(err));
         }
       }
     }
@@ -573,7 +583,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
             {errorMsg || 'Could not connect to game server'}
           </div>
           <div style={{ color: '#64748b', fontSize: 12, marginBottom: 20, textAlign: 'center' }}>
-            Make sure the game server is running on port 2567
+            Make sure the game server is running and reachable through /colyseus
           </div>
           <button onClick={onLeave} style={{
             background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.3)',
@@ -682,6 +692,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
                 weapon={equipped?.weapon || null}
                 badgeSize={24}
                 sheetPath={equippedSheetPath || user?.character_spritesheet_path || null}
+                armor={equipped?.armor || null}
               />
 
               <div style={{ flex: 1, zIndex: 1, minWidth: 0 }}>

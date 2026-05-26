@@ -267,6 +267,7 @@ function FighterPanel({
               size={142}
               badgeSize={34}
               showWeaponBadge={false}
+              armor={player?.armor || null}
               style={{
                 border: 0,
                 boxShadow: classInfo ? `0 0 16px ${classInfo.glow}` : 'none',
@@ -631,6 +632,7 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
               size={160}
               badgeSize={38}
               showWeaponBadge={false}
+              armor={userPlayer?.armor || null}
               style={{ margin: '0 auto 16px' }}
             />
             <div style={{ fontSize: 32, fontWeight: 900, color: '#fbbf24', marginBottom: 16 }}>Match won</div>
@@ -731,6 +733,7 @@ export default function ArenaScreen({ user, matchId, roomContext, onExit, onMatc
           badgeSize={30}
           active={false}
           showWeaponBadge={false}
+          armor={userPlayer?.armor || null}
           style={{ margin: '0 auto 16px' }}
         />
         <div style={{ fontSize: 28, fontWeight: 900, color: didDraw ? '#60a5fa' : '#f87171', marginBottom: 12 }}>

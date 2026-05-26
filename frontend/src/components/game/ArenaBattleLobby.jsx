@@ -142,6 +142,7 @@ function CharacterCard({ player, label, isYou, ready }) {
               badgeSize={26}
               active={ready}
               showWeaponBadge={false}
+              armor={player?.armor || null}
               style={{
                 border: 0,
                 boxShadow: 'none',
