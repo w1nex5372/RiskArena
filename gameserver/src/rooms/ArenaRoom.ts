@@ -33,6 +33,7 @@ const ATTACK_DMG_MAX = 25;
 const ATTACK_COOLDOWN_MS = 600;
 const ATTACK_ANIM_MS = 250;       // how long "attacking" state lasts
 const HURT_ANIM_MS = 300;
+const ACTIVE_BLOCK_REDUCTION = 0.65;
 const TICK_MS = 66;               // ~15 FPS
 const COUNTDOWN_SECS = 3;
 const FINISH_CLEANUP_MS = 12_000; // room lives 12s after match ends
@@ -58,7 +59,7 @@ export class ArenaRoom extends Room<ArenaState> {
 
     // Client sends its current input state (held keys)
     this.onMessage("input", (client, data: {
-      left: boolean; right: boolean; attack: boolean; ability: boolean; up: boolean
+      left: boolean; right: boolean; attack: boolean; ability: boolean; up: boolean; block?: boolean
     }) => {
       const player = this.state.players.get(client.sessionId);
       if (player && this.state.phase === "battle") {
@@ -68,6 +69,7 @@ export class ArenaRoom extends Room<ArenaState> {
           attack: !!data.attack,
           ability: !!data.ability,
           up: !!data.up,
+          block: !!data.block,
         };
       }
     });
@@ -235,14 +237,32 @@ export class ArenaRoom extends Room<ArenaState> {
       }
 
       const input = player.inputState;
+      const attackPressed = input.attack && !player.previousInputState.attack;
+      const abilityPressed = input.ability && !player.previousInputState.ability;
+
+      if (player.isStunned) {
+        player.isBlocking = false;
+      }
 
       if (!player.isStunned) {
         // Reset timed animation states
         if (player.state === "hurt"      && now >= player.hurtUntil)   player.state = "idle";
         if (player.state === "attacking" && now >= player.attackUntil) player.state = "idle";
 
+        const canBlock =
+          input.block &&
+          player.isGrounded &&
+          player.state !== "attacking" &&
+          player.state !== "hurt";
+        player.isBlocking = canBlock;
+        if (canBlock) {
+          player.state = "blocking";
+        } else if (player.state === "blocking") {
+          player.state = "idle";
+        }
+
         // Movement
-        if (player.state !== "attacking") {
+        if (player.state !== "attacking" && !player.isBlocking) {
           if (input.left) {
             player.x -= PLAYER_SPEED;
             player.facingRight = false;
@@ -258,7 +278,7 @@ export class ArenaRoom extends Room<ArenaState> {
         }
 
         // Jump input
-        if (input.up && player.isGrounded) {
+        if (!player.isBlocking && input.up && player.isGrounded) {
           const lastJump = this.lastJumpTime.get(sessionId) ?? 0;
           if (now - lastJump > JUMP_COOLDOWN_MS) {
             player.velocityY = JUMP_VELOCITY;
@@ -269,7 +289,7 @@ export class ArenaRoom extends Room<ArenaState> {
         }
 
         // Basic attack
-        if (input.attack && now - player.lastAttackTime > ATTACK_COOLDOWN_MS) {
+        if (!player.isBlocking && attackPressed && now - player.lastAttackTime > ATTACK_COOLDOWN_MS) {
           player.lastAttackTime = now;
           player.state = "attacking";
           player.attackUntil = now + ATTACK_ANIM_MS;
@@ -287,7 +307,7 @@ export class ArenaRoom extends Room<ArenaState> {
         }
 
         // ── Class ability ───────────────────────────────────────────────
-        if (input.ability && player.abilityCharges > 0) {
+        if (!player.isBlocking && abilityPressed && player.abilityCharges > 0) {
           player.abilityCharges = 0;
           const cls = player.characterClass;
           this.broadcast("weapon_swing", { sessionId, cls });
@@ -363,6 +383,11 @@ export class ArenaRoom extends Room<ArenaState> {
           if (player.state === "jumping") player.state = "idle";
         }
       }
+
+      player.previousInputState = {
+        attack: input.attack,
+        ability: input.ability,
+      };
     });
 
     this.state.tickNumber++;
@@ -374,16 +399,24 @@ export class ArenaRoom extends Room<ArenaState> {
   }
 
   private dealDamageAt(attackerSid: string, target: Player, targetSid: string, dmg: number, nx: number, ny: number, now: number) {
-    const effectiveDmg = Math.max(1, Math.round(dmg * (1 - target.defendReduction)));
+    const attacker = this.state.players.get(attackerSid);
+    const blocked = Boolean(attacker && target.isBlocking && this.isAttackerInFront(target, attacker));
+    const passiveMultiplier = 1 - target.defendReduction;
+    const blockMultiplier = blocked ? 1 - ACTIVE_BLOCK_REDUCTION : 1;
+    const effectiveDmg = Math.max(1, Math.round(dmg * passiveMultiplier * blockMultiplier));
     target.hp = Math.max(0, target.hp - effectiveDmg);
-    this.broadcast("damage_number", { x: nx, y: ny - 40, damage: effectiveDmg });
+    this.broadcast("damage_number", { x: nx, y: ny - 40, damage: effectiveDmg, blocked });
     if (target.hp <= 0) {
       target.state = "dead";
       this.endMatch(attackerSid, targetSid, false);
-    } else {
+    } else if (!blocked) {
       target.state = "hurt";
       target.hurtUntil = now + HURT_ANIM_MS;
     }
+  }
+
+  private isAttackerInFront(target: Player, attacker: Player) {
+    return target.facingRight ? attacker.x >= target.x : attacker.x <= target.x;
   }
 
   // ── Private: finalize match ───────────────────────────────────────────────

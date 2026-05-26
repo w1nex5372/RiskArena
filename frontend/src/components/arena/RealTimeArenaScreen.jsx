@@ -71,6 +71,134 @@ function TouchButton({ label, color, onDown, onUp, style = {} }) {
   );
 }
 
+function JoystickControl({ onChange }) {
+  const baseRef = useRef(null);
+  const pointerIdRef = useRef(null);
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const currentRef = useRef({ left: false, right: false, up: false });
+
+  const applyPointer = useCallback((clientX, clientY) => {
+    const rect = baseRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const radius = rect.width / 2;
+    const maxDistance = radius - 18;
+    const dx = clientX - (rect.left + radius);
+    const dy = clientY - (rect.top + radius);
+    const distance = Math.min(Math.hypot(dx, dy), maxDistance);
+    const angle = Math.atan2(dy, dx);
+    const x = Math.cos(angle) * distance;
+    const y = Math.sin(angle) * distance;
+    const next = {
+      left: x < -18,
+      right: x > 18,
+      up: y < -20,
+    };
+
+    setKnob({ x, y });
+    if (
+      next.left !== currentRef.current.left ||
+      next.right !== currentRef.current.right ||
+      next.up !== currentRef.current.up
+    ) {
+      currentRef.current = next;
+      onChange(next);
+    }
+  }, [onChange]);
+
+  const reset = useCallback(() => {
+    const neutral = { left: false, right: false, up: false };
+    pointerIdRef.current = null;
+    setKnob({ x: 0, y: 0 });
+    currentRef.current = neutral;
+    onChange(neutral);
+  }, [onChange]);
+
+  return (
+    <div
+      ref={baseRef}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        pointerIdRef.current = e.pointerId;
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        applyPointer(e.clientX, e.clientY);
+      }}
+      onPointerMove={(e) => {
+        if (pointerIdRef.current !== e.pointerId) return;
+        e.preventDefault();
+        applyPointer(e.clientX, e.clientY);
+      }}
+      onPointerUp={(e) => {
+        if (pointerIdRef.current !== e.pointerId) return;
+        e.preventDefault();
+        reset();
+      }}
+      onPointerCancel={(e) => {
+        if (pointerIdRef.current !== e.pointerId) return;
+        e.preventDefault();
+        reset();
+      }}
+      style={{
+        width: 132,
+        height: 132,
+        borderRadius: '50%',
+        position: 'relative',
+        touchAction: 'none',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        background: 'radial-gradient(circle, rgba(50,72,112,0.78) 0%, rgba(15,23,42,0.86) 64%, rgba(2,6,23,0.92) 100%)',
+        border: '2px solid rgba(148,163,184,0.22)',
+        boxShadow: 'inset 0 0 24px rgba(0,0,0,0.42), 0 4px 14px rgba(0,0,0,0.5)',
+      }}
+      aria-label="Movement joystick"
+    >
+      <div style={{
+        position: 'absolute',
+        left: '50%',
+        top: 12,
+        transform: 'translateX(-50%)',
+        color: 'rgba(226,232,240,0.72)',
+        fontSize: 18,
+        fontWeight: 900,
+        pointerEvents: 'none',
+      }}>↑</div>
+      <div style={{
+        position: 'absolute',
+        left: 12,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        color: 'rgba(226,232,240,0.72)',
+        fontSize: 18,
+        fontWeight: 900,
+        pointerEvents: 'none',
+      }}>←</div>
+      <div style={{
+        position: 'absolute',
+        right: 12,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        color: 'rgba(226,232,240,0.72)',
+        fontSize: 18,
+        fontWeight: 900,
+        pointerEvents: 'none',
+      }}>→</div>
+      <div style={{
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        width: 54,
+        height: 54,
+        borderRadius: '50%',
+        transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
+        background: 'linear-gradient(180deg, rgba(226,232,240,0.94), rgba(100,116,139,0.9))',
+        border: '2px solid rgba(255,255,255,0.35)',
+        boxShadow: '0 8px 18px rgba(0,0,0,0.45)',
+        pointerEvents: 'none',
+      }} />
+    </div>
+  );
+}
+
 // ── Ability button with SVG circular cooldown timer ──────────────────────────
 const CLASS_COOLDOWNS = { warrior: 8000, mage: 6000, rogue: 5000 };
 
@@ -173,7 +301,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const gameRef = useRef(null);        // Phaser.Game instance
   const sceneRef = useRef(null);       // BattleScene instance
   const roomRef = useRef(null);        // Colyseus room
-  const inputRef = useRef({ left: false, right: false, attack: false, ability: false, up: false });
+  const inputRef = useRef({ left: false, right: false, attack: false, ability: false, up: false, block: false });
   const inputIntervalRef = useRef(null);
   const lastInputRef = useRef('');
   const roomActiveRef = useRef(false);
@@ -479,6 +607,15 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
     }
   }, []);
 
+  const setDirectionalInput = useCallback((next) => {
+    inputRef.current = {
+      ...inputRef.current,
+      left: Boolean(next.left),
+      right: Boolean(next.right),
+      up: Boolean(next.up),
+    };
+  }, []);
+
   // ── Keyboard support (desktop dev) ────────────────────────────────────────
   useEffect(() => {
     const down = (e) => {
@@ -487,6 +624,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', true);
       if (e.key === ' ' || e.key === 'z') setKey('attack', true);
       if (e.key === 'x') setKey('ability', true);
+      if (e.key === 'Shift' || e.key === 'c') setKey('block', true);
     };
     const up = (e) => {
       if (e.key === 'ArrowLeft' || e.key === 'a') setKey('left', false);
@@ -494,6 +632,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', false);
       if (e.key === ' ' || e.key === 'z') setKey('attack', false);
       if (e.key === 'x') setKey('ability', false);
+      if (e.key === 'Shift' || e.key === 'c') setKey('block', false);
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
@@ -791,29 +930,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
           background: 'rgba(0,0,0,0.45)',
           borderTop: '1px solid rgba(255,255,255,0.06)',
         }}>
-          {/* D-pad */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-            <TouchButton
-              label="↑"
-              color="rgba(30,58,95,0.85)"
-              onDown={() => { setKey('up', true); setTimeout(() => setKey('up', false), 100); }}
-              onUp={() => {}}
-            />
-            <div style={{ display: 'flex', gap: 12 }}>
-              <TouchButton
-                label="←"
-                color="rgba(30,58,95,0.85)"
-                onDown={() => setKey('left', true)}
-                onUp={() => setKey('left', false)}
-              />
-              <TouchButton
-                label="→"
-                color="rgba(30,58,95,0.85)"
-                onDown={() => setKey('right', true)}
-                onUp={() => setKey('right', false)}
-              />
-            </div>
-          </div>
+          <JoystickControl onChange={setDirectionalInput} />
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 12 }}>
@@ -824,6 +941,13 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
                 setKey('ability', true);
                 setTimeout(() => setKey('ability', false), 150);
               }}
+            />
+            <TouchButton
+              label="B"
+              color="rgba(37,99,235,0.86)"
+              onDown={() => setKey('block', true)}
+              onUp={() => setKey('block', false)}
+              style={{ width: 68, height: 68, fontSize: 24 }}
             />
             <TouchButton
               label="⚔️"

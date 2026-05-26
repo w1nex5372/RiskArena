@@ -9,7 +9,7 @@ export class Player extends Schema {
   @type("number") y: number = 360;
   @type("number") hp: number = 100;
   @type("number") maxHp: number = 100;
-  @type("string") state: string = "idle"; // idle | walking | attacking | hurt | dead | disconnected
+  @type("string") state: string = "idle"; // idle | walking | blocking | attacking | hurt | dead | disconnected
   @type("boolean") facingRight: boolean = true;
   @type("string") characterClass: string = "warrior";
   @type("string") characterBuildJson: string = "";
@@ -17,6 +17,7 @@ export class Player extends Schema {
   velocityY: number = 0;              // server-only physics, not synced
   @type("boolean") isGrounded: boolean = true;
   @type("boolean") isStunned: boolean = false;
+  @type("boolean") isBlocking: boolean = false;
   @type("number")  abilityCharges: number = 1;  // 0 = cooldown, 1 = ready
   @type("number") attackBonus:    number = 0;  // from weapon
   @type("number") abilityBonus:   number = 0;  // from ability scroll
@@ -33,12 +34,17 @@ export class Player extends Schema {
   attackUntil: number = 0;
   stunUntil: number = 0;
   abilityCooldownUntil: number = 0;
-  inputState: { left: boolean; right: boolean; attack: boolean; ability: boolean; up: boolean } = {
+  inputState: { left: boolean; right: boolean; attack: boolean; ability: boolean; up: boolean; block: boolean } = {
     left: false,
     right: false,
     attack: false,
     ability: false,
     up: false,
+    block: false,
+  };
+  previousInputState: { attack: boolean; ability: boolean } = {
+    attack: false,
+    ability: false,
   };
 }
 

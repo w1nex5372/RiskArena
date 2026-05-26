@@ -27,6 +27,7 @@ const STATE_ANIM = {
   hurt:      'hurt',
   dead:      'dead',
   jumping:   'jump',
+  blocking:  'idle',
 };
 
 const WEAPON_DEBUG_STATES = ['idle', 'walk', 'attack', 'hurt', 'dead', 'jump'];
@@ -44,12 +45,9 @@ const CLASS_WEAPON_ICON = {
   mage: '/items/icons/mage_staff_icon.png',
   rogue: '/items/icons/rogue_scimitar_icon.png',
 };
-const BACKEND_ASSET_BASE = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
-
 function resolveRuntimeAssetUrl(path) {
   if (!path) return '';
   if (/^https?:\/\//i.test(path)) return path;
-  if (path.startsWith('/generated/') && BACKEND_ASSET_BASE) return `${BACKEND_ASSET_BASE}${path}`;
   return path;
 }
 // Per-weapon sheet column counts (width / 64)
@@ -1094,7 +1092,7 @@ export default class BattleScene extends Phaser.Scene {
     });
     room.state.players.onRemove((_p, sessionId) => this.removePlayerSprite(sessionId));
     room.state.onChange(() => this.handlePhaseChange(room.state));
-    room.onMessage('damage_number', (d) => this.showDamageNumber(d.x, d.y, d.damage));
+    room.onMessage('damage_number', (d) => this.showDamageNumber(d.x, d.y, d.damage, { blocked: Boolean(d.blocked) }));
     room.onMessage('ability_used',  (d) => this.showAbilityEffect(d));
     room.onMessage('weapon_swing',  (d) => this.playWeaponSwing(d.sessionId));
   }
@@ -1183,6 +1181,8 @@ export default class BattleScene extends Phaser.Scene {
       animPrefix: bodyDesc.animPrefix,
       usesGeneratedSheet: bodyDesc.generated,
       nameLabel, classLabel, hpBg, hpBar, meTag, dcLabel: null, stunLabel: null,
+      blockFx: null,
+      blockFxTween: null,
       maxHp: player.maxHp || 100,
       deathPlayed: false,
       hpPulseTween: null,
@@ -1271,6 +1271,7 @@ export default class BattleScene extends Phaser.Scene {
     s.hpBg.setPosition(x, hpY);
     s.hpBar.setPosition(x - 28, hpY);
     if (s.meTag) s.meTag.setPosition(x, meY);
+    this._syncBlockGuard(s, player, x, visualY, topY);
 
     // HP bar
     const pct = Math.max(0, player.hp / s.maxHp);
@@ -1431,14 +1432,71 @@ export default class BattleScene extends Phaser.Scene {
     s.dcLabel.setPosition(x, y).setVisible(true);
   }
 
+  _isBlocking(player) {
+    return Boolean(player?.isBlocking) || player?.state === 'blocking';
+  }
+
+  _syncBlockGuard(s, player, x, visualY, topY) {
+    const visible = this._isBlocking(player) && player.state !== 'dead' && player.state !== 'disconnected';
+    if (!visible) {
+      if (s.blockFx?.active) s.blockFx.setVisible(false);
+      return;
+    }
+
+    if (!s.blockFx?.active) {
+      s.blockFx = this.add.graphics().setDepth(4);
+      s.blockFxTween = this.tweens.add({
+        targets: s.blockFx,
+        alpha: { from: 0.62, to: 1 },
+        yoyo: true,
+        repeat: -1,
+        duration: 520,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
+    const facingRight = this._getVisualFacingRight(player);
+    const xMul = facingRight ? 1 : -1;
+    const shieldX = x + xMul * 31;
+    const shieldY = Math.max(topY + 46, visualY - 62);
+    const g = s.blockFx;
+
+    g.clear();
+    g.setVisible(true);
+    g.fillStyle(0x60a5fa, 0.14);
+    g.lineStyle(3, 0xbfdbfe, 0.9);
+    g.beginPath();
+    g.moveTo(shieldX, shieldY - 38);
+    g.lineTo(shieldX + xMul * 24, shieldY - 23);
+    g.lineTo(shieldX + xMul * 18, shieldY + 16);
+    g.lineTo(shieldX, shieldY + 34);
+    g.lineTo(shieldX - xMul * 18, shieldY + 16);
+    g.lineTo(shieldX - xMul * 24, shieldY - 23);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+
+    g.lineStyle(1, 0xe0f2fe, 0.6);
+    g.beginPath();
+    g.moveTo(shieldX, shieldY - 25);
+    g.lineTo(shieldX + xMul * 12, shieldY - 13);
+    g.lineTo(shieldX + xMul * 9, shieldY + 9);
+    g.lineTo(shieldX, shieldY + 20);
+    g.lineTo(shieldX - xMul * 9, shieldY + 9);
+    g.lineTo(shieldX - xMul * 12, shieldY - 13);
+    g.closePath();
+    g.strokePath();
+  }
+
   // ── 6. Remove player ───────────────────────────────────────────────────
   removePlayerSprite(sessionId) {
     const s = this.sprites.get(sessionId);
     if (!s) return;
     if (s.stunLabel) this.tweens.killTweensOf(s.stunLabel);
     if (s.hpPulseTween) this.tweens.killTweensOf(s.hpBar);
+    if (s.blockFxTween) this.tweens.killTweensOf(s.blockFx);
     if (s.enchantTrail) { s.enchantTrail.destroy(); }
-    [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpBar, s.meTag, s.dcLabel, s.stunLabel]
+    [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpBar, s.meTag, s.dcLabel, s.stunLabel, s.blockFx]
       .forEach((o) => o?.destroy());
     this.sprites.delete(sessionId);
   }
@@ -1647,8 +1705,33 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   // ── 8. Damage number + particles + screen shake ─────────────────────────
-  showDamageNumber(gameX, gameY, damage) {
-    this._playSound('hit');
+  showDamageNumber(gameX, gameY, damage, opts = {}) {
+    const blocked = Boolean(opts.blocked);
+    this._playSound(blocked ? 'block' : 'hit');
+
+    if (blocked) {
+      this._showBlockImpact(gameX, gameY);
+      const text = damage > 0 ? `-${damage} BLOCK` : 'BLOCK';
+      const txt = this.add.text(gameX, gameY, text, {
+        fontSize: '20px', fontFamily: 'monospace',
+        color: '#93c5fd', fontStyle: 'bold',
+        stroke: '#000', strokeThickness: 4,
+      }).setOrigin(0.5).setDepth(6);
+
+      this.tweens.add({
+        targets: txt,
+        y: gameY - 58,
+        alpha: 0,
+        scaleX: 1.18,
+        scaleY: 1.18,
+        duration: 760,
+        ease: 'Power1',
+        onComplete: () => { if (txt.active) txt.destroy(); },
+      });
+      this.cameras.main.shake(90, 0.003);
+      return;
+    }
+
     // Particle burst
     if (this.hitEmitter) {
       const count = this._isMobile ? (damage >= 20 ? 5 : 3) : (damage >= 20 ? 14 : 8);
@@ -1679,6 +1762,39 @@ export default class BattleScene extends Phaser.Scene {
       duration: 850,
       ease: 'Power1',
       onComplete: () => txt.destroy(),
+    });
+  }
+
+  _showBlockImpact(gameX, gameY) {
+    const ring = this.add.graphics().setDepth(6);
+    ring.lineStyle(3, 0xbfdbfe, 0.95);
+    ring.strokeCircle(gameX, gameY, 18);
+    ring.lineStyle(2, 0x60a5fa, 0.75);
+    ring.beginPath();
+    ring.moveTo(gameX - 18, gameY - 12);
+    ring.lineTo(gameX + 18, gameY + 12);
+    ring.moveTo(gameX + 18, gameY - 12);
+    ring.lineTo(gameX - 18, gameY + 12);
+    ring.strokePath();
+    this.tweens.add({
+      targets: ring,
+      alpha: 0,
+      scaleX: 2.2,
+      scaleY: 2.2,
+      duration: 260,
+      ease: 'Power2',
+      onComplete: () => { if (ring.active) ring.destroy(); },
+    });
+
+    const flash = this.add.rectangle(gameX, gameY, 52, 70, 0x60a5fa, 0.16).setDepth(5);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scaleX: 1.45,
+      scaleY: 1.15,
+      duration: 180,
+      ease: 'Power2',
+      onComplete: () => { if (flash.active) flash.destroy(); },
     });
   }
 
@@ -1858,6 +1974,19 @@ export default class BattleScene extends Phaser.Scene {
         gain.gain.setValueAtTime(0.25, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
         osc.start(now); osc.stop(now + 0.12);
+
+      } else if (type === 'block') {
+        [520, 740].forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + i * 0.025);
+          osc.frequency.exponentialRampToValueAtTime(freq * 0.6, now + 0.14 + i * 0.025);
+          gain.gain.setValueAtTime(0.16, now + i * 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16 + i * 0.025);
+          osc.start(now + i * 0.025); osc.stop(now + 0.18 + i * 0.025);
+        });
 
       } else if (type === 'ability') {
         const osc = ctx.createOscillator();
