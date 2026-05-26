@@ -14,6 +14,7 @@ import {
   getTierTheme,
 } from '../../utils/itemPresentation';
 import WeaponIcon from '../WeaponIcon';
+import ArmorIcon from '../ArmorIcon';
 
 const SELL_PRICES = {
   common: 5,
@@ -48,6 +49,20 @@ function ItemImage({ item, size = 80 }) {
         }}
       >
         <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} enchantLevel={item?.enchant_level || 0} />
+      </div>
+    );
+  }
+
+  if (slot === 'armor' && imagePath && !failed) {
+    return (
+      <div
+        style={{
+          width: size, height: size, borderRadius: 18, flexShrink: 0,
+          overflow: 'hidden', border: `2px solid ${theme.border}`,
+          boxShadow: `0 0 14px ${theme.glow}`,
+        }}
+      >
+        <ArmorIcon imagePath={imagePath} size={size} borderRadius={0} />
       </div>
     );
   }

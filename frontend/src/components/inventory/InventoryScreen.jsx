@@ -23,6 +23,7 @@ import {
   getTierTheme,
 } from '../../utils/itemPresentation';
 import WeaponIcon from '../WeaponIcon';
+import ArmorIcon from '../ArmorIcon';
 
 const HUB_TABS = [
   { key: 'loadout', label: 'Inventory', helper: 'Your collected gear', cta: 'Manage', Icon: Backpack },
@@ -70,9 +71,12 @@ const SCROLL_OPTIONS = [
 function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
   const [failed, setFailed] = useState(false);
   const imagePath = item?.image_path;
-  const isWeapon = getSlotKey(item) === 'weapon';
-  if (isWeapon && imagePath && !failed) {
+  const slot = getSlotKey(item);
+  if (slot === 'weapon' && imagePath && !failed) {
     return <WeaponIcon imagePath={imagePath} size={54} borderRadius={10} enchantLevel={item?.enchant_level || 0} />;
+  }
+  if (slot === 'armor' && imagePath && !failed) {
+    return <ArmorIcon imagePath={imagePath} size={54} borderRadius={10} />;
   }
   if (!src || failed) {
     return <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />;
@@ -82,7 +86,7 @@ function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
       src={src}
       alt={item.name}
       className={ringClass}
-      style={{ width: '80%', height: '80%', objectFit: 'cover', borderRadius: 10 }}
+      style={{ width: '80%', height: '80%', objectFit: 'contain', imageRendering: 'pixelated', borderRadius: 10 }}
       onError={() => setFailed(true)}
     />
   );
@@ -121,6 +125,14 @@ function ItemImage({ item, size = 52 }) {
     return (
       <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
         <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} enchantLevel={item?.enchant_level || 0} />
+      </div>
+    );
+  }
+
+  if (slot === 'armor' && imagePath && !failed) {
+    return (
+      <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
+        <ArmorIcon imagePath={imagePath} size={size} borderRadius={0} />
       </div>
     );
   }
@@ -582,6 +594,17 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
   const [retryKey, setRetryKey] = useState(0);
   const [selectedItem, setSelectedItem] = useState(null);
   const [filterSlot, setFilterSlot] = useState('all');
+  const latestUserRef = useRef(user);
+  const onUserUpdateRef = useRef(onUserUpdate);
+  const previousClassRef = useRef(user?.class_name || null);
+
+  useEffect(() => {
+    latestUserRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    onUserUpdateRef.current = onUserUpdate;
+  }, [onUserUpdate]);
 
   useEffect(() => {
     setDisplayBalance(user?.token_balance || 0);
@@ -599,19 +622,20 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
     setLoadoutEffectiveStats(data?.loadout_effective_stats || {});
     const nextBattleSheetPath = data?.battle_spritesheet_path || '';
     const nextBattleSheetHash = data?.battle_spritesheet_hash || '';
+    const currentUser = latestUserRef.current || {};
     if (
       (nextBattleSheetPath || nextBattleSheetHash) &&
       (
-        nextBattleSheetPath !== (user?.battle_spritesheet_path || '') ||
-        nextBattleSheetHash !== (user?.battle_spritesheet_hash || '')
+        nextBattleSheetPath !== (currentUser.battle_spritesheet_path || '') ||
+        nextBattleSheetHash !== (currentUser.battle_spritesheet_hash || '')
       )
     ) {
-      onUserUpdate?.({
+      onUserUpdateRef.current?.({
         battle_spritesheet_path: nextBattleSheetPath,
         battle_spritesheet_hash: nextBattleSheetHash,
       });
     }
-  }, [onUserUpdate, user?.battle_spritesheet_hash, user?.battle_spritesheet_path]);
+  }, []);
 
   const refreshItems = useCallback(async ({ showLoading = false } = {}) => {
     if (showLoading) {
@@ -670,8 +694,11 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
   }, [refreshItems]);
 
   useEffect(() => {
-    if (user?.class_name) refreshItems().catch(() => {});
-  }, [user?.class_name, user?.id]); // eslint-disable-line
+    const currentClass = user?.class_name || null;
+    if (!currentClass || previousClassRef.current === currentClass) return;
+    previousClassRef.current = currentClass;
+    refreshItems().catch(() => {});
+  }, [refreshItems, user?.class_name]);
 
   const handleEquip = async (item) => {
     if (equipping) return;
