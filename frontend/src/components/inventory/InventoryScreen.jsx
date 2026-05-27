@@ -395,6 +395,7 @@ function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, equip
             badgeSize={32}
             active={isActive}
             sheetPath={isActive ? (user?.battle_spritesheet_path || user?.character_spritesheet_path) : null}
+            sheetLoading={isActive && user && !user.battle_spritesheet_path && !user.character_spritesheet_path}
             armor={equippedBySlot?.armor || null}
             style={{
               borderRadius: 14,

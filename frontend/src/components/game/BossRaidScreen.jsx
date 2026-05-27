@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock3, Coins, Gem, Skull, Swords, Trophy, Users, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 import apiClient from '../../api/client';
 import Phaser from 'phaser';
 import BossRaidScene from '../arena/scenes/BossRaidScene';
+import WeaponIcon from '../WeaponIcon';
+import ArmorIcon from '../ArmorIcon';
 
-const ATTACK_COOLDOWN = 6; // must match backend ATTACK_COOLDOWN_S
+const ATTACK_ANIM_LOCK = 6000; // mirrors backend boss attack cooldown
 
 const fmt = (secs) => {
   if (secs == null) return '--:--';
@@ -22,7 +24,6 @@ const phaseFromHp = (hp, maxHp) => {
   return 3;
 };
 
-// Loot table (mirrors boss_domain.py _LOOT_TIERS)
 const LOOT_TIERS = [
   { pct: 25.0, label: 'Uncommon',  color: '#22c55e' },
   { pct: 12.0, label: 'Rare',      color: '#3b82f6' },
@@ -31,40 +32,146 @@ const LOOT_TIERS = [
   { pct: 60.0, label: 'No drop',   color: '#334155' },
 ];
 
-export default function BossRaidScreen({ user, socket, onLevelUp }) {
-  const [bossState,  setBossState]  = useState(null);
-  const [loadError,  setLoadError]  = useState(null); // 'no_raid' | 'failed' | null
-  const [view,       setView]       = useState('lobby'); // 'lobby' | 'battle'
-  const [cooldown,   setCooldown]   = useState(0);
-  const [myDamage,   setMyDamage]   = useState(0);
-  const [topDealers, setTopDealers] = useState([]);
-  const [raidTimer,  setRaidTimer]  = useState(null);
-  const [lootResult, setLootResult] = useState(null);
-  const [raidEnded,  setRaidEnded]  = useState(false);
-  const [damageFeed, setDamageFeed] = useState([]);
+// ── Joystick ──────────────────────────────────────────────────────────────────
+function JoystickControl({ onChange }) {
+  const baseRef      = useRef(null);
+  const pointerIdRef = useRef(null);
+  const currentRef   = useRef({ left: false, right: false });
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
 
-  const cooldownInterval = useRef(null);
+  const applyPointer = useCallback((clientX, clientY) => {
+    const rect = baseRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const radius      = rect.width / 2;
+    const maxDistance = radius - 18;
+    const dx       = clientX - (rect.left + radius);
+    const dy       = clientY - (rect.top  + radius);
+    const distance = Math.min(Math.hypot(dx, dy), maxDistance);
+    const angle    = Math.atan2(dy, dx);
+    const x        = Math.cos(angle) * distance;
+    const y        = Math.sin(angle) * distance;
+    const next     = { left: x < -18, right: x > 18 };
+    setKnob({ x, y });
+    if (next.left !== currentRef.current.left || next.right !== currentRef.current.right) {
+      currentRef.current = next;
+      onChange(next);
+    }
+  }, [onChange]);
+
+  const reset = useCallback(() => {
+    pointerIdRef.current = null;
+    setKnob({ x: 0, y: 0 });
+    currentRef.current = { left: false, right: false };
+    onChange({ left: false, right: false });
+  }, [onChange]);
+
+  return (
+    <div
+      ref={baseRef}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        pointerIdRef.current = e.pointerId;
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        applyPointer(e.clientX, e.clientY);
+      }}
+      onPointerMove={(e) => {
+        if (pointerIdRef.current !== e.pointerId) return;
+        e.preventDefault();
+        applyPointer(e.clientX, e.clientY);
+      }}
+      onPointerUp={(e) => {
+        if (pointerIdRef.current !== e.pointerId) return;
+        e.preventDefault();
+        reset();
+      }}
+      onPointerCancel={(e) => {
+        if (pointerIdRef.current !== e.pointerId) return;
+        e.preventDefault();
+        reset();
+      }}
+      style={{
+        width: 132, height: 132, borderRadius: '50%',
+        position: 'relative', touchAction: 'none',
+        userSelect: 'none', WebkitUserSelect: 'none',
+        background: 'radial-gradient(circle, rgba(50,72,112,0.78) 0%, rgba(15,23,42,0.86) 64%, rgba(2,6,23,0.92) 100%)',
+        border: '2px solid rgba(148,163,184,0.22)',
+        boxShadow: 'inset 0 0 24px rgba(0,0,0,0.42), 0 4px 14px rgba(0,0,0,0.5)',
+        flexShrink: 0,
+      }}
+    >
+      <div style={{ position: 'absolute', left: 12,  top: '50%', transform: 'translateY(-50%)', color: 'rgba(226,232,240,0.72)', fontSize: 18, fontWeight: 900, pointerEvents: 'none' }}>←</div>
+      <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(226,232,240,0.72)', fontSize: 18, fontWeight: 900, pointerEvents: 'none' }}>→</div>
+      <div style={{
+        position: 'absolute', left: '50%', top: '50%',
+        width: 54, height: 54, borderRadius: '50%',
+        transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
+        background: 'linear-gradient(180deg, rgba(226,232,240,0.94), rgba(100,116,139,0.9))',
+        border: '2px solid rgba(255,255,255,0.35)',
+        boxShadow: '0 8px 18px rgba(0,0,0,0.45)',
+        pointerEvents: 'none',
+      }} />
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+export default function BossRaidScreen({ user, socket, onLevelUp }) {
+  const [bossState,       setBossState]       = useState(null);
+  const [loadError,       setLoadError]       = useState(null);
+  const [view,            setView]            = useState('lobby');
+  const [attackLocked,    setAttackLocked]    = useState(false);
+  const [myDamage,        setMyDamage]        = useState(0);
+  const [topDealers,      setTopDealers]      = useState([]);
+  const [raidTimer,       setRaidTimer]       = useState(null);
+  const [lootResult,      setLootResult]      = useState(null);
+  const [raidEnded,       setRaidEnded]       = useState(false);
+  const [damageFeed,      setDamageFeed]      = useState([]);
+
+  // Equipment state — mirrors RealTimeArenaScreen
+  const [equipped,        setEquipped]        = useState({ weapon: null, armor: null, ability: null });
+  const [equippedSheet,   setEquippedSheet]   = useState('');
+  const [equipmentLoaded, setEquipmentLoaded] = useState(false);
+  const playerClass = (user?.class_name || 'warrior').toLowerCase();
+
+  const attackLockTimer  = useRef(null);
   const raidInterval     = useRef(null);
   const containerRef     = useRef(null);
   const gameRef          = useRef(null);
   const sceneRef         = useRef(null);
 
+  // ── Fetch equipment on mount ───────────────────────────────────────────────
+  useEffect(() => {
+    setEquipmentLoaded(false);
+    apiClient.get('/me/equipped')
+      .then((res) => {
+        setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
+        setEquippedSheet(res.data?.battle_spritesheet_path || '');
+        setEquipmentLoaded(true);
+      })
+      .catch(() => {
+        setEquipped({ weapon: null, armor: null, ability: null });
+        setEquippedSheet('');
+        setEquipmentLoaded(true);
+      });
+  }, [user?.id]); // eslint-disable-line
+
   useEffect(() => { fetchBossState(); }, []); // eslint-disable-line
 
-  // ── Phaser init — only when entering battle view ─────────────────────────
+  // ── Phaser init — only when entering battle view ──────────────────────────
   useEffect(() => {
     const shouldInit = view === 'battle' && !!bossState && !!containerRef.current;
     if (!shouldInit || gameRef.current) return;
 
     const config = {
-      type: Phaser.AUTO,
-      parent: containerRef.current,
-      width: 800, height: 280,
-      backgroundColor: '#0d0d1a',
-      scene: [BossRaidScene],
-      scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-      render: { antialias: false, pixelArt: false },
-      input: { keyboard: false },
+      type:            Phaser.AUTO,
+      parent:          containerRef.current,
+      width:           800,
+      height:          460,
+      backgroundColor: '#04020e',
+      scene:           [BossRaidScene],
+      scale:           { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+      render:          { antialias: false, pixelArt: false, powerPreference: 'low-power' },
+      input:           { keyboard: false },
     };
 
     gameRef.current = new Phaser.Game(config);
@@ -77,8 +184,9 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         bossMaxHp:       bossState.max_hp,
         bossPhase:       bossState.phase,
         myPlayer: {
-          class_name: user?.class_name || 'warrior',
-          sheetPath:  user?.character_spritesheet_path || null,
+          class_name: playerClass,
+          // battle_spritesheet_path has armor+weapon composited in — use it when available
+          sheetPath:  equippedSheet || user?.character_spritesheet_path || null,
           username:   user?.first_name || 'You',
         },
         recentAttackers: bossState.recent_attackers || [],
@@ -87,21 +195,21 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
     return () => {
       gameRef.current?.destroy(true);
-      gameRef.current = null;
+      gameRef.current  = null;
       sceneRef.current = null;
     };
   }, [view === 'battle' && bossState != null]); // eslint-disable-line
 
-  // Destroy Phaser when leaving battle or raid ends
+  // Destroy Phaser when raid ends
   useEffect(() => {
     if (raidEnded && gameRef.current) {
       gameRef.current.destroy(true);
-      gameRef.current = null;
+      gameRef.current  = null;
       sceneRef.current = null;
     }
   }, [raidEnded]);
 
-  // ── Socket events ─────────────────────────────────────────────────────────
+  // ── Socket events ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
@@ -156,7 +264,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       socket.off('raid_finished', onRaidFinished);
       socket.off('damage_tick',   onDamageTick);
       socket.off('boss_spawned',  onBossSpawned);
-      clearInterval(cooldownInterval.current);
+      clearTimeout(attackLockTimer.current);
       clearInterval(raidInterval.current);
     };
   }, [socket]); // eslint-disable-line
@@ -186,14 +294,11 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   };
 
   const handleAttack = async () => {
-    if (cooldown > 0 || raidEnded || !bossState) return;
-    setCooldown(ATTACK_COOLDOWN);
-    cooldownInterval.current = setInterval(() => {
-      setCooldown((prev) => {
-        if (prev <= 1) { clearInterval(cooldownInterval.current); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
+    if (attackLocked || raidEnded || !bossState) return;
+    sceneRef.current?.triggerPlayerAttack();
+    setAttackLocked(true);
+    clearTimeout(attackLockTimer.current);
+    attackLockTimer.current = setTimeout(() => setAttackLocked(false), ATTACK_ANIM_LOCK);
     try {
       const res = await apiClient.post('/boss-raid/attack');
       if (res.data) {
@@ -201,10 +306,14 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         if (res.data.top_dealers) setTopDealers(res.data.top_dealers.slice(0, 3));
         if (typeof res.data.my_damage === 'number') setMyDamage(res.data.my_damage);
       }
-    } catch { /* socket update arrives with accurate state */ }
+    } catch { /* 429 from backend rate limiter — silently ignored */ }
   };
 
-  // ── Error / loading states ─────────────────────────────────────────────────
+  const handleJoystick = useCallback((input) => {
+    sceneRef.current?.setJoystickInput(input);
+  }, []);
+
+  // ── Error / loading states ────────────────────────────────────────────────
   if (loadError === 'no_raid') {
     return (
       <div style={{ color: '#e8e0d0' }}>
@@ -245,7 +354,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const phaseColor = phase === 3 ? '#ef4444' : phase === 2 ? '#f59e0b' : '#c9a84c';
   const hpGrad     = phase === 3 ? 'linear-gradient(90deg,#8b0000,#ef4444)' : phase === 2 ? 'linear-gradient(90deg,#d97706,#f59e0b)' : 'linear-gradient(90deg,#8b6914,#c9a84c)';
 
-  // ── Raid ended — no loot (didn't participate) ─────────────────────────────
+  // ── Raid ended — no loot ──────────────────────────────────────────────────
   if (raidEnded && !lootResult) {
     return (
       <div style={{ color: '#e8e0d0' }}>
@@ -278,8 +387,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           <div className="grid grid-cols-3 gap-3 mb-4">
             {[
               { icon: <Coins className="w-5 h-5 mx-auto mb-1" style={{ color: '#c9a84c' }} />, val: (lootResult.coins||0).toLocaleString(), label: 'coins', bg: 'rgba(201,168,76,0.08)', border: 'rgba(201,168,76,0.2)' },
-              { icon: <Zap   className="w-5 h-5 mx-auto mb-1" style={{ color: '#4a90d9' }} />, val: (lootResult.xp||0).toLocaleString(),    label: 'XP',    bg: 'rgba(74,144,217,0.08)',  border: 'rgba(74,144,217,0.2)' },
-              { icon: <Gem   className="w-5 h-5 mx-auto mb-1" style={{ color: '#c0392b' }} />, val: lootResult.item_drop ? '1' : '—',         label: 'drop',  bg: 'rgba(139,0,0,0.08)',     border: 'rgba(139,0,0,0.2)' },
+              { icon: <Zap   className="w-5 h-5 mx-auto mb-1" style={{ color: '#4a90d9' }} />, val: (lootResult.xp||0).toLocaleString(),   label: 'XP',    bg: 'rgba(74,144,217,0.08)',  border: 'rgba(74,144,217,0.2)' },
+              { icon: <Gem   className="w-5 h-5 mx-auto mb-1" style={{ color: '#c0392b' }} />, val: lootResult.item_drop ? '1' : '—',        label: 'drop',  bg: 'rgba(139,0,0,0.08)',     border: 'rgba(139,0,0,0.2)' },
             ].map(({ icon, val, label, bg, border }) => (
               <div key={label} className="rounded-2xl p-3 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
                 {icon}
@@ -305,6 +414,11 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
   // ── LOBBY VIEW ────────────────────────────────────────────────────────────
   if (view === 'lobby') {
+    const loadoutSlots = [
+      { icon: '🗡️', label: 'WEAPON',  item: equipped.weapon  },
+      { icon: '🛡️', label: 'ARMOR',   item: equipped.armor   },
+      { icon: '✨', label: 'ABILITY', item: equipped.ability },
+    ];
     return (
       <div className="space-y-4" style={{ color: '#e8e0d0' }}>
         <style>{`
@@ -322,7 +436,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           }
         `}</style>
 
-        {/* ── Boss card ─────────────────────────────────────────────────── */}
+        {/* Boss card */}
         <section style={{
           borderRadius: 24, overflow: 'hidden',
           background: 'linear-gradient(150deg,#200808 0%,#0d0d1a 55%,#1a1a2e 100%)',
@@ -330,44 +444,33 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           animation: 'bossCardGlow 2.5s ease-in-out infinite',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '20px 20px 0' }}>
-            {/* Animated Wartotaur portrait — row 4 (idle south, 5 frames @ 128px) */}
             <div style={{
               width: 128, height: 128, flexShrink: 0,
               backgroundImage: `url('/characters/boss/wartotaur.png')`,
-              backgroundSize: '896px 896px',
-              backgroundRepeat: 'no-repeat',
-              imageRendering: 'pixelated',
-              transform: 'scaleX(-1)',
-              animation: 'wartotaurIdle 1.0s steps(5) infinite',
-              borderRadius: 12,
+              backgroundSize: '896px 896px', backgroundRepeat: 'no-repeat',
+              imageRendering: 'pixelated', transform: 'scaleX(-1)',
+              animation: 'wartotaurIdle 1.0s steps(5) infinite', borderRadius: 12,
               filter: phase >= 3 ? 'drop-shadow(0 0 10px #ef4444)' : phase === 2 ? 'drop-shadow(0 0 8px #f59e0b)' : 'drop-shadow(0 0 6px #8b0000)',
             }} />
-
-            {/* Boss info */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: 3, color: '#c9a84c', textTransform: 'uppercase' }}>Boss Raid</span>
-                <span style={{
-                  fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 20,
-                  background: `${phaseColor}22`, color: phaseColor, border: `1px solid ${phaseColor}55`,
-                }}>Phase {phase}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: `${phaseColor}22`, color: phaseColor, border: `1px solid ${phaseColor}55` }}>
+                  Phase {phase}
+                </span>
               </div>
               <h2 style={{ fontSize: 22, fontWeight: 900, color: '#e8e0d0', margin: 0, lineHeight: 1.2 }}>{bossState.name}</h2>
               <p style={{ fontSize: 13, color: '#64748b', margin: '2px 0 10px' }}>Level {bossState.level}</p>
-
               <div style={{ display: 'flex', gap: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#64748b' }}>
-                  <Users style={{ width: 15, height: 15 }} />
-                  {bossState.player_count ?? 0} raiders
+                  <Users style={{ width: 15, height: 15 }} />{bossState.player_count ?? 0} raiders
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#64748b' }}>
-                  <Clock3 style={{ width: 15, height: 15 }} />
-                  {raidTimer != null ? fmt(raidTimer) : '--:--'}
+                  <Clock3 style={{ width: 15, height: 15 }} />{raidTimer != null ? fmt(raidTimer) : '--:--'}
                 </div>
               </div>
             </div>
           </div>
-
           {/* HP bar */}
           <div style={{ padding: '14px 20px 20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -381,16 +484,45 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             </div>
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               {[1,2,3].map((p) => (
-                <div key={p} style={{
-                  flex: 1, height: 4, borderRadius: 999,
-                  background: p <= phase ? (p===3?'#ef4444':p===2?'#f59e0b':'#c9a84c') : 'rgba(255,255,255,0.07)',
-                }} />
+                <div key={p} style={{ flex: 1, height: 4, borderRadius: 999, background: p <= phase ? (p===3?'#ef4444':p===2?'#f59e0b':'#c9a84c') : 'rgba(255,255,255,0.07)' }} />
               ))}
             </div>
           </div>
         </section>
 
-        {/* ── Loot table ────────────────────────────────────────────────── */}
+        {/* Your loadout */}
+        <section className="rounded-[24px] p-4" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.2)' }}>
+          <p style={{ fontSize: 10, fontWeight: 900, letterSpacing: 2, color: '#c9a84c', textTransform: 'uppercase', marginBottom: 10 }}>Your Loadout</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+            {loadoutSlots.map((slot) => (
+              <div key={slot.label} style={{
+                borderRadius: 12, padding: '8px 6px', minHeight: 60,
+                background: slot.item ? 'rgba(201,168,76,0.06)' : 'rgba(255,255,255,0.02)',
+                border: slot.item ? '1px solid rgba(201,168,76,0.3)' : '1px dashed rgba(201,168,76,0.18)',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+              }}>
+                {slot.item?.image_path && slot.label === 'WEAPON' ? (
+                  <WeaponIcon imagePath={slot.item.image_path} size={30} borderRadius={6} enchantLevel={slot.item?.enchant_level || 0} />
+                ) : slot.item?.image_path && slot.label === 'ARMOR' ? (
+                  <ArmorIcon imagePath={slot.item.image_path} size={30} borderRadius={6} />
+                ) : slot.item?.image_path ? (
+                  <img src={slot.item.image_path} alt={slot.item.name} style={{ width: 30, height: 30, objectFit: 'contain' }} />
+                ) : (
+                  <span style={{ fontSize: 18, opacity: 0.25 }}>{slot.icon}</span>
+                )}
+                <span style={{
+                  color: slot.item ? '#c9a84c' : '#334155', fontSize: 9, fontWeight: 800,
+                  letterSpacing: '0.06em', textAlign: 'center',
+                  maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {slot.item ? slot.item.name : slot.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Loot table */}
         <section className="rounded-[24px] p-4" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.15)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <Gem style={{ width: 16, height: 16, color: '#c9a84c' }} />
@@ -408,11 +540,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
               </div>
             ))}
           </div>
-
           <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', gap: 6, fontSize: 11, color: '#64748b', marginBottom: 4 }}>
               <Coins style={{ width: 13, height: 13, color: '#c9a84c', flexShrink: 0, marginTop: 1 }} />
-              Coins = damage dealt × 2 · Top dealer earns +50% bonus
+              Coins = damage × 2 · Top dealer earns +50% bonus
             </div>
             <div style={{ display: 'flex', gap: 6, fontSize: 11, color: '#64748b' }}>
               <Zap style={{ width: 13, height: 13, color: '#4a90d9', flexShrink: 0, marginTop: 1 }} />
@@ -421,7 +552,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           </div>
         </section>
 
-        {/* ── Top raiders (if any) ──────────────────────────────────────── */}
+        {/* Top raiders */}
         {topDealers.length > 0 && (
           <section className="rounded-[24px] p-4" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.15)' }}>
             <h3 style={{ fontSize: 12, fontWeight: 900, letterSpacing: 2, color: '#c9a84c', textTransform: 'uppercase', marginBottom: 10 }}>Top Raiders</h3>
@@ -447,180 +578,180 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           </section>
         )}
 
-        {/* ── Join CTA ──────────────────────────────────────────────────── */}
+        {/* Join CTA */}
         <Button
+          disabled={!equipmentLoaded}
           onClick={() => setView('battle')}
           style={{
             width: '100%', height: 62, borderRadius: 22, fontWeight: 900, fontSize: 18,
-            color: 'white',
-            background: 'linear-gradient(135deg,#8b0000,#c0392b)',
+            color: equipmentLoaded ? 'white' : '#64748b',
+            background: equipmentLoaded ? 'linear-gradient(135deg,#8b0000,#c0392b)' : 'rgba(255,255,255,0.06)',
             border: '1px solid rgba(201,168,76,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            animation: 'joinBtnPulse 2s ease-in-out infinite',
+            animation: equipmentLoaded ? 'joinBtnPulse 2s ease-in-out infinite' : undefined,
+            cursor: equipmentLoaded ? 'pointer' : 'wait',
           }}
         >
           <Swords style={{ width: 22, height: 22 }} />
-          Join Raid
+          {equipmentLoaded ? 'Join Raid' : 'Loading Gear'}
         </Button>
       </div>
     );
   }
 
-  // ── BATTLE VIEW ───────────────────────────────────────────────────────────
+  // ── BATTLE VIEW — full-screen ─────────────────────────────────────────────
+  const canAttack = !attackLocked && !raidEnded;
+
   return (
-    <div className="space-y-4" style={{ color: '#e8e0d0' }}>
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      zIndex: 1000, display: 'flex', flexDirection: 'column',
+      background: '#04020e', color: '#e8e0d0',
+      userSelect: 'none', WebkitUserSelect: 'none',
+    }}>
       <style>{`
         @keyframes phasePulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        @keyframes attackPulse {
-          0%,100% { box-shadow: 0 4px 20px rgba(139,0,0,0.4); }
-          50%     { box-shadow: 0 4px 30px rgba(139,0,0,0.7), 0 0 40px rgba(139,0,0,0.25); }
+        @keyframes attackGlow {
+          0%,100% { box-shadow: 0 0 16px rgba(139,0,0,0.5); }
+          50%     { box-shadow: 0 0 32px rgba(200,0,0,0.9), 0 0 50px rgba(139,0,0,0.4); }
         }
-        @keyframes feedSlide {
-          from { opacity:1; transform:translateY(0); }
-          to   { opacity:0; transform:translateY(-18px); }
+        @keyframes feedFade {
+          0%   { opacity: 1; transform: translateY(0); }
+          80%  { opacity: 1; }
+          100% { opacity: 0; transform: translateY(-14px); }
         }
       `}</style>
 
-      {/* Phaser canvas */}
-      <div style={{ position: 'relative', width: '100%', height: 280, borderRadius: 16, overflow: 'hidden' }}>
-        <div ref={containerRef} style={{ width: '100%', height: 280, background: '#0d0d1a', borderRadius: 16, overflow: 'hidden' }} />
-        {/* Damage feed top-right */}
-        <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none' }}>
-          {damageFeed.map((item) => (
-            <div key={item.id} style={{
-              background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(251,191,36,0.4)',
-              borderRadius: 8, padding: '2px 7px', fontSize: 12, fontWeight: 700,
-              fontFamily: 'monospace', color: '#fbbf24',
-              animation: 'feedSlide 1.8s ease forwards',
-            }}>{item.text}</div>
-          ))}
-        </div>
-        {/* Back to info */}
+      {/* ── Top HUD bar ──────────────────────────────────────────────────── */}
+      <div style={{
+        flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
+        padding: '8px 12px 6px',
+        background: 'rgba(0,0,0,0.55)', borderBottom: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        {/* Back */}
         <button
           onClick={() => setView('lobby')}
           style={{
-            position: 'absolute', top: 8, left: 10,
-            background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(255,255,255,0.12)',
+            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
             borderRadius: 8, padding: '4px 10px', fontSize: 11, fontWeight: 700,
-            color: '#94a3b8', cursor: 'pointer',
+            color: '#94a3b8', cursor: 'pointer', flexShrink: 0,
           }}
-        >← Info</button>
+        >← Lobby</button>
+
+        {/* Boss name + phase */}
+        <div style={{ flexShrink: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 900, color: '#e8e0d0' }}>{bossState.name}</span>
+          <span style={{
+            marginLeft: 6, fontSize: 10, fontWeight: 800, padding: '1px 6px',
+            borderRadius: 10, background: `${phaseColor}25`, color: phaseColor,
+            border: `1px solid ${phaseColor}50`,
+            animation: 'phasePulse 1.5s ease-in-out infinite',
+          }}>P{phase}</span>
+        </div>
+
+        {/* HP bar */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+            <span style={{ fontSize: 10, color: '#64748b' }}>
+              {(bossState.current_hp||0).toLocaleString()} / {(bossState.max_hp||0).toLocaleString()}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 900, color: phaseColor }}>{hpPct}%</span>
+          </div>
+          <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,0.08)' }}>
+            <div style={{ width: `${hpPct}%`, height: '100%', background: hpGrad, transition: 'width 0.5s', boxShadow: `0 0 6px ${phaseColor}88` }} />
+          </div>
+        </div>
+
+        {/* Timer + raiders */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0, gap: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#64748b' }}>
+            <Clock3 style={{ width: 12, height: 12 }} />{raidTimer != null ? fmt(raidTimer) : '--:--'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#c9a84c', fontWeight: 700 }}>
+            <Users style={{ width: 12, height: 12 }} />{bossState.player_count ?? 0}
+          </div>
+        </div>
       </div>
 
-      {/* Boss header — compact */}
-      <section className="rounded-[24px] p-4" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.2)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <p style={{ fontSize: 10, fontWeight: 900, letterSpacing: 3, color: '#c9a84c', textTransform: 'uppercase' }}>Boss Raid</p>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#e8e0d0', margin: '2px 0' }}>{bossState.name}</h2>
-            <p style={{ fontSize: 13, color: '#64748b' }}>
-              Level {bossState.level} · <span style={{ fontWeight: 900, color: phaseColor }}>Phase {phase}</span>
-            </p>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 14, fontWeight: 800, color: '#c9a84c' }}>
-              <Users style={{ width: 15, height: 15 }} />{bossState.player_count ?? 0}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, fontWeight: 700, color: '#64748b' }}>
-              <Clock3 style={{ width: 14, height: 14 }} />{raidTimer != null ? fmt(raidTimer) : '--:--'}
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* ── Phaser canvas ──────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* HP bar */}
-      <section className="rounded-[24px] p-4" style={{ background: 'rgba(13,13,26,0.95)', border: '1px solid rgba(139,0,0,0.3)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div>
-            <p style={{ fontWeight: 900, color: '#e8e0d0' }}>Boss HP</p>
-            <p style={{ fontSize: 12, color: '#64748b' }}>{(bossState.current_hp||0).toLocaleString()} / {(bossState.max_hp||0).toLocaleString()}</p>
-          </div>
-          <span style={{ fontSize: 24, fontWeight: 900, color: phaseColor }}>{hpPct}%</span>
-        </div>
-        <div style={{ height: 16, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,0.08)' }}>
-          <div style={{ width: `${hpPct}%`, height: '100%', background: hpGrad, boxShadow: `0 0 12px ${phaseColor}88`, transition: 'width 0.5s' }} />
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          {[1,2,3].map((p) => (
-            <div key={p} style={{
-              flex: 1, height: 6, borderRadius: 999,
-              background: p <= phase ? (p===3?'#ef4444':p===2?'#f59e0b':'#c9a84c') : 'rgba(255,255,255,0.1)',
-              animation: p === phase ? 'phasePulse 1.5s ease-in-out infinite' : undefined,
-            }} />
+        {/* Damage feed */}
+        <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none' }}>
+          {damageFeed.map((item) => (
+            <div key={item.id} style={{
+              background: 'rgba(0,0,0,0.75)', border: '1px solid rgba(251,191,36,0.4)',
+              borderRadius: 8, padding: '2px 8px', fontSize: 12, fontWeight: 700,
+              fontFamily: 'monospace', color: '#fbbf24',
+              animation: 'feedFade 2s ease forwards',
+            }}>{item.text}</div>
           ))}
         </div>
-      </section>
 
-      {/* Attack button */}
-      <Button
-        disabled={cooldown > 0 || raidEnded}
-        onClick={handleAttack}
-        style={{
-          width: '100%', height: 56, borderRadius: 22, fontWeight: 800,
-          color: cooldown > 0 || raidEnded ? '#475569' : 'white',
-          background: cooldown > 0 || raidEnded ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg,#8b0000,#c0392b)',
-          border: cooldown > 0 || raidEnded ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(201,168,76,0.3)',
-          cursor: cooldown > 0 || raidEnded ? 'not-allowed' : 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-          animation: cooldown === 0 && !raidEnded ? 'attackPulse 2s ease-in-out infinite' : undefined,
-        }}
-      >
-        <Swords style={{ width: 20, height: 20 }} />
-        {cooldown > 0 ? `Cooldown  ${fmt(cooldown)}` : 'Attack Boss'}
-      </Button>
-
-      {/* My damage */}
-      <section className="rounded-[22px] p-4" style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.18)' }}>
-        <p style={{ fontSize: 11, fontWeight: 900, letterSpacing: 2, color: '#c9a84c', textTransform: 'uppercase', marginBottom: 2 }}>My damage this raid</p>
-        <p style={{ fontSize: 28, fontWeight: 900, color: '#e8e0d0' }}>🔥 {myDamage.toLocaleString()}</p>
-      </section>
-
-      {/* Top dealers */}
-      <section className="rounded-[24px] p-4" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.15)' }}>
-        <h3 style={{ fontWeight: 900, color: '#e8e0d0', marginBottom: 12 }}>Top Damage Dealers</h3>
-        {topDealers.length === 0 ? (
-          <p style={{ fontSize: 12, color: '#475569', textAlign: 'center', padding: '12px 0' }}>No damage recorded yet.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {topDealers.slice(0, 3).map((dealer, i) => {
-              const maxDmg = topDealers[0]?.total_damage || 1;
-              const pct    = Math.round((dealer.total_damage / maxDmg) * 100);
-              const isMe   = String(dealer.user_id) === String(user?.id);
-              return (
-                <div key={dealer.user_id || i} style={i===0 ? { background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.15)', borderRadius: 8, padding: '6px 8px' } : undefined}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, color: isMe ? '#c9a84c' : '#e8e0d0' }}>
-                      <span style={{ fontSize: 14 }}>{i===0?'🥇':i===1?'🥈':'🥉'}</span>{' '}
-                      {isMe ? 'You' : dealer.first_name || 'Unknown'}
-                    </span>
-                    <span style={{ color: '#64748b' }}>{(dealer.total_damage||0).toLocaleString()}</span>
-                  </div>
-                  <div style={{ height: 10, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,0.06)' }}>
-                    <div style={{ width: `${pct}%`, height: '100%', background: isMe ? '#c9a84c' : '#475569' }} />
-                  </div>
-                </div>
-              );
-            })}
+        {/* My damage chip */}
+        {myDamage > 0 && (
+          <div style={{
+            position: 'absolute', bottom: 10, left: 10,
+            background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(201,168,76,0.3)',
+            borderRadius: 10, padding: '4px 10px', pointerEvents: 'none',
+          }}>
+            <span style={{ fontSize: 10, color: '#64748b' }}>MY DMG </span>
+            <span style={{ fontSize: 13, fontWeight: 900, color: '#c9a84c' }}>🔥 {myDamage.toLocaleString()}</span>
           </div>
         )}
-      </section>
 
-      {/* Loot estimate */}
-      <section className="rounded-[24px] p-4" style={{ background: 'rgba(201,168,76,0.06)', border: '1px solid rgba(201,168,76,0.2)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 18, background: 'rgba(201,168,76,0.15)', border: '1px solid rgba(201,168,76,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Trophy style={{ width: 20, height: 20, color: '#c9a84c' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontWeight: 900, color: '#e8e0d0' }}>Loot on kill</p>
-            <p style={{ fontSize: 12, color: '#64748b' }}>Coins × 2 per damage · XP · item drop chance</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 900, color: '#c9a84c' }}>
-            <Coins style={{ width: 16, height: 16 }} />
-            {myDamage > 0 ? `${myDamage * 2}+` : '—'}
-          </div>
+        {/* Equipped items row — bottom-right overlay */}
+        <div style={{
+          position: 'absolute', bottom: 10, right: 10,
+          display: 'flex', gap: 6, pointerEvents: 'none',
+        }}>
+          {equipped.weapon && (
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(201,168,76,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <WeaponIcon imagePath={equipped.weapon.image_path} size={26} borderRadius={4} enchantLevel={equipped.weapon.enchant_level || 0} />
+            </div>
+          )}
+          {equipped.armor && (
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(100,116,139,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ArmorIcon imagePath={equipped.armor.image_path} size={26} borderRadius={4} />
+            </div>
+          )}
         </div>
-      </section>
+      </div>
+
+      {/* ── Bottom controls bar ───────────────────────────────────────────── */}
+      <div style={{
+        flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 20px 18px',
+        background: 'rgba(0,0,0,0.6)', borderTop: '1px solid rgba(255,255,255,0.06)',
+      }}>
+        {/* Joystick */}
+        <JoystickControl onChange={handleJoystick} />
+
+        {/* Right side — attack */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Attack button */}
+          <button
+            disabled={!canAttack}
+            onClick={handleAttack}
+            style={{
+              width: 72, height: 72, borderRadius: '50%',
+              fontWeight: 900, fontSize: 15, letterSpacing: 1,
+              color: canAttack ? 'white' : '#475569',
+              background: canAttack ? 'linear-gradient(135deg,#8b0000,#c0392b)' : 'rgba(255,255,255,0.06)',
+              border: canAttack ? '2px solid rgba(201,168,76,0.4)' : '2px solid rgba(255,255,255,0.08)',
+              cursor: canAttack ? 'pointer' : 'not-allowed',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+              animation: canAttack ? 'attackGlow 1.8s ease-in-out infinite' : undefined,
+              touchAction: 'manipulation', flexShrink: 0,
+              boxShadow: canAttack ? '0 4px 14px rgba(0,0,0,0.5)' : 'none',
+            }}
+          >
+            <Swords style={{ width: 26, height: 26 }} />
+            <span style={{ fontSize: 10 }}>ATK</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

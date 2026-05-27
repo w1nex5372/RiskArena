@@ -17,6 +17,7 @@ export default function CharacterPortrait({
   badgeSize = 44,
   active = true,
   sheetPath = null,
+  sheetLoading = false,
   showWeaponBadge = true,
   showArmorBadge = true,
   style = {},
@@ -56,6 +57,8 @@ export default function CharacterPortrait({
         >
           <CharPreview cls={classKey} sheetPath={sheetPath} size={previewSize} fitToContent />
         </div>
+      ) : sheetLoading ? (
+        <div style={{ width: '100%', height: '100%', background: 'rgba(0,0,0,0.2)' }} />
       ) : (
         <img
           src={PORTRAIT_SRC[classKey]}
