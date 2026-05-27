@@ -10,7 +10,7 @@ const SKIP_AUTH = process.env.SKIP_AUTH === "true";
 // ── Game constants ────────────────────────────────────────────────────────────
 const ARENA_WIDTH = 800;
 const FLOOR_Y = 360;
-const PLAYER_SPEED = 4;           // units per tick
+const PLAYER_SPEED = 6;           // units per tick (~90 px/s at 15 FPS)
 const GRAVITY = 1.5;              // applied every tick
 const JUMP_VELOCITY = -20;        // negative = upward
 const JUMP_COOLDOWN_MS = 800;
