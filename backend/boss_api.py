@@ -111,6 +111,10 @@ async def attack_boss(http_request: Request):
                 "status": state["status"],
                 "rewards": rewards,
             })
+            # Prune rate-limit entries for this finished raid to avoid unbounded growth
+            finished_raid_id = state["id"]
+            for key in [k for k in _attack_timestamps if k.endswith(f":{finished_raid_id}")]:
+                del _attack_timestamps[key]
 
     return state
 

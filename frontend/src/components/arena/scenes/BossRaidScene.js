@@ -196,7 +196,7 @@ export default class BossRaidScene extends Phaser.Scene {
         fontSize: '9px', fontFamily: 'monospace',
         color: '#94a3b8', stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 0).setDepth(4).setVisible(false);
-      this._playerSlots.push({ x, y, placeholder, sprite: null, nameText, cls: null, sheetKey: null, active: false });
+      this._playerSlots.push({ x, y, placeholder, sprite: null, nameText, cls: null, sheetKey: null, active: false, oscillationTween: null });
     }
   }
 
@@ -445,8 +445,9 @@ export default class BossRaidScene extends Phaser.Scene {
   // eslint-disable-next-line no-unused-vars
   _spawnLpcSprite(slot, index, textureKey, frameSize, _cols) {
     const { x, y } = slot;
-    if (slot.sprite?.active) slot.sprite.destroy();
-    if (slot.placeholder)    slot.placeholder.setAlpha(0);
+    if (slot.oscillationTween) { slot.oscillationTween.stop(); slot.oscillationTween = null; }
+    if (slot.sprite?.active)   slot.sprite.destroy();
+    if (slot.placeholder)      slot.placeholder.setAlpha(0);
     const sprite = this.add.sprite(x, y, textureKey)
       .setOrigin(0.5, frameSize === GENERATED_FRAME_SIZE ? 0.75 : 1.0)
       .setScale(PLAYER_SCALE)
@@ -457,12 +458,13 @@ export default class BossRaidScene extends Phaser.Scene {
     const idleKey   = `${textureKey}_idle`;
     if      (this.anims.exists(attackKey)) sprite.play(attackKey);
     else if (this.anims.exists(idleKey))   sprite.play(idleKey);
-    this._addAttackOscillation(sprite, index);
+    slot.oscillationTween = this._addAttackOscillation(sprite, index);
   }
 
   _spawnFallbackRect(slot, index, cls) {
     const { x, y } = slot;
-    if (slot.sprite?.active) slot.sprite.destroy();
+    if (slot.oscillationTween) { slot.oscillationTween.stop(); slot.oscillationTween = null; }
+    if (slot.sprite?.active)   slot.sprite.destroy();
     const g     = this.add.graphics().setDepth(4);
     const color = CLASS_COLORS[cls] ?? 0x888888;
     g.fillStyle(color, 0.85);
@@ -473,12 +475,13 @@ export default class BossRaidScene extends Phaser.Scene {
       fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold', color: '#ffffff',
     }).setOrigin(0.5).setDepth(5);
     const container = this.add.container(0, 0, [g, letter]).setDepth(4);
-    slot.sprite = container;
-    this._addAttackOscillation(container, index);
+    slot.sprite    = container;
+    slot.sheetKey  = `fb_${cls}`; // prevents unnecessary re-creation on next boss_update
+    slot.oscillationTween = this._addAttackOscillation(container, index);
   }
 
   _addAttackOscillation(target, index) {
-    this.tweens.add({
+    return this.tweens.add({
       targets: target, x: `+=${8}`,
       duration: 300, yoyo: true, repeat: -1,
       ease: 'Sine.easeInOut', delay: index * 160,

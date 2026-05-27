@@ -5,7 +5,7 @@ import apiClient from '../../api/client';
 import Phaser from 'phaser';
 import BossRaidScene from '../arena/scenes/BossRaidScene';
 
-const ATTACK_COOLDOWN = 8; // seconds between attacks
+const ATTACK_COOLDOWN = 6; // must match backend ATTACK_COOLDOWN_S
 
 const fmt = (secs) => {
   if (secs == null) return '--:--';
@@ -90,6 +90,15 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     };
   }, [bossState != null]); // eslint-disable-line
 
+  // Destroy Phaser game when loot panel replaces the canvas
+  useEffect(() => {
+    if (raidEnded && gameRef.current) {
+      gameRef.current.destroy(true);
+      gameRef.current = null;
+      sceneRef.current = null;
+    }
+  }, [raidEnded]);
+
   // Wire socket events via the shared socket from App.jsx
   useEffect(() => {
     if (!socket) return;
@@ -97,14 +106,12 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     const onBossUpdate = (data) => {
       setBossState((prev) => (prev ? { ...prev, ...data } : data));
       if (data.top_dealers) setTopDealers(data.top_dealers.slice(0, 3));
-      // Only the attacker's client updates its own damage counter.
       if (
         typeof data.my_damage === 'number' &&
         String(data.attacker_id) === String(user?.id)
       ) {
         setMyDamage(data.my_damage);
       }
-      // Forward to Phaser scene
       sceneRef.current?.onBossUpdate(data);
     };
 
@@ -124,7 +131,6 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         }
       }
       clearInterval(raidInterval.current);
-      // Forward to Phaser scene
       sceneRef.current?.onRaidFinished(data);
     };
 
@@ -137,14 +143,26 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       }
     };
 
+    // New boss spawned (auto-spawner or admin) — reload state and reset UI
+    const onBossSpawned = () => {
+      setRaidEnded(false);
+      setLootResult(null);
+      setMyDamage(0);
+      setTopDealers([]);
+      setDamageFeed([]);
+      fetchBossState();
+    };
+
     socket.on('boss_update', onBossUpdate);
     socket.on('raid_finished', onRaidFinished);
     socket.on('damage_tick', onDamageTick);
+    socket.on('boss_spawned', onBossSpawned);
 
     return () => {
       socket.off('boss_update', onBossUpdate);
       socket.off('raid_finished', onRaidFinished);
       socket.off('damage_tick', onDamageTick);
+      socket.off('boss_spawned', onBossSpawned);
       clearInterval(cooldownInterval.current);
       clearInterval(raidInterval.current);
     };
@@ -248,6 +266,28 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     ? Math.max(0, Math.min(100, Math.round((bossState.current_hp / bossState.max_hp) * 100)))
     : 0;
   const phase = phaseFromHp(bossState.current_hp, bossState.max_hp);
+
+  // ── Raid ended — no participation ─────────────────────────────────────────
+  if (raidEnded && !lootResult) {
+    return (
+      <div className="space-y-4" style={{ color: '#e8e0d0' }}>
+        <div className="rounded-[24px] p-6 text-center" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.2)', boxShadow: '0 12px 30px rgba(0,0,0,0.3)' }}>
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(255,255,255,0.05)' }}>
+            <Skull className="w-8 h-8" style={{ color: '#64748b' }} />
+          </div>
+          <h2 className="text-xl font-extrabold mb-1" style={{ color: '#e8e0d0' }}>
+            {bossState?.name || 'Boss'} defeated
+          </h2>
+          <p className="text-sm font-medium" style={{ color: '#64748b' }}>
+            You didn't deal any damage this raid. No rewards this time.
+          </p>
+          <p className="text-xs mt-3" style={{ color: '#475569' }}>
+            A new boss will spawn soon.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Loot result panel (raid finished) ─────────────────────────────────────
   if (raidEnded && lootResult) {
