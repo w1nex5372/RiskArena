@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Clock3, Coins, Gem, Skull, Swords, Trophy, Users, Zap } from 'lucide-react';
 import { Button } from '../ui/button';
 import apiClient from '../../api/client';
+import Phaser from 'phaser';
+import BossRaidScene from '../arena/scenes/BossRaidScene';
 
 const ATTACK_COOLDOWN = 8; // seconds between attacks
 
@@ -29,13 +31,64 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [raidTimer, setRaidTimer] = useState(null);
   const [lootResult, setLootResult] = useState(null);
   const [raidEnded, setRaidEnded] = useState(false);
+  const [damageFeed, setDamageFeed] = useState([]); // [{id, text, ts}]
 
   const cooldownInterval = useRef(null);
   const raidInterval = useRef(null);
+  const containerRef = useRef(null);
+  const gameRef = useRef(null);
+  const sceneRef = useRef(null);
 
   useEffect(() => {
     fetchBossState();
   }, []); // eslint-disable-line
+
+  // ── Initialize Phaser game once bossState is loaded ─────────────────────────
+  useEffect(() => {
+    if (!bossState || !containerRef.current) return;
+    // Only create the game once
+    if (gameRef.current) return;
+
+    const config = {
+      type: Phaser.AUTO,
+      parent: containerRef.current,
+      width: 800,
+      height: 280,
+      backgroundColor: '#0d0d1a',
+      scene: [BossRaidScene],
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+      },
+      render: { antialias: false, pixelArt: false },
+      input: { keyboard: false },
+    };
+
+    gameRef.current = new Phaser.Game(config);
+
+    gameRef.current.events.once('ready', () => {
+      sceneRef.current = gameRef.current.scene.getScene('BossRaidScene');
+      sceneRef.current?.setRaidData({
+        raidId:           bossState.id,
+        bossName:         bossState.name,
+        bossHp:           bossState.current_hp,
+        bossMaxHp:        bossState.max_hp,
+        bossPhase:        bossState.phase,
+        myPlayer: {
+          class:      user?.class_name || 'warrior',
+          sheetPath:  user?.character_spritesheet_path || null,
+          username:   user?.first_name || 'You',
+        },
+        recentAttackers: bossState.recent_attackers || [],
+      });
+    });
+
+    return () => {
+      gameRef.current?.destroy(true);
+      gameRef.current = null;
+      sceneRef.current = null;
+    };
+  }, [bossState != null]); // eslint-disable-line
 
   // Wire socket events via the shared socket from App.jsx
   useEffect(() => {
@@ -51,6 +104,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       ) {
         setMyDamage(data.my_damage);
       }
+      // Forward to Phaser scene
+      sceneRef.current?.onBossUpdate(data);
     };
 
     const onRaidFinished = (data) => {
@@ -69,14 +124,27 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         }
       }
       clearInterval(raidInterval.current);
+      // Forward to Phaser scene
+      sceneRef.current?.onRaidFinished(data);
+    };
+
+    const onDamageTick = (data) => {
+      if (typeof data.damage === 'number') {
+        sceneRef.current?.showDamageNumber(data.damage);
+        setDamageFeed((prev) =>
+          [{ id: Date.now(), text: `\u{1F4A5} ${data.damage}`, ts: Date.now() }, ...prev].slice(0, 5)
+        );
+      }
     };
 
     socket.on('boss_update', onBossUpdate);
     socket.on('raid_finished', onRaidFinished);
+    socket.on('damage_tick', onDamageTick);
 
     return () => {
       socket.off('boss_update', onBossUpdate);
       socket.off('raid_finished', onRaidFinished);
+      socket.off('damage_tick', onDamageTick);
       clearInterval(cooldownInterval.current);
       clearInterval(raidInterval.current);
     };
@@ -245,7 +313,41 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           0%, 100% { box-shadow: 0 4px 20px rgba(139,0,0,0.4); }
           50% { box-shadow: 0 4px 30px rgba(139,0,0,0.7), 0 0 40px rgba(139,0,0,0.25); }
         }
+        @keyframes feedSlide {
+          from { opacity: 1; transform: translateY(0); }
+          to   { opacity: 0; transform: translateY(-18px); }
+        }
       `}</style>
+
+      {/* Phaser battle canvas */}
+      <div style={{ position: 'relative', width: '100%', height: 280, borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
+        <div
+          ref={containerRef}
+          style={{ width: '100%', height: 280, background: '#0d0d1a', borderRadius: 16, overflow: 'hidden' }}
+        />
+        {/* Damage feed badges — overlaid top-right corner */}
+        <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none' }}>
+          {damageFeed.map((item) => (
+            <div
+              key={item.id}
+              style={{
+                background: 'rgba(0,0,0,0.7)',
+                border: '1px solid rgba(251,191,36,0.4)',
+                borderRadius: 8,
+                padding: '2px 7px',
+                fontSize: 12,
+                fontWeight: 700,
+                fontFamily: 'monospace',
+                color: '#fbbf24',
+                animation: 'feedSlide 1.8s ease forwards',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {item.text}
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Boss header */}
       <section className="rounded-[24px] p-4" style={{ background: 'rgba(26,26,46,0.9)', border: '1px solid rgba(201,168,76,0.2)', boxShadow: '0 12px 30px rgba(0,0,0,0.3)' }}>

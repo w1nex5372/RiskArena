@@ -141,6 +141,25 @@ async def _fetch_player_count(conn, raid_id: str) -> int:
     return int(val or 0)
 
 
+async def _fetch_recent_attackers(conn, raid_id: str, seconds: int = 15, limit: int = 10) -> List[Dict]:
+    """Return distinct users who dealt damage in the last `seconds` seconds."""
+    rows = await conn.fetch(
+        """
+        SELECT DISTINCT ON (d.user_id) d.user_id, u.first_name, u.class_name
+        FROM boss_raid_damage d
+        JOIN users u ON u.id = d.user_id
+        WHERE d.raid_id = $1
+          AND d.dealt_at >= NOW() - ($2 * INTERVAL '1 second')
+        ORDER BY d.user_id, d.dealt_at DESC
+        LIMIT $3
+        """,
+        raid_id,
+        seconds,
+        limit,
+    )
+    return [{"user_id": r["user_id"], "first_name": r["first_name"], "class_name": r["class_name"]} for r in rows]
+
+
 async def get_raid_state(raid_id: str, user_id: str) -> Optional[Dict]:
     """Full state including top_dealers, my_damage, and player_count for API responses."""
     async with get_pool().acquire() as conn:
@@ -151,6 +170,7 @@ async def get_raid_state(raid_id: str, user_id: str) -> Optional[Dict]:
         data["top_dealers"] = await _fetch_top_dealers(conn, raid_id)
         data["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
         data["player_count"] = await _fetch_player_count(conn, raid_id)
+        data["recent_attackers"] = await _fetch_recent_attackers(conn, raid_id)
         return data
 
 
@@ -167,6 +187,7 @@ async def get_active_raid_state(user_id: str) -> Optional[Dict]:
         data["top_dealers"] = await _fetch_top_dealers(conn, raid_id)
         data["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
         data["player_count"] = await _fetch_player_count(conn, raid_id)
+        data["recent_attackers"] = await _fetch_recent_attackers(conn, raid_id)
         return data
 
 
@@ -272,11 +293,12 @@ async def _settle_raid_tx(conn, raid_id: str) -> List[Dict]:
     return reward_dicts
 
 
-async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]]]:
+async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]], int]:
     """
     Apply one attack to the current active boss.
-    Returns (raid_state, rewards_if_just_settled).
+    Returns (raid_state, rewards_if_just_settled, hit_damage).
     rewards_if_just_settled is None while the raid remains active.
+    hit_damage is the damage dealt in this single hit.
     """
     rng = random.SystemRandom()
 
@@ -317,7 +339,8 @@ async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]]]:
                 state["top_dealers"] = await _fetch_top_dealers(conn, raid_id)
                 state["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
                 state["player_count"] = await _fetch_player_count(conn, raid_id)
-                return state, rewards
+                state["recent_attackers"] = await _fetch_recent_attackers(conn, raid_id)
+                return state, rewards, 0
 
             modifiers = await _fetch_player_modifiers(conn, user_id)
             damage = compute_attack_damage(
@@ -377,7 +400,8 @@ async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]]]:
             state["top_dealers"] = await _fetch_top_dealers(conn, raid_id)
             state["my_damage"] = await _fetch_user_damage(conn, raid_id, user_id)
             state["player_count"] = await _fetch_player_count(conn, raid_id)
-            return state, rewards
+            state["recent_attackers"] = await _fetch_recent_attackers(conn, raid_id)
+            return state, rewards, damage
 
 
 async def settle_expired_raids() -> List[Dict]:

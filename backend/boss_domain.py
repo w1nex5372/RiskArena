@@ -15,10 +15,27 @@ DAMAGE_VARIANCE = 2  # ±2
 BOSS_NAMES = ["Shadow Drake", "Iron Golem", "Void Titan", "Storm Wyrm"]
 
 TOP_DAMAGE_COINS_BONUS = 0.5  # +50% for the top damage dealer
-EPIC_DROP_THRESHOLD = 70
-EPIC_DROP_CHANCE = 0.12
-LEGENDARY_DROP_THRESHOLD = 140
-LEGENDARY_DROP_CHANCE = 0.05
+
+# Loot roll probabilities (must sum to 1.0)
+# 60% nothing, 25% uncommon, 12% rare, 2.5% epic, 0.5% legendary
+_LOOT_TIERS = [
+    (0.600, None),
+    (0.250, "uncommon"),
+    (0.120, "rare"),
+    (0.025, "epic"),
+    (0.005, "legendary"),
+]
+
+
+def _roll_loot_tier(rng: random.Random) -> Optional[str]:
+    """Roll a single loot tier for one participant. Returns tier string or None."""
+    roll = rng.random()
+    cumulative = 0.0
+    for prob, tier in _LOOT_TIERS:
+        cumulative += prob
+        if roll < cumulative:
+            return tier
+    return None  # fallback (floating-point safety)
 
 
 
@@ -79,10 +96,7 @@ def compute_rewards(
         item_drop: Optional[str] = None
         item_drop_tier: Optional[str] = None
 
-        if total_damage >= LEGENDARY_DROP_THRESHOLD and rng.random() < LEGENDARY_DROP_CHANCE:
-            item_drop_tier = "legendary"
-        elif total_damage >= EPIC_DROP_THRESHOLD and rng.random() < EPIC_DROP_CHANCE:
-            item_drop_tier = "epic"
+        item_drop_tier = _roll_loot_tier(rng)
 
         if user_id == top_user_id:
             coins = int(coins * (1 + TOP_DAMAGE_COINS_BONUS))

@@ -2,6 +2,7 @@
 Boss Raid HTTP endpoints.
 """
 import random
+import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -18,6 +19,11 @@ _sio = None
 def set_sio(sio_instance) -> None:
     global _sio
     _sio = sio_instance
+
+
+# In-memory rate limiter: key is f"{user_id}:{raid_id}"
+_attack_timestamps: dict[str, float] = {}
+ATTACK_COOLDOWN_S = 6.0
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -49,13 +55,31 @@ async def attack_boss(http_request: Request):
     Deal one hit to the current active boss.
     Returns updated boss state.
     Emits boss_update to all clients after every hit.
+    Emits damage_tick to all clients with per-hit damage info.
     Emits raid_finished to all clients (with full rewards list) when the raid ends.
+    Rate-limited to once every ATTACK_COOLDOWN_S seconds per user per raid.
     """
     user_id = get_authenticated_user_id(http_request)
+
+    # --- Server-side rate limiting ---
+    # Identify the active raid to build the rate-limit key.
+    active_raid = await boss_repo.get_active_raid()
+    if not active_raid:
+        raise HTTPException(status_code=404, detail="No active boss raid")
+    raid_id = active_raid["id"]
+
+    rate_key = f"{user_id}:{raid_id}"
+    last_attack = _attack_timestamps.get(rate_key, 0.0)
+    if time.time() - last_attack < ATTACK_COOLDOWN_S:
+        raise HTTPException(status_code=429, detail="Attack cooldown active")
+
     try:
-        state, rewards = await boss_repo.attack_boss(user_id)
+        state, rewards, hit_damage = await boss_repo.attack_boss(user_id)
     except Exception as exc:
         raise _http_error(exc)
+
+    # Record successful attack timestamp
+    _attack_timestamps[rate_key] = time.time()
 
     # Push live HP/phase update to every connected client
     if _sio:
@@ -69,6 +93,14 @@ async def attack_boss(http_request: Request):
             "attacker_id": user_id,
             "my_damage": state.get("my_damage", 0),
             "player_count": state.get("player_count", 0),
+            "recent_attackers": state.get("recent_attackers", []),
+        })
+
+        # Emit per-hit damage info to all clients
+        await _sio.emit("damage_tick", {
+            "raid_id": state["id"],
+            "attacker_id": user_id,
+            "damage": hit_damage,
         })
 
         # Raid just ended — broadcast result with all reward rows;
