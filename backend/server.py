@@ -36,6 +36,7 @@ import uvicorn
 import copy
 import re
 import sys
+import math
 
 # Load environment variables FIRST before importing modules that read them
 ROOT_DIR = Path(__file__).parent
@@ -688,6 +689,7 @@ async def _fetch_equipped_snapshot(user_id: str) -> Dict[str, Any]:
             ) inv ON TRUE
             WHERE ei.user_id = $1
               AND ei.class_name = u.class_name
+              AND i.class_name = u.class_name
             """,
             user_id,
         )
@@ -5243,6 +5245,40 @@ RT_LOSER_XP     = 30
 _RT_STREAK_MILESTONES = {3: 50, 5: 100, 7: 200}
 _processed_realtime_result_rooms: set[str] = set()
 _realtime_result_lock = asyncio.Lock()
+_ALLOWED_BATTLE_ABILITIES = {
+    "warrior": {"warrior_bash", "warrior_guardbreak", "warrior_titan_bash"},
+    "mage": {"mage_fireball", "mage_ember_bolt", "mage_inferno_blast"},
+    "rogue": {"rogue_blink", "rogue_shadowstep", "rogue_nightfall"},
+}
+
+
+def _clamp_number(value: Any, minimum: float, maximum: float, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(number):
+        return default
+    return max(minimum, min(maximum, number))
+
+
+def _battle_ability_payload(class_name: Optional[str], ability_item: Dict[str, Any]) -> Dict[str, Any]:
+    cls = (class_name or "").lower()
+    ability_key = str(ability_item.get("ability_key") or "")
+    if ability_key not in _ALLOWED_BATTLE_ABILITIES.get(cls, set()):
+        return {
+            "active_ability_key": None,
+            "active_ability_name": None,
+            "active_ability_icon": None,
+            "active_ability_cooldown_ms": 0,
+        }
+    cooldown = int(_clamp_number(ability_item.get("ability_cooldown_ms"), 1000, 30000, 0))
+    return {
+        "active_ability_key": ability_key,
+        "active_ability_name": ability_item.get("name"),
+        "active_ability_icon": ability_item.get("image_path"),
+        "active_ability_cooldown_ms": cooldown,
+    }
 
 class RealtimeMatchResultBody(BaseModel):
     winner_user_id: str
@@ -5371,18 +5407,21 @@ async def get_user_loadout_internal(user_id: str, request: Request):
     item_list = [v for v in equipped_rows.values() if v is not None]
     stats = modifiers_to_dict(aggregate_item_modifiers(item_list))
     ability_item = equipped_rows.get("ability") or {}
+    ability_payload = _battle_ability_payload(class_name, ability_item)
     return {
         "user_id": user_id,
-        "attack_bonus": stats.get("attack_bonus", 0),
-        "ability_bonus": stats.get("ability_bonus", 0),
-        "defend_reduction": stats.get("defend_reduction", 0),
-        "hp_bonus": stats.get("hp_bonus", 0),
+        "attack_bonus": int(_clamp_number(stats.get("attack_bonus", 0), 0, 500, 0)),
+        "ability_bonus": int(_clamp_number(stats.get("ability_bonus", 0), 0, 500, 0)),
+        "defend_reduction": _clamp_number(
+            float(stats.get("defend_reduction", 0) or 0) + float(stats.get("damage_reduction_percent", 0) or 0),
+            0,
+            0.85,
+            0,
+        ),
+        "hp_bonus": int(_clamp_number(stats.get("hp_bonus", 0), 0, 1000, 0)),
         "has_weapon": equipped_rows.get("weapon") is not None,
-        "weapon_enchant": int((equipped_rows.get("weapon") or {}).get("enchant_level", 0) or 0),
-        "active_ability_key": ability_item.get("ability_key"),
-        "active_ability_name": ability_item.get("name"),
-        "active_ability_icon": ability_item.get("image_path"),
-        "active_ability_cooldown_ms": int(ability_item.get("ability_cooldown_ms", 0) or 0),
+        "weapon_enchant": int(_clamp_number((equipped_rows.get("weapon") or {}).get("enchant_level", 0), 0, 10, 0)),
+        **ability_payload,
         "character_build_json": character_build,
         "battle_spritesheet_path": battle_sprite["path"],
         "battle_spritesheet_hash": battle_sprite["hash"],

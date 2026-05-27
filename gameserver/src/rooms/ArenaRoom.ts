@@ -32,6 +32,20 @@ const FIREBALL_COOLDOWN_MS = 6000;
 
 const BLINK_OFFSET = 80;          // teleport this far past the opponent
 const BLINK_COOLDOWN_MS = 5000;
+const WARRIOR_BASH_ABILITIES: Record<string, { range: number; damage: number; stunMs: number; cooldownMs: number }> = {
+  warrior_bash: { range: BASH_RANGE, damage: BASH_DMG, stunMs: BASH_STUN_MS, cooldownMs: BASH_COOLDOWN_MS },
+  warrior_titan_bash: { range: 130, damage: 28, stunMs: 1900, cooldownMs: 9000 },
+};
+const MAGE_PROJECTILE_ABILITIES: Record<string, { damage: number; knockback: number; cooldownMs: number }> = {
+  mage_fireball: { damage: FIREBALL_DMG, knockback: FIREBALL_KNOCKBACK, cooldownMs: FIREBALL_COOLDOWN_MS },
+  mage_ember_bolt: { damage: 22, knockback: 80, cooldownMs: 5500 },
+  mage_inferno_blast: { damage: 34, knockback: 130, cooldownMs: 7500 },
+};
+const ROGUE_BLINK_ABILITIES: Record<string, { offset: number; cooldownMs: number }> = {
+  rogue_blink: { offset: BLINK_OFFSET, cooldownMs: BLINK_COOLDOWN_MS },
+  rogue_shadowstep: { offset: 110, cooldownMs: 4500 },
+  rogue_nightfall: { offset: 140, cooldownMs: 6000 },
+};
 const ATTACK_DMG_MIN = 15;
 const ATTACK_DMG_MAX = 25;
 const ATTACK_COOLDOWN_MS = 600;
@@ -56,6 +70,8 @@ const SLOT_START_X = [150, 650];
 export class ArenaRoom extends Room<ArenaState> {
   maxClients = 2;
   private lastJumpTime: Map<string, number> = new Map();
+  private loadoutReady: Set<string> = new Set();
+  private countdownStarted = false;
 
   onCreate(_options: any) {
     this.setState(new ArenaState());
@@ -63,7 +79,7 @@ export class ArenaRoom extends Room<ArenaState> {
 
     // Client sends its current input state (held keys)
     this.onMessage("input", (client, data: {
-      left: boolean; right: boolean; attack: boolean; ability: boolean; up: boolean; block?: boolean
+      left: boolean; right: boolean; attack: boolean; ability: boolean; itemAbility?: boolean; up: boolean; block?: boolean
     }) => {
       const player = this.state.players.get(client.sessionId);
       if (player && this.state.phase === "battle") {
@@ -72,6 +88,7 @@ export class ArenaRoom extends Room<ArenaState> {
           right: !!data.right,
           attack: !!data.attack,
           ability: !!data.ability,
+          itemAbility: !!data.itemAbility,
           up: !!data.up,
           block: !!data.block,
         };
@@ -130,16 +147,18 @@ export class ArenaRoom extends Room<ArenaState> {
     player.maxHp = CLASS_HP[player.characterClass] ?? 100;
     player.hp = player.maxHp;
 
-    // Fetch equipment bonuses (fire-and-forget but applied before battle starts)
-    this.fetchAndApplyLoadout(player).catch(() => {});
-
     this.state.players.set(client.sessionId, player);
 
     console.log(`[ArenaRoom] ${player.username} joined (slot ${player.slotIndex})`);
 
-    if (this.state.players.size === 2) {
-      this.startCountdown();
-    }
+    this.fetchAndApplyLoadout(player)
+      .catch((err) => {
+        console.warn(`[ArenaRoom] loadout setup failed for ${player.username}: ${err?.message}`);
+      })
+      .finally(() => {
+        this.loadoutReady.add(client.sessionId);
+        this.tryStartCountdown();
+      });
   }
 
   async onLeave(client: Client, consented: boolean) {
@@ -170,6 +189,7 @@ export class ArenaRoom extends Room<ArenaState> {
     }
 
     this.state.players.delete(client.sessionId);
+    this.loadoutReady.delete(client.sessionId);
     console.log(`[ArenaRoom] ${leaving?.username ?? client.sessionId} left`);
   }
 
@@ -189,18 +209,18 @@ export class ArenaRoom extends Room<ArenaState> {
         { headers: { "x-internal-secret": INTERNAL_SECRET }, timeout: 3000 }
       );
       const d = res.data;
-      player.attackBonus    = Number(d.attack_bonus    || 0);
-      player.abilityBonus   = Number(d.ability_bonus   || 0);
-      player.defendReduction = Math.min(0.5, Number(d.defend_reduction || 0)); // already a ratio from backend
-      player.hpBonus        = Number(d.hp_bonus        || 0);
+      player.attackBonus    = this.clampNumber(d.attack_bonus, 0, 500, 0);
+      player.abilityBonus   = this.clampNumber(d.ability_bonus, 0, 500, 0);
+      player.defendReduction = this.clampNumber(d.defend_reduction, 0, 0.85, 0);
+      player.hpBonus        = this.clampNumber(d.hp_bonus, 0, 1000, 0);
       player.hasWeapon      = Boolean(d.has_weapon);
-      player.weaponEnchant = Number(d.weapon_enchant) || 0;
+      player.weaponEnchant = this.clampNumber(d.weapon_enchant, 0, 10, 0);
       player.battleSpritesheetPath = String(d.battle_spritesheet_path || "");
       player.battleSpritesheetHash = String(d.battle_spritesheet_hash || "");
       player.activeAbilityKey = String(d.active_ability_key || "");
       player.activeAbilityName = String(d.active_ability_name || "");
       player.activeAbilityIcon = String(d.active_ability_icon || "");
-      player.activeAbilityCooldownMs = Number(d.active_ability_cooldown_ms || 0);
+      player.activeAbilityCooldownMs = this.clampNumber(d.active_ability_cooldown_ms, 0, 30000, 0);
       player.characterBuildJson = JSON.stringify(d.character_build_json || {});
       // Apply HP bonus
       player.maxHp += player.hpBonus;
@@ -212,7 +232,24 @@ export class ArenaRoom extends Room<ArenaState> {
   }
 
   // ── Private: countdown then start battle ─────────────────────────────────
+  private clampNumber(value: any, min: number, max: number, fallback: number) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  private tryStartCountdown() {
+    if (this.countdownStarted || this.state.phase !== "waiting" || this.state.players.size !== 2) return;
+    let allReady = true;
+    this.state.players.forEach((_player, sessionId) => {
+      if (!this.loadoutReady.has(sessionId)) allReady = false;
+    });
+    if (!allReady) return;
+    this.startCountdown();
+  }
+
   private startCountdown() {
+    this.countdownStarted = true;
     this.state.phase = "countdown";
     this.state.countdown = COUNTDOWN_SECS;
 
@@ -243,10 +280,14 @@ export class ArenaRoom extends Room<ArenaState> {
       if (player.abilityCharges === 0 && now >= player.abilityCooldownUntil) {
         player.abilityCharges = 1;
       }
+      if (player.itemAbilityCharges === 0 && now >= player.itemAbilityCooldownUntil) {
+        player.itemAbilityCharges = 1;
+      }
 
       const input = player.inputState;
       const attackPressed = input.attack && !player.previousInputState.attack;
       const abilityPressed = input.ability && !player.previousInputState.ability;
+      const itemAbilityPressed = input.itemAbility && !player.previousInputState.itemAbility;
 
       if (player.isStunned) {
         player.isBlocking = false;
@@ -315,14 +356,78 @@ export class ArenaRoom extends Room<ArenaState> {
         }
 
         // ── Class ability ───────────────────────────────────────────────
-        if (!player.isBlocking && abilityPressed && player.abilityCharges > 0) {
+        // Default class ability is always available; item ability is an extra equipped skill.
+        if (!player.isBlocking && player.state !== "attacking" && abilityPressed && player.abilityCharges > 0) {
           player.abilityCharges = 0;
           const cls = player.characterClass;
-          const abilityKey = player.activeAbilityKey || `${cls}_default`;
+          this.broadcast("weapon_swing", { sessionId, cls });
+
+          if (cls === "warrior") {
+            player.abilityCooldownUntil = now + BASH_COOLDOWN_MS;
+            player.state = "attacking";
+            player.attackUntil = now + ATTACK_ANIM_MS;
+
+            let hit = false;
+            this.state.players.forEach((opp, oppSid) => {
+              if (oppSid === sessionId || opp.state === "dead") return;
+              const dist  = Math.abs(player.x - opp.x);
+              const yDist = Math.abs(player.y - opp.y);
+              if (dist <= BASH_RANGE && !(opp.isGrounded === false && yDist > 40)) {
+                hit = true;
+                opp.stunUntil  = now + BASH_STUN_MS;
+                opp.isStunned  = true;
+                this.dealDamage(sessionId, opp, oppSid, BASH_DMG + player.abilityBonus, now);
+              }
+            });
+            this.broadcast("ability_used", { sessionId, cls: "warrior", abilityKey: "warrior_default", fromX: player.x, fromY: player.y, hit });
+
+          } else if (cls === "mage") {
+            player.abilityCooldownUntil = now + FIREBALL_COOLDOWN_MS;
+
+            this.state.players.forEach((opp, oppSid) => {
+              if (oppSid === sessionId || opp.state === "dead") return;
+              const yDist  = Math.abs(player.y - opp.y);
+              const dodged = !opp.isGrounded && yDist > 60;
+              this.broadcast("ability_used", {
+                sessionId, cls: "mage", abilityKey: "mage_default",
+                fromX: player.x, fromY: player.y,
+                toX: opp.x, toY: opp.y, hit: !dodged,
+              });
+              if (!dodged) {
+                const origX = opp.x;
+                const dir   = opp.x > player.x ? 1 : -1;
+                opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * FIREBALL_KNOCKBACK));
+                this.dealDamageAt(sessionId, opp, oppSid, FIREBALL_DMG + player.abilityBonus, origX, opp.y, now);
+              }
+            });
+
+          } else if (cls === "rogue") {
+            player.abilityCooldownUntil = now + BLINK_COOLDOWN_MS;
+
+            this.state.players.forEach((opp, oppSid) => {
+              if (oppSid === sessionId || opp.state === "dead") return;
+              const dir  = opp.x > player.x ? 1 : -1;
+              const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * BLINK_OFFSET));
+              this.broadcast("ability_used", {
+                sessionId, cls: "rogue", abilityKey: "rogue_default",
+                fromX: player.x, fromY: player.y, toX: newX, toY: player.y, hit: true,
+              });
+              player.x = newX;
+              player.facingRight = player.x < opp.x;
+            });
+          } else {
+            player.abilityCharges = 1;
+          }
+        }
+
+        if (!player.isBlocking && player.state !== "attacking" && itemAbilityPressed && player.itemAbilityCharges > 0 && player.activeAbilityKey) {
+          const cls = player.characterClass;
+          const abilityKey = player.activeAbilityKey;
+          player.itemAbilityCharges = 0;
           this.broadcast("weapon_swing", { sessionId, cls });
 
           if (abilityKey === "warrior_guardbreak") {
-            player.abilityCooldownUntil = now + (player.activeAbilityCooldownMs || GUARDBREAK_COOLDOWN_MS);
+            player.itemAbilityCooldownUntil = now + (player.activeAbilityCooldownMs || GUARDBREAK_COOLDOWN_MS);
             player.state = "attacking";
             player.attackUntil = now + ATTACK_ANIM_MS;
 
@@ -343,9 +448,10 @@ export class ArenaRoom extends Room<ArenaState> {
             });
             this.broadcast("ability_used", { sessionId, cls: "warrior", abilityKey, fromX: player.x, fromY: player.y, hit, brokeBlock });
 
-          } else if (abilityKey === "warrior_bash" || (!player.activeAbilityKey && cls === "warrior")) {
+          } else if (WARRIOR_BASH_ABILITIES[abilityKey]) {
             // Bash — close-range stun
-            player.abilityCooldownUntil = now + (player.activeAbilityCooldownMs || BASH_COOLDOWN_MS);
+            const bash = WARRIOR_BASH_ABILITIES[abilityKey];
+            player.itemAbilityCooldownUntil = now + (player.activeAbilityCooldownMs || bash.cooldownMs);
             player.state = "attacking";
             player.attackUntil = now + ATTACK_ANIM_MS;
 
@@ -354,18 +460,19 @@ export class ArenaRoom extends Room<ArenaState> {
               if (oppSid === sessionId || opp.state === "dead") return;
               const dist  = Math.abs(player.x - opp.x);
               const yDist = Math.abs(player.y - opp.y);
-              if (dist <= BASH_RANGE && !(opp.isGrounded === false && yDist > 40)) {
+              if (dist <= bash.range && !(opp.isGrounded === false && yDist > 40)) {
                 hit = true;
-                opp.stunUntil  = now + BASH_STUN_MS;
+                opp.stunUntil  = now + bash.stunMs;
                 opp.isStunned  = true;
-                this.dealDamage(sessionId, opp, oppSid, BASH_DMG + player.abilityBonus, now);
+                this.dealDamage(sessionId, opp, oppSid, bash.damage + player.abilityBonus, now);
               }
             });
             this.broadcast("ability_used", { sessionId, cls: "warrior", abilityKey, fromX: player.x, fromY: player.y, hit });
 
-          } else if (abilityKey === "mage_fireball" || (!player.activeAbilityKey && cls === "mage")) {
+          } else if (MAGE_PROJECTILE_ABILITIES[abilityKey]) {
             // Fireball — ranged, dodgeable by jumping, knockback
-            player.abilityCooldownUntil = now + (player.activeAbilityCooldownMs || FIREBALL_COOLDOWN_MS);
+            const projectile = MAGE_PROJECTILE_ABILITIES[abilityKey];
+            player.itemAbilityCooldownUntil = now + (player.activeAbilityCooldownMs || projectile.cooldownMs);
 
             this.state.players.forEach((opp, oppSid) => {
               if (oppSid === sessionId || opp.state === "dead") return;
@@ -379,19 +486,20 @@ export class ArenaRoom extends Room<ArenaState> {
               if (!dodged) {
                 const origX = opp.x;
                 const dir   = opp.x > player.x ? 1 : -1;
-                opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * FIREBALL_KNOCKBACK));
-                this.dealDamageAt(sessionId, opp, oppSid, FIREBALL_DMG + player.abilityBonus, origX, opp.y, now);
+                opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * projectile.knockback));
+                this.dealDamageAt(sessionId, opp, oppSid, projectile.damage + player.abilityBonus, origX, opp.y, now);
               }
             });
 
-          } else if (abilityKey === "rogue_blink" || (!player.activeAbilityKey && cls === "rogue")) {
+          } else if (ROGUE_BLINK_ABILITIES[abilityKey]) {
             // Blink — teleport to opposite side of opponent
-            player.abilityCooldownUntil = now + (player.activeAbilityCooldownMs || BLINK_COOLDOWN_MS);
+            const blink = ROGUE_BLINK_ABILITIES[abilityKey];
+            player.itemAbilityCooldownUntil = now + (player.activeAbilityCooldownMs || blink.cooldownMs);
 
             this.state.players.forEach((opp, oppSid) => {
               if (oppSid === sessionId || opp.state === "dead") return;
               const dir  = opp.x > player.x ? 1 : -1;
-              const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * BLINK_OFFSET));
+              const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * blink.offset));
               this.broadcast("ability_used", {
                 sessionId, cls: "rogue", abilityKey,
                 fromX: player.x, fromY: player.y, toX: newX, toY: player.y, hit: true,
@@ -400,7 +508,7 @@ export class ArenaRoom extends Room<ArenaState> {
               player.facingRight = player.x < opp.x;
             });
           } else {
-            player.abilityCharges = 1;
+            player.itemAbilityCharges = 1;
           }
         }
       }
@@ -420,6 +528,7 @@ export class ArenaRoom extends Room<ArenaState> {
       player.previousInputState = {
         attack: input.attack,
         ability: input.ability,
+        itemAbility: input.itemAbility,
       };
     });
 
@@ -487,22 +596,22 @@ export class ArenaRoom extends Room<ArenaState> {
     if (winner?.userId && loser?.userId) {
       if (!INTERNAL_SECRET) {
         console.warn("[ArenaRoom] INTERNAL_SECRET is not configured; match result not reported");
-        return;
+      } else {
+        axios
+          .post(
+            `${FASTAPI_URL}/api/internal/match-result`,
+            {
+              winner_user_id: winner.userId,
+              loser_user_id: loser.userId,
+              by_disconnect: byDisconnect,
+              room_id: this.roomId,
+            },
+            { headers: { "x-internal-secret": INTERNAL_SECRET }, timeout: 5000 }
+          )
+          .catch((err) => {
+            console.warn("[ArenaRoom] FastAPI match-result call failed:", err?.message);
+          });
       }
-      axios
-        .post(
-          `${FASTAPI_URL}/api/internal/match-result`,
-          {
-            winner_user_id: winner.userId,
-            loser_user_id: loser.userId,
-            by_disconnect: byDisconnect,
-            room_id: this.roomId,
-          },
-          { headers: { "x-internal-secret": INTERNAL_SECRET }, timeout: 5000 }
-        )
-        .catch((err) => {
-          console.warn("[ArenaRoom] FastAPI match-result call failed:", err?.message);
-        });
     }
 
     // Dispose room after grace period

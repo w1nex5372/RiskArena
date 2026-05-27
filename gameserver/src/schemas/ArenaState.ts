@@ -19,6 +19,7 @@ export class Player extends Schema {
   @type("boolean") isStunned: boolean = false;
   @type("boolean") isBlocking: boolean = false;
   @type("number")  abilityCharges: number = 1;  // 0 = cooldown, 1 = ready
+  @type("number")  itemAbilityCharges: number = 1;  // separate cooldown for equipped ability item
   @type("number") attackBonus:    number = 0;  // from weapon
   @type("number") abilityBonus:   number = 0;  // from ability scroll
   @type("number") defendReduction: number = 0; // 0.0–1.0 damage multiplier from armor
@@ -38,17 +39,20 @@ export class Player extends Schema {
   attackUntil: number = 0;
   stunUntil: number = 0;
   abilityCooldownUntil: number = 0;
-  inputState: { left: boolean; right: boolean; attack: boolean; ability: boolean; up: boolean; block: boolean } = {
+  itemAbilityCooldownUntil: number = 0;
+  inputState: { left: boolean; right: boolean; attack: boolean; ability: boolean; itemAbility: boolean; up: boolean; block: boolean } = {
     left: false,
     right: false,
     attack: false,
     ability: false,
+    itemAbility: false,
     up: false,
     block: false,
   };
-  previousInputState: { attack: boolean; ability: boolean } = {
+  previousInputState: { attack: boolean; ability: boolean; itemAbility: boolean } = {
     attack: false,
     ability: false,
+    itemAbility: false,
   };
 }
 

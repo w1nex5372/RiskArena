@@ -588,13 +588,18 @@ export default class BattleScene extends Phaser.Scene {
       timerText, p1ClassBar, p2ClassBar,
       battleStartMs: 0,
     };
+    this.setHudVisible(false);
 
   }
 
   // Show or hide the entire top HUD strip (HP bars + names)
   setHudVisible(visible) {
     if (!this.hud) return;
-    const keys = ['p1Name', 'p1HpBg', 'p1HpBar', 'p1HpText', 'p2Name', 'p2HpBg', 'p2HpBar', 'p2HpText'];
+    const keys = [
+      'p1Name', 'p1HpBg', 'p1HpBar', 'p1HpText',
+      'p2Name', 'p2HpBg', 'p2HpBar', 'p2HpText',
+      'timerText', 'p1ClassBar', 'p2ClassBar',
+    ];
     keys.forEach((k) => {
       if (this.hud[k]?.active) this.hud[k].setVisible(visible);
     });
@@ -1083,18 +1088,36 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   _wireRoom(room, mySessionId) {
+    if (this.room === room && this.mySessionId === mySessionId) return;
+    if (this.room && this.room !== room) {
+      Array.from(this.sprites.keys()).forEach((sessionId) => this.removePlayerSprite(sessionId));
+    }
     this.room = room;
     this.mySessionId = mySessionId;
 
     room.state.players.onAdd((player, sessionId) => {
+      if (this.room !== room) return;
+      if (this.sprites.has(sessionId)) this.removePlayerSprite(sessionId);
       this.createPlayerSprite(sessionId, player);
-      player.onChange(() => this.syncPlayer(sessionId, player));
+      player.onChange(() => {
+        if (this.room === room) this.syncPlayer(sessionId, player);
+      });
     });
-    room.state.players.onRemove((_p, sessionId) => this.removePlayerSprite(sessionId));
-    room.state.onChange(() => this.handlePhaseChange(room.state));
-    room.onMessage('damage_number', (d) => this.showDamageNumber(d.x, d.y, d.damage, { blocked: Boolean(d.blocked) }));
-    room.onMessage('ability_used',  (d) => this.showAbilityEffect(d));
-    room.onMessage('weapon_swing',  (d) => this.playWeaponSwing(d.sessionId));
+    room.state.players.onRemove((_p, sessionId) => {
+      if (this.room === room) this.removePlayerSprite(sessionId);
+    });
+    room.state.onChange(() => {
+      if (this.room === room) this.handlePhaseChange(room.state);
+    });
+    room.onMessage('damage_number', (d) => {
+      if (this.room === room) this.showDamageNumber(d.x, d.y, d.damage, { blocked: Boolean(d.blocked) });
+    });
+    room.onMessage('ability_used',  (d) => {
+      if (this.room === room) this.showAbilityEffect(d);
+    });
+    room.onMessage('weapon_swing',  (d) => {
+      if (this.room === room) this.playWeaponSwing(d.sessionId);
+    });
   }
 
   // ── 4. Create player visuals ────────────────────────────────────────────
@@ -1806,9 +1829,9 @@ export default class BattleScene extends Phaser.Scene {
       this._showGuardBreakEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit);
       return;
     }
-    if (d.cls === 'warrior') this._showBashEffect(d.fromX, d.fromY, d.hit);
-    if (d.cls === 'mage')    this._showFireballEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit);
-    if (d.cls === 'rogue')   this._showBlinkEffect(d.fromX, d.fromY, d.toX);
+    if (d.cls === 'warrior') this._showBashEffect(d.fromX, d.fromY, d.hit, abilityKey);
+    if (d.cls === 'mage')    this._showFireballEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit, abilityKey);
+    if (d.cls === 'rogue')   this._showBlinkEffect(d.fromX, d.fromY, d.toX, abilityKey);
   }
 
   _showGuardBreakEffect(fromX, fromY, toX, toY, hit) {
@@ -1883,32 +1906,43 @@ export default class BattleScene extends Phaser.Scene {
     this.cameras.main.shake(hit ? 170 : 100, hit ? 0.011 : 0.005);
   }
 
-  _showBashEffect(x, y, hit) {
+  _showBashEffect(x, y, hit, abilityKey = '') {
+    const variant = {
+      warrior_titan_bash: { label: 'TITAN BASH!', text: '#facc15', stroke: 0xfacc15, flash: 0xfacc15, sx: 13, sy: 6.4, shake: 0.013 },
+      warrior_bash: { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 },
+      warrior_default: { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 },
+    }[abilityKey] || { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 };
     const ring = this.add.circle(x, y, 10, 0xff6600, 0).setDepth(8);
-    ring.setStrokeStyle(3, hit ? 0xff4400 : 0x886600);
-    const lbl = this.add.text(x, y - 60, 'BASH!', {
+    ring.setStrokeStyle(3, hit ? variant.stroke : 0x886600);
+    const lbl = this.add.text(x, y - 60, variant.label, {
       fontSize: '20px', fontFamily: 'monospace', fontStyle: 'bold',
-      color: '#ff6600', stroke: '#000', strokeThickness: 4,
+      color: variant.text, stroke: '#000', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(13);
     this.tweens.add({ targets: lbl, y: y - 100, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
     this.tweens.add({
-      targets: ring, scaleX: 10, scaleY: 5, alpha: 0,
+      targets: ring, scaleX: variant.sx, scaleY: variant.sy, alpha: 0,
       duration: 400, ease: 'Power2',
       onComplete: () => ring.destroy(),
     });
-    const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xff4400, 0.1).setDepth(7);
+    const flash = this.add.rectangle(W / 2, H / 2, W, H, variant.flash, abilityKey === 'warrior_titan_bash' ? 0.16 : 0.1).setDepth(7);
     this.tweens.add({ targets: flash, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
-    if (hit) this.cameras.main.shake(140, 0.009);
+    if (hit) this.cameras.main.shake(140, variant.shake);
   }
 
-  _showFireballEffect(fromX, fromY, toX, toY, hit) {
-    const ball = this.add.circle(fromX, fromY - 30, 11, 0xff4400).setDepth(9);
-    const lbl = this.add.text(fromX, fromY - 70, 'FIREBALL!', {
+  _showFireballEffect(fromX, fromY, toX, toY, hit, abilityKey = '') {
+    const variant = {
+      mage_inferno_blast: { label: 'INFERNO!', color: '#fb7185', ball: 0xdc2626, core: 0xfef08a, tints: [0xdc2626, 0xfb7185, 0xfef08a], radius: 15, blast: 1.9, shake: 0.008 },
+      mage_ember_bolt: { label: 'EMBER!', color: '#f97316', ball: 0xf97316, core: 0xffee00, tints: [0xf97316, 0xffaa00, 0xffee00], radius: 9, blast: 1.25, shake: 0.004 },
+      mage_fireball: { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 },
+      mage_default: { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 },
+    }[abilityKey] || { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 };
+    const ball = this.add.circle(fromX, fromY - 30, variant.radius, variant.ball).setDepth(9);
+    const lbl = this.add.text(fromX, fromY - 70, variant.label, {
       fontSize: '18px', fontFamily: 'monospace', fontStyle: 'bold',
-      color: '#ff4400', stroke: '#000', strokeThickness: 4,
+      color: variant.color, stroke: '#000', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(13);
     this.tweens.add({ targets: lbl, y: fromY - 110, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
-    const core = this.add.circle(fromX, fromY - 30,  5, 0xffee00).setDepth(9);
+    const core = this.add.circle(fromX, fromY - 30, 5, variant.core).setDepth(9);
 
     // Fire particle trail following the ball
     const trail = this._isMobile ? null : this.add.particles(fromX, fromY - 30, 'fire_particle', {
@@ -1916,7 +1950,7 @@ export default class BattleScene extends Phaser.Scene {
       angle:    { min: 160, max: 200 },
       scale:    { start: 1.0, end: 0 },
       alpha:    { start: 0.85, end: 0 },
-      tint:     [0xff6600, 0xff2200, 0xffcc00],
+      tint:     variant.tints,
       lifespan: 180,
       quantity: 3,
       emitting: true,
@@ -1939,9 +1973,9 @@ export default class BattleScene extends Phaser.Scene {
         const blast = this.add.particles(toX, toY - 30, 'fire_particle', {
           speed: { min: 80, max: 200 },
           angle: { min: 0, max: 360 },
-          scale: { start: 1.5, end: 0 },
+          scale: { start: variant.blast, end: 0 },
           alpha: { start: 1, end: 0 },
-          tint:  [0xff6600, 0xff2200, 0xffee00],
+          tint:  variant.tints,
           lifespan: 320,
           quantity: blastCount,
           emitting: false,
@@ -1950,19 +1984,25 @@ export default class BattleScene extends Phaser.Scene {
         this.time.delayedCall(400, () => { if (blast.active) blast.destroy(); });
 
         if (hit) {
-          const ring = this.add.circle(toX, toY - 30, 8, 0xff6600).setDepth(9);
+          const ring = this.add.circle(toX, toY - 30, 8, variant.ball).setDepth(9);
           this.tweens.add({ targets: ring, scaleX: 6, scaleY: 6, alpha: 0, duration: 350, ease: 'Power2', onComplete: () => { if (ring.active) ring.destroy(); } });
-          this.cameras.main.shake(90, 0.005);
+          this.cameras.main.shake(90, variant.shake);
         }
       },
     });
   }
 
-  _showBlinkEffect(fromX, fromY, toX) {
+  _showBlinkEffect(fromX, fromY, toX, abilityKey = '') {
+    const variant = {
+      rogue_nightfall: { label: 'NIGHTFALL!', color: '#a855f7', fill: 0xa855f7, tints: [0xa855f7, 0x6366f1, 0xf0abfc], qty: 22, scale: 1.9 },
+      rogue_shadowstep: { label: 'SHADOWSTEP!', color: '#38bdf8', fill: 0x38bdf8, tints: [0x38bdf8, 0x0f172a, 0xa5f3fc], qty: 16, scale: 1.6 },
+      rogue_blink: { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 },
+      rogue_default: { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 },
+    }[abilityKey] || { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 };
     const centerY = fromY - SPRITE_HEIGHT / 2;
-    const lbl = this.add.text(toX, fromY - 70, 'BLINK!', {
+    const lbl = this.add.text(toX, fromY - 70, variant.label, {
       fontSize: '20px', fontFamily: 'monospace', fontStyle: 'bold',
-      color: '#00ffcc', stroke: '#000', strokeThickness: 4,
+      color: variant.color, stroke: '#000', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(13);
     this.tweens.add({ targets: lbl, y: fromY - 110, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
 
@@ -1970,18 +2010,18 @@ export default class BattleScene extends Phaser.Scene {
     const depart = this.add.particles(fromX, centerY, 'smoke_particle', {
       speed:    { min: 30, max: 90 },
       angle:    { min: 0, max: 360 },
-      scale:    { start: 1.4, end: 0 },
+      scale:    { start: variant.scale, end: 0 },
       alpha:    { start: 0.7, end: 0 },
-      tint:     [0x00ffcc, 0x00ccaa, 0xaaffee],
+      tint:     variant.tints,
       lifespan: 380,
-      quantity: 12,
+      quantity: variant.qty,
       emitting: false,
     }).setDepth(6);
-    depart.explode(12);
+    depart.explode(variant.qty);
     this.time.delayedCall(500, () => { if (depart.active) depart.destroy(); });
 
     // Ghost silhouette fades out
-    const ghost = this.add.rectangle(fromX, centerY, 42, 72, 0x00ffcc, 0.4).setDepth(6);
+    const ghost = this.add.rectangle(fromX, centerY, 42, 72, variant.fill, 0.4).setDepth(6);
     this.tweens.add({ targets: ghost, alpha: 0, scaleY: 0.3, duration: 240, ease: 'Power2', onComplete: () => { if (ghost.active) ghost.destroy(); } });
 
     // Arrival: smoke + flash
@@ -1991,17 +2031,17 @@ export default class BattleScene extends Phaser.Scene {
       const arrive = this.add.particles(toX, centerY, 'smoke_particle', {
         speed:    { min: 40, max: 110 },
         angle:    { min: 0, max: 360 },
-        scale:    { start: 1.6, end: 0 },
+        scale:    { start: variant.scale + 0.2, end: 0 },
         alpha:    { start: 0.85, end: 0 },
-        tint:     [0x00ffcc, 0x00ccaa, 0xaaffee],
+        tint:     variant.tints,
         lifespan: 350,
-        quantity: 16,
+        quantity: variant.qty + 4,
         emitting: false,
       }).setDepth(6);
-      arrive.explode(16);
+      arrive.explode(variant.qty + 4);
       this.time.delayedCall(450, () => { if (arrive.active) arrive.destroy(); });
 
-      const flash = this.add.circle(toX, fromY - 30, 22, 0x00ffcc, 0.8).setDepth(6);
+      const flash = this.add.circle(toX, fromY - 30, 22, variant.fill, 0.8).setDepth(6);
       this.tweens.add({ targets: flash, scaleX: 4.5, scaleY: 4.5, alpha: 0, duration: 320, ease: 'Power2', onComplete: () => { if (flash.active) flash.destroy(); } });
     });
   }

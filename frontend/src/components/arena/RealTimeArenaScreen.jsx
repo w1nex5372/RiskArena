@@ -15,6 +15,11 @@ const BASE_ATK_MIN   = 15;
 const BASE_ATK_MAX   = 25;
 const ABILITY_DMG    = { warrior: 20, mage: 25, rogue: null };
 const ABILITY_NAMES  = { warrior: 'Bash', mage: 'Fireball', rogue: 'Blink' };
+const CLASS_ABILITY_ICONS = {
+  warrior: '/items/skills/class_bash.png',
+  mage: '/items/skills/class_fireball.png',
+  rogue: '/items/skills/class_blink.png',
+};
 
 const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
   const override = new URLSearchParams(window.location.search).get('gameServerUrl');
@@ -209,13 +214,17 @@ function AbilityButton({ abilityReady, playerClass, equippedAbility, onActivate 
   const startRef = React.useRef(null);
   const abilityName = equippedAbility?.name || ABILITY_NAMES[playerClass] || 'Ability';
   const imagePath = equippedAbility?.image_path || '';
+  const hasAbility = Boolean(equippedAbility?.ability_key || equippedAbility?.name);
+  const canActivate = hasAbility && abilityReady;
   const cooldownMs = Number(
     equippedAbility?.ability_cooldown_ms ||
     equippedAbility?.cooldown_ms ||
     CLASS_COOLDOWNS[playerClass] ||
     6000
   );
-  const cooldownText = `${abilityName} - ${Math.round(cooldownMs / 1000)}s cooldown`;
+  const cooldownText = hasAbility
+    ? `${abilityName} - ${Math.round(cooldownMs / 1000)}s cooldown`
+    : 'Equip an ability item';
 
   React.useEffect(() => {
     if (!abilityReady) {
@@ -243,7 +252,7 @@ function AbilityButton({ abilityReady, playerClass, equippedAbility, onActivate 
 
   return (
     <div
-      onPointerDown={(e) => { e.preventDefault(); if (abilityReady) onActivate(); }}
+      onPointerDown={(e) => { e.preventDefault(); if (canActivate) onActivate(); }}
       onPointerUp={(e) => e.preventDefault()}
       onPointerLeave={(e) => e.preventDefault()}
       onPointerCancel={(e) => e.preventDefault()}
@@ -253,7 +262,7 @@ function AbilityButton({ abilityReady, playerClass, equippedAbility, onActivate 
         touchAction: 'none',
         userSelect: 'none',
         WebkitUserSelect: 'none',
-        cursor: abilityReady ? 'pointer' : 'default',
+        cursor: canActivate ? 'pointer' : 'default',
         flexShrink: 0,
       }}
       title={cooldownText}
@@ -267,7 +276,7 @@ function AbilityButton({ abilityReady, playerClass, equippedAbility, onActivate 
         {/* Track */}
         <circle cx={32} cy={32} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={5} />
         {/* Cooldown fill arc */}
-        {!abilityReady && (
+        {hasAbility && !abilityReady && (
           <circle
             cx={32} cy={32} r={r}
             fill="none"
@@ -278,7 +287,7 @@ function AbilityButton({ abilityReady, playerClass, equippedAbility, onActivate 
           />
         )}
         {/* Ready flash ring */}
-        {abilityReady && (
+        {canActivate && (
           <circle cx={32} cy={32} r={r} fill="none" stroke="rgba(196,105,255,0.55)" strokeWidth={5} />
         )}
       </svg>
@@ -288,7 +297,7 @@ function AbilityButton({ abilityReady, playerClass, equippedAbility, onActivate 
         position: 'absolute',
         inset: 5,
         borderRadius: '50%',
-        background: abilityReady ? 'rgba(147,51,234,0.88)' : 'rgba(40,40,55,0.75)',
+        background: canActivate ? 'rgba(147,51,234,0.88)' : 'rgba(40,40,55,0.75)',
         border: '2px solid rgba(255,255,255,0.18)',
         display: 'flex',
         alignItems: 'center',
@@ -296,27 +305,28 @@ function AbilityButton({ abilityReady, playerClass, equippedAbility, onActivate 
         fontSize: 22,
         color: 'white',
         fontWeight: 900,
-        boxShadow: abilityReady ? '0 0 12px rgba(147,51,234,0.6), 0 4px 14px rgba(0,0,0,0.5)' : '0 4px 14px rgba(0,0,0,0.5)',
-        opacity: abilityReady ? 1 : 0.55,
+        boxShadow: canActivate ? '0 0 12px rgba(147,51,234,0.6), 0 4px 14px rgba(0,0,0,0.5)' : '0 4px 14px rgba(0,0,0,0.5)',
+        opacity: canActivate ? 1 : 0.55,
         transition: 'background 0.25s, opacity 0.25s, box-shadow 0.25s',
       }}>
-        {imagePath ? (
+        <span style={{ fontSize: 20, lineHeight: 1 }}>
+          {!hasAbility ? '-' : abilityReady ? abilityName.slice(0, 1).toUpperCase() : Math.ceil(cooldownMs / 1000)}
+        </span>
+        {imagePath && (
           <img
             src={imagePath}
             alt=""
             draggable={false}
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
             style={{
+              position: 'absolute',
               width: 38,
               height: 38,
               objectFit: 'contain',
-              filter: abilityReady ? 'drop-shadow(0 0 6px rgba(255,255,255,0.28))' : 'grayscale(1)',
+              filter: canActivate ? 'drop-shadow(0 0 6px rgba(255,255,255,0.28))' : 'grayscale(1)',
               pointerEvents: 'none',
             }}
           />
-        ) : (
-          <span style={{ fontSize: 20, lineHeight: 1 }}>
-            {abilityReady ? abilityName.slice(0, 1).toUpperCase() : Math.ceil(cooldownMs / 1000)}
-          </span>
         )}
       </div>
     </div>
@@ -330,7 +340,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const gameRef = useRef(null);        // Phaser.Game instance
   const sceneRef = useRef(null);       // BattleScene instance
   const roomRef = useRef(null);        // Colyseus room
-  const inputRef = useRef({ left: false, right: false, attack: false, ability: false, up: false, block: false });
+  const inputRef = useRef({ left: false, right: false, attack: false, ability: false, itemAbility: false, up: false, block: false });
   const inputIntervalRef = useRef(null);
   const lastInputRef = useRef('');
   const roomActiveRef = useRef(false);
@@ -341,6 +351,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const [result, setResult] = useState(null);
   const [dotCount, setDotCount] = useState(1);
   const [abilityReady, setAbilityReady] = useState(true);
+  const [itemAbilityReady, setItemAbilityReady] = useState(true);
   const [playerClass, setPlayerClass] = useState('warrior');
   const [isPortrait, setIsPortrait] = useState(() => window.innerHeight > window.innerWidth);
   const [loadoutStats, setLoadoutStats] = useState({});
@@ -478,8 +489,12 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         const myPlayer = room.state.players.get(room.sessionId);
         if (myPlayer) {
           setAbilityReady(myPlayer.abilityCharges > 0);
+          setItemAbilityReady((myPlayer.itemAbilityCharges ?? 1) > 0);
           setPlayerClass(myPlayer.characterClass || 'warrior');
-          myPlayer.onChange(() => setAbilityReady(myPlayer.abilityCharges > 0));
+          myPlayer.onChange(() => {
+            setAbilityReady(myPlayer.abilityCharges > 0);
+            setItemAbilityReady((myPlayer.itemAbilityCharges ?? 1) > 0);
+          });
         }
 
         // Re-wire state listener
@@ -538,7 +553,10 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         room.state.players.onAdd((player, sid) => {
           if (sid === room.sessionId) {
             setPlayerClass(player.characterClass || 'warrior');
-            player.onChange(() => setAbilityReady(player.abilityCharges > 0));
+            player.onChange(() => {
+              setAbilityReady(player.abilityCharges > 0);
+              setItemAbilityReady((player.itemAbilityCharges ?? 1) > 0);
+            });
           }
         });
 
@@ -629,11 +647,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
   // ── Input helpers ─────────────────────────────────────────────────────────
   const setKey = useCallback((key, value) => {
-    const wasPressed = Boolean(inputRef.current[key]);
     inputRef.current = { ...inputRef.current, [key]: value };
-    if (value && !wasPressed && (key === 'attack' || key === 'ability')) {
-      sceneRef.current?.playWeaponSwing?.(roomRef.current?.sessionId);
-    }
   }, []);
 
   const setDirectionalInput = useCallback((next) => {
@@ -653,6 +667,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', true);
       if (e.key === ' ' || e.key === 'z') setKey('attack', true);
       if (e.key === 'x') setKey('ability', true);
+      if (e.key === 'v' && equipped?.ability?.ability_key) setKey('itemAbility', true);
       if (e.key === 'Shift' || e.key === 'c') setKey('block', true);
     };
     const up = (e) => {
@@ -661,12 +676,16 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', false);
       if (e.key === ' ' || e.key === 'z') setKey('attack', false);
       if (e.key === 'x') setKey('ability', false);
+      if (e.key === 'v') setKey('itemAbility', false);
       if (e.key === 'Shift' || e.key === 'c') setKey('block', false);
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
-  }, [setKey]);
+  }, [equipped?.ability?.ability_key, setKey]);
+
+  const equippedAbility = equipped?.ability || null;
+  const hasEquippedAbility = Boolean(equippedAbility?.ability_key);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -953,7 +972,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       })()}
 
       {/* ── Mobile touch controls ─────────────────────────────────────────── */}
-      {(phase === 'battle' || phase === 'countdown') && (
+      {phase === 'battle' && (
         <div style={{
           flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -968,12 +987,26 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
             <AbilityButton
               abilityReady={abilityReady}
               playerClass={playerClass}
-              equippedAbility={equipped?.ability || null}
+              equippedAbility={{
+                name: ABILITY_NAMES[playerClass] || 'Ability',
+                image_path: CLASS_ABILITY_ICONS[playerClass],
+              }}
               onActivate={() => {
                 setKey('ability', true);
                 setTimeout(() => setKey('ability', false), 150);
               }}
             />
+            {hasEquippedAbility && (
+              <AbilityButton
+                abilityReady={itemAbilityReady}
+                playerClass={playerClass}
+                equippedAbility={equippedAbility}
+                onActivate={() => {
+                  setKey('itemAbility', true);
+                  setTimeout(() => setKey('itemAbility', false), 150);
+                }}
+              />
+            )}
             <TouchButton
               label="B"
               color="rgba(37,99,235,0.86)"
