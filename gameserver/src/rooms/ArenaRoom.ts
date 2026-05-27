@@ -563,7 +563,14 @@ export class ArenaRoom extends Room<ArenaState> {
     const blockMultiplier = blocked ? 1 - ACTIVE_BLOCK_REDUCTION : 1;
     const effectiveDmg = Math.max(1, Math.round(dmg * passiveMultiplier * blockMultiplier));
     target.hp = Math.max(0, target.hp - effectiveDmg);
-    this.broadcast("damage_number", { x: nx, y: ny - 40, damage: effectiveDmg, blocked });
+    this.broadcast("damage_number", {
+      x: nx,
+      y: ny - 40,
+      damage: effectiveDmg,
+      blocked,
+      attackerSid,
+      targetSid,
+    });
     if (target.hp <= 0) {
       target.state = "dead";
       this.endMatch(attackerSid, targetSid, false);

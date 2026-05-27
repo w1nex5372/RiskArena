@@ -1110,7 +1110,13 @@ export default class BattleScene extends Phaser.Scene {
       if (this.room === room) this.handlePhaseChange(room.state);
     });
     room.onMessage('damage_number', (d) => {
-      if (this.room === room) this.showDamageNumber(d.x, d.y, d.damage, { blocked: Boolean(d.blocked) });
+      if (this.room === room) {
+        this.showDamageNumber(d.x, d.y, d.damage, {
+          blocked: Boolean(d.blocked),
+          attackerSid: d.attackerSid,
+          targetSid: d.targetSid,
+        });
+      }
     });
     room.onMessage('ability_used',  (d) => {
       if (this.room === room) this.showAbilityEffect(d);
@@ -1482,6 +1488,8 @@ export default class BattleScene extends Phaser.Scene {
     const xMul = facingRight ? 1 : -1;
     const shieldX = x + xMul * 31;
     const shieldY = Math.max(topY + 46, visualY - 62);
+    s.blockShieldX = shieldX;
+    s.blockShieldY = shieldY;
     const g = s.blockFx;
 
     g.clear();
@@ -1733,9 +1741,13 @@ export default class BattleScene extends Phaser.Scene {
     this._playSound(blocked ? 'block' : 'hit');
 
     if (blocked) {
-      this._showBlockImpact(gameX, gameY);
+      const targetSprite = opts.targetSid ? this.sprites.get(opts.targetSid) : null;
+      const impactX = targetSprite?.blockShieldX ?? gameX;
+      const impactY = targetSprite?.blockShieldY ?? gameY;
+      this._showBlockImpact(impactX, impactY);
+      this._pulseBlockGuard(targetSprite, impactX, impactY);
       const text = damage > 0 ? `-${damage} BLOCK` : 'BLOCK';
-      const txt = this.add.text(gameX, gameY, text, {
+      const txt = this.add.text(impactX, impactY, text, {
         fontSize: '20px', fontFamily: 'monospace',
         color: '#93c5fd', fontStyle: 'bold',
         stroke: '#000', strokeThickness: 4,
@@ -1743,7 +1755,7 @@ export default class BattleScene extends Phaser.Scene {
 
       this.tweens.add({
         targets: txt,
-        y: gameY - 58,
+        y: impactY - 58,
         alpha: 0,
         scaleX: 1.18,
         scaleY: 1.18,
@@ -1785,6 +1797,28 @@ export default class BattleScene extends Phaser.Scene {
       duration: 850,
       ease: 'Power1',
       onComplete: () => txt.destroy(),
+    });
+  }
+
+  _pulseBlockGuard(targetSprite, gameX, gameY) {
+    if (targetSprite?.blockFx?.active) {
+      targetSprite.blockFx.setVisible(true);
+      targetSprite.blockFx.setAlpha(1);
+    }
+
+    const flare = this.add.graphics().setDepth(7);
+    flare.lineStyle(4, 0xe0f2fe, 0.9);
+    flare.strokeCircle(gameX, gameY, 27);
+    flare.lineStyle(2, 0x60a5fa, 0.75);
+    flare.strokeCircle(gameX, gameY, 39);
+    this.tweens.add({
+      targets: flare,
+      alpha: 0,
+      scaleX: 1.24,
+      scaleY: 1.24,
+      duration: 220,
+      ease: 'Power2',
+      onComplete: () => { if (flare.active) flare.destroy(); },
     });
   }
 
