@@ -75,7 +75,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         bossMaxHp:        bossState.max_hp,
         bossPhase:        bossState.phase,
         myPlayer: {
-          class:      user?.class_name || 'warrior',
+          class_name: user?.class_name || 'warrior',
           sheetPath:  user?.character_spritesheet_path || null,
           username:   user?.first_name || 'You',
         },

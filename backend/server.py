@@ -4869,6 +4869,176 @@ async def use_promo_code_endpoint(code: str, http_request: Request):
     return result
 
 
+# ── Early Access / Waitlist ──────────────────────────────────────────────────
+
+EARLY_ACCESS_BONUS_TOKENS = int(os.environ.get("EARLY_ACCESS_BONUS_TOKENS", "500"))
+
+_WAITLIST_CONFIRM_MSG = (
+    "⚔️ <b>You're on the RiskArena waitlist!</b>\n\n"
+    "You've secured your spot as a <b>Founding Warrior</b>.\n\n"
+    "What you'll receive on launch day:\n"
+    "🪙 <b>500 bonus tokens</b>\n"
+    "🛡️ <b>Founding Warrior</b> badge in your profile\n\n"
+    "We'll notify you here when the arena opens.\n"
+    "Stay ready, warrior. ⚔️"
+)
+
+_WAITLIST_ALREADY_MSG = (
+    "⚔️ You're already on the waitlist, warrior!\n\n"
+    "Your <b>Founding Warrior</b> spot is secured. "
+    "We'll message you when the arena opens."
+)
+
+
+@api_router.post("/bot/webhook")
+async def telegram_bot_webhook(request: Request):
+    """Receives Telegram bot updates for waitlist /start and /waitlist commands."""
+    try:
+        update = await request.json()
+    except Exception:
+        return {"ok": True}
+
+    message = update.get("message") or update.get("edited_message")
+    if not message:
+        return {"ok": True}
+
+    text: str = message.get("text", "")
+    from_user = message.get("from", {})
+    telegram_id: int = from_user.get("id")
+    if not telegram_id or not text:
+        return {"ok": True}
+
+    if not (text.startswith("/start") or text.startswith("/waitlist")):
+        return {"ok": True}
+
+    username = from_user.get("username")
+    first_name = from_user.get("first_name", "Warrior")
+
+    try:
+        async with get_pool().acquire() as conn:
+            existing = await conn.fetchrow(
+                "SELECT id, tokens_awarded FROM early_access WHERE telegram_id = $1",
+                telegram_id,
+            )
+            if existing:
+                await send_telegram_message(telegram_id, _WAITLIST_ALREADY_MSG)
+                return {"ok": True}
+
+            await conn.execute(
+                """INSERT INTO early_access (telegram_id, username, first_name)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (telegram_id) DO NOTHING""",
+                telegram_id, username, first_name,
+            )
+        await send_telegram_message(telegram_id, _WAITLIST_CONFIRM_MSG)
+        logging.info(f"Early access registered: {telegram_id} (@{username})")
+    except Exception as e:
+        logging.error(f"Early access webhook error: {e}")
+
+    return {"ok": True}
+
+
+@api_router.get("/admin/early-access")
+async def list_early_access(admin_key: str = ""):
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT telegram_id, username, first_name, registered_at, tokens_awarded, awarded_at "
+            "FROM early_access ORDER BY registered_at ASC"
+        )
+    entries = [dict(r) for r in rows]
+    for e in entries:
+        if e.get("registered_at"):
+            e["registered_at"] = e["registered_at"].isoformat()
+        if e.get("awarded_at"):
+            e["awarded_at"] = e["awarded_at"].isoformat()
+    return {"total": len(entries), "entries": entries}
+
+
+@api_router.post("/admin/early-access/award-tokens")
+async def award_early_access_tokens(admin_key: str = "", tokens: int = EARLY_ACCESS_BONUS_TOKENS):
+    """Award bonus tokens to all early access users who have a game account and haven't been awarded yet."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    if tokens <= 0:
+        raise HTTPException(status_code=400, detail="tokens must be positive")
+
+    import httpx as _httpx
+
+    async with get_pool().acquire() as conn:
+        pending = await conn.fetch(
+            "SELECT telegram_id, username, first_name FROM early_access WHERE tokens_awarded = FALSE"
+        )
+
+    awarded, skipped, notified = 0, 0, 0
+    errors = []
+
+    async with get_pool().acquire() as conn:
+        for row in pending:
+            tg_id = row["telegram_id"]
+            try:
+                user_row = await conn.fetchrow(
+                    "SELECT id, token_balance FROM users WHERE telegram_id = $1", tg_id
+                )
+                if not user_row:
+                    skipped += 1
+                    continue
+
+                await conn.execute(
+                    "UPDATE users SET token_balance = token_balance + $1 WHERE id = $2",
+                    tokens, user_row["id"],
+                )
+                await conn.execute(
+                    "UPDATE early_access SET tokens_awarded = TRUE, awarded_at = NOW() WHERE telegram_id = $1",
+                    tg_id,
+                )
+                awarded += 1
+
+                launch_msg = (
+                    f"⚔️ <b>The arena is open, Founding Warrior!</b>\n\n"
+                    f"🪙 <b>{tokens} bonus tokens</b> have been added to your account.\n"
+                    f"🛡️ Your <b>Founding Warrior</b> badge is waiting in your profile.\n\n"
+                    f"Open RiskArena and claim your glory!"
+                )
+                ok = await send_telegram_message(tg_id, launch_msg)
+                if ok:
+                    notified += 1
+            except Exception as e:
+                errors.append(f"{tg_id}: {e}")
+                logging.error(f"Early access award error for {tg_id}: {e}")
+
+    logging.info(f"Early access award done: awarded={awarded}, skipped={skipped}, notified={notified}")
+    return {
+        "awarded": awarded,
+        "skipped_no_account": skipped,
+        "notified": notified,
+        "errors": errors[:10],
+        "tokens_per_user": tokens,
+    }
+
+
+@api_router.post("/admin/early-access/set-webhook")
+async def set_bot_webhook(admin_key: str = "", webhook_url: str = ""):
+    """Register the Telegram bot webhook. webhook_url should be https://yourdomain.com/api/bot/webhook"""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    if not webhook_url:
+        raise HTTPException(status_code=400, detail="webhook_url is required")
+    if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
+        raise HTTPException(status_code=400, detail="TELEGRAM_BOT_TOKEN not configured")
+    import httpx as _httpx
+    async with _httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
+            json={"url": webhook_url, "allowed_updates": ["message"]},
+        )
+    data = resp.json()
+    if not data.get("ok"):
+        raise HTTPException(status_code=400, detail=data.get("description", "Failed"))
+    return {"ok": True, "description": data.get("description"), "webhook_url": webhook_url}
+
+
 @api_router.get("/admin/export-users")
 async def export_users_csv(admin_key: str = ""):
     if not verify_admin_key(admin_key):

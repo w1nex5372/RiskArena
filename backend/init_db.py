@@ -358,6 +358,17 @@ CREATE TABLE IF NOT EXISTS daily_chest_claims (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_chest_claims_user_date ON daily_chest_claims(user_id, claim_date DESC);
 
+CREATE TABLE IF NOT EXISTS early_access (
+    id              SERIAL PRIMARY KEY,
+    telegram_id     BIGINT UNIQUE NOT NULL,
+    username        VARCHAR(255),
+    first_name      VARCHAR(255),
+    registered_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    tokens_awarded  BOOLEAN NOT NULL DEFAULT FALSE,
+    awarded_at      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_early_access_tokens_awarded ON early_access(tokens_awarded);
+
 """
 
 
