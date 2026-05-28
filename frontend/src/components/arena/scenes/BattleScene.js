@@ -549,6 +549,9 @@ export default class BattleScene extends Phaser.Scene {
     const p1HpBg = this.add.rectangle(16, 26, 160, 12, 0x1a1a1a)
       .setOrigin(0, 0.5).setDepth(21);
 
+    const p1HpChip = this.add.rectangle(16, 26, 160, 12, 0xf97316, 0.85)
+      .setOrigin(0, 0.5).setDepth(21.5);
+
     const p1HpBar = this.add.rectangle(16, 26, 160, 12, 0x22c55e)
       .setOrigin(0, 0.5).setDepth(22);
 
@@ -563,6 +566,9 @@ export default class BattleScene extends Phaser.Scene {
 
     const p2HpBg = this.add.rectangle(W - 16, 26, 160, 12, 0x1a1a1a)
       .setOrigin(1, 0.5).setDepth(21);
+
+    const p2HpChip = this.add.rectangle(W - 16, 26, 160, 12, 0xf97316, 0.85)
+      .setOrigin(1, 0.5).setDepth(21.5);
 
     const p2HpBar = this.add.rectangle(W - 16, 26, 160, 12, 0x22c55e)
       .setOrigin(1, 0.5).setDepth(22);
@@ -581,9 +587,10 @@ export default class BattleScene extends Phaser.Scene {
     const p2ClassBar = this.add.rectangle(W - 3, 19, 6, 34, 0x444444, 0.3).setOrigin(1, 0.5).setDepth(22);
 
     this.hud = {
-      p1Name, p1HpBg, p1HpBar, p1HpText,
-      p2Name, p2HpBg, p2HpBar, p2HpText,
+      p1Name, p1HpBg, p1HpChip, p1HpBar, p1HpText,
+      p2Name, p2HpBg, p2HpChip, p2HpBar, p2HpText,
       p1MaxHp: 100, p2MaxHp: 100,
+      p1LastHp: null, p2LastHp: null,
       p1PulseTween: null, p2PulseTween: null,
       timerText, p1ClassBar, p2ClassBar,
       battleStartMs: 0,
@@ -596,8 +603,8 @@ export default class BattleScene extends Phaser.Scene {
   setHudVisible(visible) {
     if (!this.hud) return;
     const keys = [
-      'p1Name', 'p1HpBg', 'p1HpBar', 'p1HpText',
-      'p2Name', 'p2HpBg', 'p2HpBar', 'p2HpText',
+      'p1Name', 'p1HpBg', 'p1HpChip', 'p1HpBar', 'p1HpText',
+      'p2Name', 'p2HpBg', 'p2HpChip', 'p2HpBar', 'p2HpText',
       'timerText', 'p1ClassBar', 'p2ClassBar',
     ];
     keys.forEach((k) => {
@@ -611,8 +618,29 @@ export default class BattleScene extends Phaser.Scene {
   _updateHudSlot(slot, hp, maxHp) {
     const pct = Math.max(0, hp / maxHp);
     const bar = this.hud[slot + 'HpBar'];
+    const chip = this.hud[slot + 'HpChip'];
+    const previousHp = this.hud[slot + 'LastHp'];
+    const nextWidth = 160 * pct;
 
-    bar.width = 160 * pct;
+    if (typeof previousHp === 'number' && hp < previousHp && chip?.active) {
+      chip.width = 160 * Math.max(0, previousHp / maxHp);
+      chip.setAlpha(0.9);
+      this.tweens.killTweensOf(chip);
+      this.tweens.add({
+        targets: chip,
+        width: nextWidth,
+        alpha: 0.35,
+        delay: 110,
+        duration: 420,
+        ease: 'Cubic.easeOut',
+      });
+    } else if (chip?.active) {
+      chip.width = nextWidth;
+      chip.setAlpha(0.35);
+    }
+    this.hud[slot + 'LastHp'] = hp;
+
+    bar.width = nextWidth;
     bar.setFillStyle(pct > 0.5 ? 0x22c55e : pct > 0.25 ? 0xf59e0b : 0xef4444);
 
     this.hud[slot + 'HpText'].setText(String(Math.ceil(hp)));
@@ -1188,8 +1216,9 @@ export default class BattleScene extends Phaser.Scene {
       fontSize: '9px', fontFamily: 'monospace', color: CLASS_HEX[cls] ?? '#e74c3c',
     }).setOrigin(0.5, 1).setDepth(3);
 
-    const hpBg  = this.add.rectangle(spawnX, hpY, 56, 7, 0x1a1a1a).setStrokeStyle(1, 0x444444).setDepth(3);
-    const hpBar = this.add.rectangle(spawnX - 28, hpY, 56, 7, 0x22c55e).setOrigin(0, 0.5).setDepth(3);
+    const hpBg   = this.add.rectangle(spawnX, hpY, 56, 7, 0x1a1a1a).setStrokeStyle(1, 0x444444).setDepth(3);
+    const hpChip = this.add.rectangle(spawnX - 28, hpY, 56, 7, 0xf97316, 0.85).setOrigin(0, 0.5).setDepth(3.1);
+    const hpBar  = this.add.rectangle(spawnX - 28, hpY, 56, 7, 0x22c55e).setOrigin(0, 0.5).setDepth(3.2);
 
     const meTag = isMe
       ? this.add.text(spawnX, meY, '▼ YOU', {
@@ -1209,10 +1238,11 @@ export default class BattleScene extends Phaser.Scene {
       bodyTextureKey: key,
       animPrefix: bodyDesc.animPrefix,
       usesGeneratedSheet: bodyDesc.generated,
-      nameLabel, classLabel, hpBg, hpBar, meTag, dcLabel: null, stunLabel: null,
+      nameLabel, classLabel, hpBg, hpChip, hpBar, meTag, dcLabel: null, stunLabel: null,
       blockFx: null,
       blockFxTween: null,
       maxHp: player.maxHp || 100,
+      lastHp: player.hp,
       deathPlayed: false,
       hpPulseTween: null,
       lastState: '',
@@ -1298,13 +1328,32 @@ export default class BattleScene extends Phaser.Scene {
     s.nameLabel.setPosition(x, nameY);
     s.classLabel.setPosition(x, nameY + 11);
     s.hpBg.setPosition(x, hpY);
+    s.hpChip.setPosition(x - 28, hpY);
     s.hpBar.setPosition(x - 28, hpY);
     if (s.meTag) s.meTag.setPosition(x, meY);
     this._syncBlockGuard(s, player, x, visualY, topY);
 
     // HP bar
     const pct = Math.max(0, player.hp / s.maxHp);
-    s.hpBar.width = 56 * pct;
+    const hpWidth = 56 * pct;
+    if (typeof s.lastHp === 'number' && player.hp < s.lastHp) {
+      s.hpChip.width = 56 * Math.max(0, s.lastHp / s.maxHp);
+      s.hpChip.setAlpha(0.85);
+      this.tweens.killTweensOf(s.hpChip);
+      this.tweens.add({
+        targets: s.hpChip,
+        width: hpWidth,
+        alpha: 0.25,
+        delay: 100,
+        duration: 360,
+        ease: 'Cubic.easeOut',
+      });
+    } else {
+      s.hpChip.width = hpWidth;
+      s.hpChip.setAlpha(0.25);
+    }
+    s.lastHp = player.hp;
+    s.hpBar.width = hpWidth;
     s.hpBar.setFillStyle(pct > 0.5 ? 0x22c55e : pct > 0.25 ? 0xf59e0b : 0xef4444);
 
     // Pulsation on in-world HP bar when critically low
@@ -1527,7 +1576,7 @@ export default class BattleScene extends Phaser.Scene {
     if (s.hpPulseTween) this.tweens.killTweensOf(s.hpBar);
     if (s.blockFxTween) this.tweens.killTweensOf(s.blockFx);
     if (s.enchantTrail) { s.enchantTrail.destroy(); }
-    [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpBar, s.meTag, s.dcLabel, s.stunLabel, s.blockFx]
+    [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpChip, s.hpBar, s.meTag, s.dcLabel, s.stunLabel, s.blockFx]
       .forEach((o) => o?.destroy());
     this.sprites.delete(sessionId);
   }
@@ -1868,6 +1917,27 @@ export default class BattleScene extends Phaser.Scene {
     if (d.cls === 'rogue')   this._showBlinkEffect(d.fromX, d.fromY, d.toX, abilityKey);
   }
 
+  _showCombatText(x, y, label, color = '#f8fafc', size = '16px') {
+    const txt = this.add.text(x, y, label, {
+      fontSize: size,
+      fontFamily: 'monospace',
+      fontStyle: 'bold',
+      color,
+      stroke: '#020617',
+      strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(14);
+    this.tweens.add({
+      targets: txt,
+      y: y - 34,
+      alpha: 0,
+      scaleX: 1.14,
+      scaleY: 1.14,
+      duration: 620,
+      ease: 'Power1',
+      onComplete: () => { if (txt.active) txt.destroy(); },
+    });
+  }
+
   _showGuardBreakEffect(fromX, fromY, toX, toY, hit) {
     const asNumber = (value, fallback) => {
       const parsed = Number(value);
@@ -1937,6 +2007,7 @@ export default class BattleScene extends Phaser.Scene {
     burst.explode(burstCount);
     this.time.delayedCall(430, () => { if (burst.active) burst.destroy(); });
 
+    if (!hit) this._showCombatText(impactX, impactY - 8, 'MISS', '#94a3b8');
     this.cameras.main.shake(hit ? 170 : 100, hit ? 0.011 : 0.005);
   }
 
@@ -1960,6 +2031,7 @@ export default class BattleScene extends Phaser.Scene {
     });
     const flash = this.add.rectangle(W / 2, H / 2, W, H, variant.flash, abilityKey === 'warrior_titan_bash' ? 0.16 : 0.1).setDepth(7);
     this.tweens.add({ targets: flash, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
+    this._showCombatText(x, y - 34, hit ? 'HIT' : 'MISS', hit ? '#facc15' : '#94a3b8');
     if (hit) this.cameras.main.shake(140, variant.shake);
   }
 
@@ -2020,7 +2092,10 @@ export default class BattleScene extends Phaser.Scene {
         if (hit) {
           const ring = this.add.circle(toX, toY - 30, 8, variant.ball).setDepth(9);
           this.tweens.add({ targets: ring, scaleX: 6, scaleY: 6, alpha: 0, duration: 350, ease: 'Power2', onComplete: () => { if (ring.active) ring.destroy(); } });
+          this._showCombatText(toX, toY - 72, 'HIT', '#facc15');
           this.cameras.main.shake(90, variant.shake);
+        } else {
+          this._showCombatText(toX, toY - 72, 'DODGE', '#93c5fd');
         }
       },
     });
