@@ -9,7 +9,11 @@ test-results
 tmp
 backend/.venv
 backend/.pytest_cache
+backend/.pytest_cache/
+backend/.pytest_cache/**
 backend/pytest-cache-files-*
+backend/pytest-cache-files-*/
+backend/pytest-cache-files-*/**
 backend/__pycache__
 backend/**/__pycache__
 backend/*.pyc
@@ -17,4 +21,5 @@ generated
 pytest-cache-files-*
 .pytest_cache
 **/.pytest_cache
+**/.pytest_cache/**
 **/__pycache__

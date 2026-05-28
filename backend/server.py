@@ -57,6 +57,9 @@ from itemization import (
     SCROLL_SHOP,
     SCROLL_TYPES,
     aggregate_item_modifiers,
+    battle_ability_allowed_for_class,
+    battle_ability_cooldown_ms,
+    battle_ability_stats,
     can_user_equip_item,
     choose_inventory_copy_for_equip,
     enchant_success_chance,
@@ -3674,8 +3677,10 @@ _TIER_ORDER = {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5}
 
 def _serialize_item_row(row: Any) -> Dict[str, Any]:
     item = dict(row)
+    ability_key = item.get("ability_key")
     item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
-    item["ability_cooldown_ms"] = int(item.get("ability_cooldown_ms", 0) or 0)
+    item["ability_cooldown_ms"] = battle_ability_cooldown_ms(ability_key, int(item.get("ability_cooldown_ms", 0) or 0))
+    item["battle_stats"] = battle_ability_stats(ability_key)
     item["item_id"] = item.get("item_id") or item.get("id")
     item["lpc_visual"] = _coerce_json_dict(item.get("lpc_visual")) or None
     item["rarity"] = tier_to_rarity(item.get("tier"))
@@ -3686,8 +3691,10 @@ def _serialize_item_row(row: Any) -> Dict[str, Any]:
 
 def _serialize_inventory_row(row: Any) -> Dict[str, Any]:
     item = dict(row)
+    ability_key = item.get("ability_key")
     item["enchant_level"] = int(item.get("enchant_level", 0) or 0)
-    item["ability_cooldown_ms"] = int(item.get("ability_cooldown_ms", 0) or 0)
+    item["ability_cooldown_ms"] = battle_ability_cooldown_ms(ability_key, int(item.get("ability_cooldown_ms", 0) or 0))
+    item["battle_stats"] = battle_ability_stats(ability_key)
     item["inventory_id"] = item["id"]
     item["item_id"] = item["catalog_item_id"]
     item["type"] = item["slot"]
@@ -5245,13 +5252,6 @@ RT_LOSER_XP     = 30
 _RT_STREAK_MILESTONES = {3: 50, 5: 100, 7: 200}
 _processed_realtime_result_rooms: set[str] = set()
 _realtime_result_lock = asyncio.Lock()
-_ALLOWED_BATTLE_ABILITIES = {
-    "warrior": {"warrior_bash", "warrior_guardbreak", "warrior_titan_bash"},
-    "mage": {"mage_fireball", "mage_ember_bolt", "mage_inferno_blast"},
-    "rogue": {"rogue_blink", "rogue_shadowstep", "rogue_nightfall"},
-}
-
-
 def _clamp_number(value: Any, minimum: float, maximum: float, default: float = 0.0) -> float:
     try:
         number = float(value)
@@ -5265,19 +5265,23 @@ def _clamp_number(value: Any, minimum: float, maximum: float, default: float = 0
 def _battle_ability_payload(class_name: Optional[str], ability_item: Dict[str, Any]) -> Dict[str, Any]:
     cls = (class_name or "").lower()
     ability_key = str(ability_item.get("ability_key") or "")
-    if ability_key not in _ALLOWED_BATTLE_ABILITIES.get(cls, set()):
+    if not battle_ability_allowed_for_class(cls, ability_key):
         return {
             "active_ability_key": None,
             "active_ability_name": None,
             "active_ability_icon": None,
             "active_ability_cooldown_ms": 0,
+            "active_ability_stats": None,
         }
-    cooldown = int(_clamp_number(ability_item.get("ability_cooldown_ms"), 1000, 30000, 0))
+    default_cooldown = battle_ability_cooldown_ms(ability_key)
+    requested_cooldown = int(_clamp_number(ability_item.get("ability_cooldown_ms"), 0, 30000, 0))
+    cooldown = max(requested_cooldown or default_cooldown, default_cooldown)
     return {
         "active_ability_key": ability_key,
         "active_ability_name": ability_item.get("name"),
         "active_ability_icon": ability_item.get("image_path"),
         "active_ability_cooldown_ms": cooldown,
+        "active_ability_stats": battle_ability_stats(ability_key),
     }
 
 class RealtimeMatchResultBody(BaseModel):

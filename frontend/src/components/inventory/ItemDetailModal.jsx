@@ -5,6 +5,7 @@ import {
   formatClassLabel,
   formatSlotLabel,
   getClassKey,
+  getAbilityBattleRows,
   getItemImageSrc,
   getItemStatRows,
   getPassiveText,
@@ -222,6 +223,9 @@ export default function ItemDetailModal({
 
   const effectiveStatRows = getItemStatRows(item, { source: 'effective_stats' });
   const enchantStatRows = getItemStatRows(item, { source: 'enchant_stats' });
+  const abilityBattleRows = getAbilityBattleRows(item, {
+    abilityBonus: Number(item?.effective_stats?.ability_bonus || item?.ability_bonus || 0),
+  });
 
   const classTheme = CLASS_THEME[classKey] || null;
 
@@ -399,6 +403,19 @@ export default function ItemDetailModal({
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {enchantStatRows.map((row) => (
                   <StatChip key={row.key} color="#c9a84c">
+                    {row.label}
+                  </StatChip>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {abilityBattleRows.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <SectionLabel color="#60a5fa">Battle Ability</SectionLabel>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {abilityBattleRows.map((row) => (
+                  <StatChip key={row.key} color="#93c5fd">
                     {row.label}
                   </StatChip>
                 ))}

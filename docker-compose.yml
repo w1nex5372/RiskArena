@@ -49,6 +49,8 @@ services:
     build:
       context: ./gameserver
       dockerfile: Dockerfile
+      additional_contexts:
+        shared: ./shared
     container_name: riskarena-gameserver
     restart: unless-stopped
     depends_on:

@@ -241,6 +241,35 @@ export function getItemStatChips(item) {
   return chips;
 }
 
+function formatSeconds(ms) {
+  const seconds = Number(ms || 0) / 1000;
+  if (!seconds) return '';
+  return Number.isInteger(seconds) ? `${seconds}s` : `${seconds.toFixed(1)}s`;
+}
+
+export function getAbilityBattleRows(item, { abilityBonus = 0 } = {}) {
+  const stats = item?.battle_stats || item?.active_ability_stats || null;
+  if (!stats || typeof stats !== 'object') return [];
+
+  const rows = [];
+  const damage = Number(stats.damage || 0);
+  const stunMs = Number(stats.stun_ms || 0);
+  const knockback = Number(stats.knockback || 0);
+  const range = Number(stats.range || 0);
+  const offset = Number(stats.offset || 0);
+  const cooldownMs = Number(stats.cooldown_ms || item?.ability_cooldown_ms || 0);
+
+  if (damage) rows.push({ key: 'damage', label: `${Math.round(damage + Number(abilityBonus || 0))} DMG` });
+  if (stunMs) rows.push({ key: 'stun', label: `Stun ${formatSeconds(stunMs)}` });
+  if (knockback) rows.push({ key: 'knockback', label: `Knockback ${Math.round(knockback)}` });
+  if (range) rows.push({ key: 'range', label: `Range ${Math.round(range)}` });
+  if (offset) rows.push({ key: 'offset', label: `Reposition ${Math.round(offset)}` });
+  if (cooldownMs) rows.push({ key: 'cooldown', label: `CD ${formatSeconds(cooldownMs)}` });
+  if (stats.ignore_block) rows.push({ key: 'ignore_block', label: 'Ignores block' });
+
+  return rows;
+}
+
 export function getPassiveText(item) {
   return String(item?.passive_label || '').trim();
 }

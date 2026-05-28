@@ -6,6 +6,7 @@ and passive parsing so backend systems consume one deterministic source of truth
 """
 import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from arena_domain import ItemModifiers
@@ -110,6 +111,62 @@ BASE_STAT_KEYS = (
     "risk_win_chance",
 )
 
+_ABILITY_METADATA_PATH = Path(__file__).resolve().parents[1] / "shared" / "battle_abilities.json"
+
+
+def _load_battle_ability_metadata() -> Dict[str, Dict[str, Any]]:
+    try:
+        with _ABILITY_METADATA_PATH.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    abilities = payload.get("abilities", {})
+    return abilities if isinstance(abilities, dict) else {}
+
+
+BATTLE_ABILITY_METADATA = _load_battle_ability_metadata()
+
+
+def battle_ability_metadata(ability_key: Optional[str]) -> Dict[str, Any]:
+    if not ability_key:
+        return {}
+    meta = BATTLE_ABILITY_METADATA.get(str(ability_key), {})
+    return dict(meta) if isinstance(meta, dict) else {}
+
+
+def battle_ability_allowed_for_class(class_name: Optional[str], ability_key: Optional[str]) -> bool:
+    meta = battle_ability_metadata(ability_key)
+    return bool(meta and str(meta.get("class") or "").lower() == str(class_name or "").lower())
+
+
+def battle_ability_cooldown_ms(ability_key: Optional[str], fallback: int = 0) -> int:
+    meta = battle_ability_metadata(ability_key)
+    try:
+        value = int(meta.get("cooldown_ms", fallback) or fallback)
+    except (TypeError, ValueError):
+        value = fallback
+    return max(0, value)
+
+
+def battle_ability_stats(ability_key: Optional[str]) -> Optional[Dict[str, Any]]:
+    meta = battle_ability_metadata(ability_key)
+    if not meta:
+        return None
+    keys = (
+        "label",
+        "class",
+        "role",
+        "type",
+        "damage",
+        "stun_ms",
+        "knockback",
+        "range",
+        "offset",
+        "cooldown_ms",
+        "ignore_block",
+    )
+    return {key: meta[key] for key in keys if key in meta}
+
 
 _WEAPON_ASSET = {"warrior": "warrior_katana", "mage": "mage_staff", "rogue": "rogue_scimitar"}
 _LPC_WEAPON_ASSET = {
@@ -151,6 +208,7 @@ def _item(
     ability_key: Optional[str] = None,
     ability_cooldown_ms: int = 0,
 ) -> Dict:
+    metadata_cooldown = battle_ability_cooldown_ms(ability_key, ability_cooldown_ms)
     return {
         "name": name,
         "description": description,
@@ -168,7 +226,8 @@ def _item(
         "image_path": image_path or _weapon_image(class_name, slot),
         "lpc_visual": lpc_visual if lpc_visual is not None else _lpc_visual(class_name, slot),
         "ability_key": ability_key,
-        "ability_cooldown_ms": ability_cooldown_ms,
+        "ability_cooldown_ms": metadata_cooldown,
+        "battle_stats": battle_ability_stats(ability_key),
     }
 
 
