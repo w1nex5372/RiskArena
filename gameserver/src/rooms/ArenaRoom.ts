@@ -217,10 +217,16 @@ export class ArenaRoom extends Room<ArenaState> {
       player.weaponEnchant = this.clampNumber(d.weapon_enchant, 0, 10, 0);
       player.battleSpritesheetPath = String(d.battle_spritesheet_path || "");
       player.battleSpritesheetHash = String(d.battle_spritesheet_hash || "");
-      player.activeAbilityKey = String(d.active_ability_key || "");
-      player.activeAbilityName = String(d.active_ability_name || "");
-      player.activeAbilityIcon = String(d.active_ability_icon || "");
-      player.activeAbilityCooldownMs = this.clampNumber(d.active_ability_cooldown_ms, 0, 30000, 0);
+      const activeAbilityKey = String(d.active_ability_key || "");
+      const abilityAllowed = this.isItemAbilityAllowedForClass(player.characterClass, activeAbilityKey);
+      const defaultAbilityCooldown = this.itemAbilityDefaultCooldownMs(activeAbilityKey);
+      const requestedAbilityCooldown = this.clampNumber(d.active_ability_cooldown_ms, 0, 30000, 0);
+      player.activeAbilityKey = abilityAllowed ? activeAbilityKey : "";
+      player.activeAbilityName = abilityAllowed ? String(d.active_ability_name || "") : "";
+      player.activeAbilityIcon = abilityAllowed ? String(d.active_ability_icon || "") : "";
+      player.activeAbilityCooldownMs = abilityAllowed
+        ? Math.max(requestedAbilityCooldown || defaultAbilityCooldown, defaultAbilityCooldown)
+        : 0;
       player.characterBuildJson = JSON.stringify(d.character_build_json || {});
       // Apply HP bonus
       player.maxHp += player.hpBonus;
@@ -299,11 +305,11 @@ export class ArenaRoom extends Room<ArenaState> {
         if (player.state === "hurt"      && now >= player.hurtUntil)   player.state = "idle";
         if (player.state === "attacking" && now >= player.attackUntil) player.state = "idle";
 
+        const actionLocked = player.state === "hurt" || player.state === "attacking";
         const canBlock =
           input.block &&
           player.isGrounded &&
-          player.state !== "attacking" &&
-          player.state !== "hurt";
+          !actionLocked;
         player.isBlocking = canBlock;
         if (canBlock) {
           player.state = "blocking";
@@ -312,7 +318,7 @@ export class ArenaRoom extends Room<ArenaState> {
         }
 
         // Movement
-        if (player.state !== "attacking" && !player.isBlocking) {
+        if (!actionLocked && !player.isBlocking) {
           if (input.left) {
             player.x -= PLAYER_SPEED;
             player.facingRight = false;
@@ -328,7 +334,7 @@ export class ArenaRoom extends Room<ArenaState> {
         }
 
         // Jump input
-        if (!player.isBlocking && input.up && player.isGrounded) {
+        if (!actionLocked && !player.isBlocking && input.up && player.isGrounded) {
           const lastJump = this.lastJumpTime.get(sessionId) ?? 0;
           if (now - lastJump > JUMP_COOLDOWN_MS) {
             player.velocityY = JUMP_VELOCITY;
@@ -339,7 +345,7 @@ export class ArenaRoom extends Room<ArenaState> {
         }
 
         // Basic attack
-        if (!player.isBlocking && attackPressed && now - player.lastAttackTime > ATTACK_COOLDOWN_MS) {
+        if (!actionLocked && !player.isBlocking && attackPressed && now - player.lastAttackTime > ATTACK_COOLDOWN_MS) {
           player.lastAttackTime = now;
           player.state = "attacking";
           player.attackUntil = now + ATTACK_ANIM_MS;
@@ -358,15 +364,15 @@ export class ArenaRoom extends Room<ArenaState> {
 
         // ── Class ability ───────────────────────────────────────────────
         // Default class ability is always available; item ability is an extra equipped skill.
-        if (!player.isBlocking && player.state !== "attacking" && abilityPressed && player.abilityCharges > 0) {
+        if (!actionLocked && player.state !== "attacking" && !player.isBlocking && abilityPressed && player.abilityCharges > 0) {
           player.abilityCharges = 0;
           const cls = player.characterClass;
+          player.state = "attacking";
+          player.attackUntil = now + ATTACK_ANIM_MS;
           this.broadcast("weapon_swing", { sessionId, cls });
 
           if (cls === "warrior") {
             player.abilityCooldownUntil = now + BASH_COOLDOWN_MS;
-            player.state = "attacking";
-            player.attackUntil = now + ATTACK_ANIM_MS;
 
             let hit = false;
             this.state.players.forEach((opp, oppSid) => {
@@ -418,19 +424,21 @@ export class ArenaRoom extends Room<ArenaState> {
             });
           } else {
             player.abilityCharges = 1;
+            player.state = "idle";
+            player.attackUntil = 0;
           }
         }
 
-        if (!player.isBlocking && player.state !== "attacking" && itemAbilityPressed && player.itemAbilityCharges > 0 && player.activeAbilityKey) {
+        if (!actionLocked && player.state !== "attacking" && !player.isBlocking && itemAbilityPressed && player.itemAbilityCharges > 0 && this.isItemAbilityAllowedForClass(player.characterClass, player.activeAbilityKey)) {
           const cls = player.characterClass;
           const abilityKey = player.activeAbilityKey;
           player.itemAbilityCharges = 0;
+          player.state = "attacking";
+          player.attackUntil = now + ATTACK_ANIM_MS;
           this.broadcast("weapon_swing", { sessionId, cls });
 
           if (abilityKey === "warrior_guardbreak") {
-            player.itemAbilityCooldownUntil = now + (player.activeAbilityCooldownMs || GUARDBREAK_COOLDOWN_MS);
-            player.state = "attacking";
-            player.attackUntil = now + ATTACK_ANIM_MS;
+            player.itemAbilityCooldownUntil = now + this.itemAbilityCooldownMs(player, GUARDBREAK_COOLDOWN_MS);
 
             let hit = false;
             let brokeBlock = false;
@@ -452,9 +460,7 @@ export class ArenaRoom extends Room<ArenaState> {
           } else if (WARRIOR_BASH_ABILITIES[abilityKey]) {
             // Bash — close-range stun
             const bash = WARRIOR_BASH_ABILITIES[abilityKey];
-            player.itemAbilityCooldownUntil = now + (player.activeAbilityCooldownMs || bash.cooldownMs);
-            player.state = "attacking";
-            player.attackUntil = now + ATTACK_ANIM_MS;
+            player.itemAbilityCooldownUntil = now + this.itemAbilityCooldownMs(player, bash.cooldownMs);
 
             let hit = false;
             this.state.players.forEach((opp, oppSid) => {
@@ -473,7 +479,7 @@ export class ArenaRoom extends Room<ArenaState> {
           } else if (MAGE_PROJECTILE_ABILITIES[abilityKey]) {
             // Fireball — ranged, dodgeable by jumping, knockback
             const projectile = MAGE_PROJECTILE_ABILITIES[abilityKey];
-            player.itemAbilityCooldownUntil = now + (player.activeAbilityCooldownMs || projectile.cooldownMs);
+            player.itemAbilityCooldownUntil = now + this.itemAbilityCooldownMs(player, projectile.cooldownMs);
 
             this.state.players.forEach((opp, oppSid) => {
               if (oppSid === sessionId || opp.state === "dead") return;
@@ -495,7 +501,7 @@ export class ArenaRoom extends Room<ArenaState> {
           } else if (ROGUE_BLINK_ABILITIES[abilityKey]) {
             // Blink — teleport to opposite side of opponent
             const blink = ROGUE_BLINK_ABILITIES[abilityKey];
-            player.itemAbilityCooldownUntil = now + (player.activeAbilityCooldownMs || blink.cooldownMs);
+            player.itemAbilityCooldownUntil = now + this.itemAbilityCooldownMs(player, blink.cooldownMs);
 
             this.state.players.forEach((opp, oppSid) => {
               if (oppSid === sessionId || opp.state === "dead") return;
@@ -587,6 +593,28 @@ export class ArenaRoom extends Room<ArenaState> {
 
   private isTargetInFront(attacker: Player, target: Player) {
     return attacker.facingRight ? target.x >= attacker.x : target.x <= attacker.x;
+  }
+
+  private itemAbilityDefaultCooldownMs(abilityKey: string) {
+    if (!abilityKey) return 0;
+    if (abilityKey === "warrior_guardbreak") return GUARDBREAK_COOLDOWN_MS;
+    if (WARRIOR_BASH_ABILITIES[abilityKey]) return WARRIOR_BASH_ABILITIES[abilityKey].cooldownMs;
+    if (MAGE_PROJECTILE_ABILITIES[abilityKey]) return MAGE_PROJECTILE_ABILITIES[abilityKey].cooldownMs;
+    if (ROGUE_BLINK_ABILITIES[abilityKey]) return ROGUE_BLINK_ABILITIES[abilityKey].cooldownMs;
+    return 0;
+  }
+
+  private isItemAbilityAllowedForClass(className: string, abilityKey: string) {
+    if (!abilityKey) return false;
+    const cls = String(className || "").toLowerCase();
+    if (abilityKey === "warrior_guardbreak" || WARRIOR_BASH_ABILITIES[abilityKey]) return cls === "warrior";
+    if (MAGE_PROJECTILE_ABILITIES[abilityKey]) return cls === "mage";
+    if (ROGUE_BLINK_ABILITIES[abilityKey]) return cls === "rogue";
+    return false;
+  }
+
+  private itemAbilityCooldownMs(player: Player, defaultCooldownMs: number) {
+    return Math.max(player.activeAbilityCooldownMs || defaultCooldownMs, defaultCooldownMs);
   }
 
   // ── Private: finalize match ───────────────────────────────────────────────
