@@ -270,6 +270,7 @@ export class ArenaRoom extends Room<ArenaState> {
     const now = Date.now();
 
     this.state.players.forEach((player, sessionId) => {
+      if (this.state.phase !== "battle") return;
       if (player.state === "dead" || player.state === "disconnected") return;
 
       // ── Timed expiry (always runs, even while stunned) ──────────────────
@@ -348,7 +349,7 @@ export class ArenaRoom extends Room<ArenaState> {
             if (oppSid === sessionId || opp.state === "dead") return;
             const dist  = Math.abs(player.x - opp.x);
             const yDist = Math.abs(player.y - opp.y);
-            if (dist <= ATTACK_RANGE && !(opp.isGrounded === false && yDist > 40)) {
+            if (dist <= ATTACK_RANGE && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
               const dmg = ATTACK_DMG_MIN + Math.floor(Math.random() * (ATTACK_DMG_MAX - ATTACK_DMG_MIN + 1)) + player.attackBonus;
               this.dealDamage(sessionId, opp, oppSid, dmg, now);
             }
@@ -372,7 +373,7 @@ export class ArenaRoom extends Room<ArenaState> {
               if (oppSid === sessionId || opp.state === "dead") return;
               const dist  = Math.abs(player.x - opp.x);
               const yDist = Math.abs(player.y - opp.y);
-              if (dist <= BASH_RANGE && !(opp.isGrounded === false && yDist > 40)) {
+              if (dist <= BASH_RANGE && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
                 hit = true;
                 opp.stunUntil  = now + BASH_STUN_MS;
                 opp.isStunned  = true;
@@ -437,7 +438,7 @@ export class ArenaRoom extends Room<ArenaState> {
               if (oppSid === sessionId || opp.state === "dead") return;
               const dist  = Math.abs(player.x - opp.x);
               const yDist = Math.abs(player.y - opp.y);
-              if (dist <= GUARDBREAK_RANGE && !(opp.isGrounded === false && yDist > 40)) {
+              if (dist <= GUARDBREAK_RANGE && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
                 hit = true;
                 brokeBlock = brokeBlock || opp.isBlocking;
                 opp.isBlocking = false;
@@ -460,7 +461,7 @@ export class ArenaRoom extends Room<ArenaState> {
               if (oppSid === sessionId || opp.state === "dead") return;
               const dist  = Math.abs(player.x - opp.x);
               const yDist = Math.abs(player.y - opp.y);
-              if (dist <= bash.range && !(opp.isGrounded === false && yDist > 40)) {
+              if (dist <= bash.range && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
                 hit = true;
                 opp.stunUntil  = now + bash.stunMs;
                 opp.isStunned  = true;
@@ -582,6 +583,10 @@ export class ArenaRoom extends Room<ArenaState> {
 
   private isAttackerInFront(target: Player, attacker: Player) {
     return target.facingRight ? attacker.x >= target.x : attacker.x <= target.x;
+  }
+
+  private isTargetInFront(attacker: Player, target: Player) {
+    return attacker.facingRight ? target.x >= attacker.x : target.x <= attacker.x;
   }
 
   // ── Private: finalize match ───────────────────────────────────────────────
