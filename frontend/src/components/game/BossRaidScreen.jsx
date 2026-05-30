@@ -328,7 +328,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
   const handleAbility = useCallback(() => {
     if (!abilityReady || raidEnded) return;
-    sceneRef.current?.triggerAbility(playerClass);
+    sceneRef.current?.triggerAbility(playerClass, `${playerClass}_default`);
     setAbilityReady(false);
     clearTimeout(abilityCdTimer.current);
     const cd = CLASS_COOLDOWNS[playerClass] ?? 6000;
@@ -337,7 +337,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
   const handleItemAbility = useCallback(() => {
     if (!itemAbilityReady || raidEnded) return;
-    sceneRef.current?.triggerAbility(playerClass);
+    sceneRef.current?.triggerAbility(playerClass, equipped?.ability?.ability_key || `${playerClass}_default`);
     setItemAbilityReady(false);
     clearTimeout(itemAbilityCdTimer.current);
     const cd = Number(

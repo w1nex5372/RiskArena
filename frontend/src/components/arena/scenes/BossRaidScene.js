@@ -10,7 +10,7 @@ import {
 // Shared movement/jump tuning — same feel as Arena (single source of truth)
 import { MOVE_SPEED_PX_S, JUMP_HEIGHT_PX, JUMP_RISE_MS, JUMP_EASE, JUMP_COOLDOWN_MS } from '../combatTuning';
 // Shared skill VFX — identical animations to Arena (single source of truth)
-import { showBash, showFireball, showBlink } from '../combatEffects';
+import { showGuardBreak, showBash, showFireball, showBlink } from '../combatEffects';
 
 // ── Enchant FX ────────────────────────────────────────────────────────────────
 const ENCHANT_FX = [
@@ -534,9 +534,10 @@ export default class BossRaidScene extends Phaser.Scene {
   // ABILITY EFFECTS (ported from BattleScene)
   // ─────────────────────────────────────────────────────────────────────────
 
-  triggerAbility(cls) {
+  triggerAbility(cls, abilityKey = '') {
     if (!this._sceneReady || !this._myPlayer?.body?.active) return;
     if (this._myPlayerState === 'dead') return;
+    const key = abilityKey || `${cls}_default`;
 
     // Žaidėjas vizualiai atlieka veiksmą leidžiant skill (kaip Arenoje) — anksčiau
     // boss raid'e char nieko nedarydavo, tik atsirasdavo efektas. Dabar groja attack/cast.
@@ -561,24 +562,29 @@ export default class BossRaidScene extends Phaser.Scene {
 
     const x = this._myPlayerX;
     const y = FLOOR_Y + FOOT_OFFSET;
-    if      (cls === 'warrior') this._showBashEffect(x, y);
-    else if (cls === 'mage')    this._showFireballEffect(x, y);
-    else if (cls === 'rogue')   this._showBlinkEffect(x, y);
+    if      (key === 'warrior_guardbreak') this._showGuardBreakEffect(x, y);
+    else if (cls === 'warrior')            this._showBashEffect(x, y, key);
+    else if (cls === 'mage')               this._showFireballEffect(x, y, key);
+    else if (cls === 'rogue')              this._showBlinkEffect(x, y, key);
   }
 
   // Visi skill efektai eina per bendrą combatEffects modulį — vienodi su Arena.
-  _showBashEffect(x, y) {
-    showBash(this, { x, y: y - 40, hit: true });
+  _showGuardBreakEffect(x, y) {
+    showGuardBreak(this, { fromX: x, fromY: y, toX: BOSS_X, toY: BOSS_Y - 20, hit: true });
   }
 
-  _showFireballEffect(fromX, fromY) {
+  _showBashEffect(x, y, abilityKey = '') {
+    showBash(this, { x, y: y - 40, hit: true, abilityKey });
+  }
+
+  _showFireballEffect(fromX, fromY, abilityKey = '') {
     // Taikom į bosą; toY-30 (modulyje) → smūgis ties BOSS_Y-80, kaip anksčiau
-    showFireball(this, { fromX, fromY, toX: BOSS_X, toY: BOSS_Y - 50, hit: true });
+    showFireball(this, { fromX, fromY, toX: BOSS_X, toY: BOSS_Y - 50, hit: true, abilityKey });
   }
 
-  _showBlinkEffect(fromX, fromY) {
+  _showBlinkEffect(fromX, fromY, abilityKey = '') {
     const toX = Math.min(fromX + Phaser.Math.Between(70, 130), PLAYER_STOP_X - 10);
-    showBlink(this, { fromX, fromY, toX });
+    showBlink(this, { fromX, fromY, toX, abilityKey });
     this._myPlayerX = toX; // lokalus teleportas (BossRaid client movement)
     // Pozicijos sync iškart — cast animacija užrakina update() judėjimą, todėl be šito
     // sprite'as persikeltų tik po anim pabaigos (vizualus blink delay)
