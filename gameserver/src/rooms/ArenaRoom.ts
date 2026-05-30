@@ -2,6 +2,8 @@ import "reflect-metadata";
 import { Room, Client } from "colyseus";
 import axios from "axios";
 import { ArenaState, Player } from "../schemas/ArenaState";
+// Shared combat rules — single source of truth (also used by BossRaidRoom)
+import { classMaxHp, resolveDamage } from "../shared/combat";
 
 type AbilityMeta = {
   class?: string;
@@ -51,16 +53,17 @@ const ATTACK_DMG_MAX = 25;
 const ATTACK_COOLDOWN_MS = 600;
 const ATTACK_ANIM_MS = 250;       // how long "attacking" state lasts
 const HURT_ANIM_MS = 300;
-const ACTIVE_BLOCK_REDUCTION = 0.65;
+const GUARD_MAX = 100;
+const GUARD_HOLD_DRAIN_PER_TICK = 0.8;
+const GUARD_REGEN_PER_TICK = 2.4;
+const GUARD_REGEN_DELAY_MS = 750;
+const GUARD_HIT_DRAIN_MULT = 1.35;
+const GUARD_BREAK_STUN_MS = 850;
+const GUARD_BREAK_RECOVER_MS = 1000;
 const TICK_MS = 66;               // ~15 FPS
 const COUNTDOWN_SECS = 3;
 const FINISH_CLEANUP_MS = 12_000; // room lives 12s after match ends
-
-const CLASS_HP: Record<string, number> = {
-  warrior: 150,
-  mage: 100,
-  rogue: 120,
-};
+// CLASS_HP and ACTIVE_BLOCK_REDUCTION now live in ../shared/combat (single source)
 
 function abilityMeta(abilityKey: string): AbilityMeta | null {
   if (!abilityKey) return null;
@@ -164,8 +167,10 @@ export class ArenaRoom extends Room<ArenaState> {
     player.x = SLOT_START_X[player.slotIndex] ?? 400;
     player.y = FLOOR_Y;
     player.facingRight = player.slotIndex === 0;
-    player.maxHp = CLASS_HP[player.characterClass] ?? 100;
+    player.maxHp = classMaxHp(player.characterClass);
     player.hp = player.maxHp;
+    player.maxGuard = GUARD_MAX;
+    player.guard = player.maxGuard;
 
     this.state.players.set(client.sessionId, player);
 
@@ -310,6 +315,7 @@ export class ArenaRoom extends Room<ArenaState> {
       if (player.itemAbilityCharges === 0 && now >= player.itemAbilityCooldownUntil) {
         player.itemAbilityCharges = 1;
       }
+      this.updateGuard(player, now);
 
       const input = player.inputState;
       const attackPressed = input.attack && !player.previousInputState.attack;
@@ -329,10 +335,19 @@ export class ArenaRoom extends Room<ArenaState> {
         const canBlock =
           input.block &&
           player.isGrounded &&
+          player.guard > 0 &&
+          !player.guardBroken &&
           !actionLocked;
         player.isBlocking = canBlock;
         if (canBlock) {
           player.state = "blocking";
+          player.guard = Math.max(0, player.guard - GUARD_HOLD_DRAIN_PER_TICK);
+          player.guardRegenPausedUntil = now + GUARD_REGEN_DELAY_MS;
+          if (player.guard <= 0) {
+            player.guard = 0;
+            player.isBlocking = false;
+            player.state = "idle";
+          }
         } else if (player.state === "blocking") {
           player.state = "idle";
         }
@@ -430,8 +445,10 @@ export class ArenaRoom extends Room<ArenaState> {
               if (!dodged) {
                 const origX = opp.x;
                 const dir   = opp.x > player.x ? 1 : -1;
-                opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * knockback));
                 this.dealDamageAt(sessionId, opp, oppSid, damage + player.abilityBonus, origX, opp.y, now);
+                if (opp.state !== "dead") {
+                  opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * knockback));
+                }
               }
             });
 
@@ -477,20 +494,26 @@ export class ArenaRoom extends Room<ArenaState> {
 
             let hit = false;
             let brokeBlock = false;
+            let targetX = player.x;
+            let targetY = player.y;
             this.state.players.forEach((opp, oppSid) => {
               if (oppSid === sessionId || opp.state === "dead") return;
               const dist  = Math.abs(player.x - opp.x);
               const yDist = Math.abs(player.y - opp.y);
               if (dist <= range && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
                 hit = true;
+                targetX = opp.x;
+                targetY = opp.y;
                 brokeBlock = brokeBlock || opp.isBlocking;
-                opp.isBlocking = false;
+                if (opp.isBlocking || opp.guard > 0) {
+                  this.breakGuard(opp, now, stunMs);
+                }
                 opp.stunUntil = now + stunMs;
                 opp.isStunned = true;
                 this.dealDamage(sessionId, opp, oppSid, damage + player.abilityBonus, now, { ignoreBlock: !!meta?.ignore_block });
               }
             });
-            this.broadcast("ability_used", { sessionId, cls: "warrior", abilityKey, fromX: player.x, fromY: player.y, hit, brokeBlock });
+            this.broadcast("ability_used", { sessionId, cls: "warrior", abilityKey, fromX: player.x, fromY: player.y, toX: targetX, toY: targetY, hit, brokeBlock });
 
           } else if (abilityType === "bash") {
             // Bash — close-range stun
@@ -531,8 +554,10 @@ export class ArenaRoom extends Room<ArenaState> {
               if (!dodged) {
                 const origX = opp.x;
                 const dir   = opp.x > player.x ? 1 : -1;
-                opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * knockback));
                 this.dealDamageAt(sessionId, opp, oppSid, damage + player.abilityBonus, origX, opp.y, now);
+                if (opp.state !== "dead") {
+                  opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * knockback));
+                }
               }
             });
 
@@ -604,15 +629,28 @@ export class ArenaRoom extends Room<ArenaState> {
   ) {
     const attacker = this.state.players.get(attackerSid);
     const blocked = Boolean(!options.ignoreBlock && attacker && target.isBlocking && this.isAttackerInFront(target, attacker));
-    const passiveMultiplier = 1 - target.defendReduction;
-    const blockMultiplier = blocked ? 1 - ACTIVE_BLOCK_REDUCTION : 1;
-    const effectiveDmg = Math.max(1, Math.round(dmg * passiveMultiplier * blockMultiplier));
+    let guardDamage = 0;
+    let guardBroken = false;
+    let guardRemaining = target.guard;
+    if (blocked) {
+      guardDamage = Math.max(1, Math.round(dmg * GUARD_HIT_DRAIN_MULT));
+      target.guard = Math.max(0, target.guard - guardDamage);
+      target.guardRegenPausedUntil = now + GUARD_REGEN_DELAY_MS;
+      guardRemaining = target.guard;
+      if (target.guard <= 0) {
+        guardBroken = this.breakGuard(target, now);
+      }
+    }
+    const effectiveDmg = resolveDamage(dmg, { blocked, defendReduction: target.defendReduction });
     target.hp = Math.max(0, target.hp - effectiveDmg);
     this.broadcast("damage_number", {
       x: nx,
       y: ny - 40,
       damage: effectiveDmg,
       blocked,
+      guardDamage,
+      guardRemaining,
+      guardBroken,
       attackerSid,
       targetSid,
     });
@@ -627,6 +665,35 @@ export class ArenaRoom extends Room<ArenaState> {
 
   private isAttackerInFront(target: Player, attacker: Player) {
     return target.facingRight ? attacker.x >= target.x : attacker.x <= target.x;
+  }
+
+  private updateGuard(player: Player, now: number) {
+    player.maxGuard = player.maxGuard || GUARD_MAX;
+    if (player.guardBroken && now >= player.guardBrokenUntil) {
+      player.guardBroken = false;
+    }
+    if (
+      !player.guardBroken &&
+      !player.isBlocking &&
+      player.state !== "dead" &&
+      player.state !== "disconnected" &&
+      now >= player.guardRegenPausedUntil
+    ) {
+      player.guard = Math.min(player.maxGuard, player.guard + GUARD_REGEN_PER_TICK);
+    }
+  }
+
+  private breakGuard(player: Player, now: number, stunMs = GUARD_BREAK_STUN_MS): boolean {
+    const wasBroken = player.guardBroken;
+    player.guard = 0;
+    player.isBlocking = false;
+    player.guardBroken = true;
+    player.guardBrokenUntil = now + GUARD_BREAK_RECOVER_MS;
+    player.guardRegenPausedUntil = now + GUARD_BREAK_RECOVER_MS + GUARD_REGEN_DELAY_MS;
+    player.stunUntil = Math.max(player.stunUntil, now + stunMs);
+    player.isStunned = true;
+    player.state = "hurt";
+    return !wasBroken;
   }
 
   private isTargetInFront(attacker: Player, target: Player) {

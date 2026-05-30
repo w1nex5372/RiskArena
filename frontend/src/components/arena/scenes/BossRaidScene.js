@@ -145,6 +145,7 @@ export default class BossRaidScene extends Phaser.Scene {
     this._myBlocking      = false; // ar laikomas block mygtukas (rodo skydą)
     this._myBlockFx       = null;  // skydo grafika
     this._myBlockTween    = null;  // skydo pulsavimo tween
+    this._downed          = false; // Group A: ar nokautuotas (serverio hp<=0) — negali veikti
 
     // --- Kiti žaidėjai (5 slots ekrano centre) ---
     this._attackerSlots   = [];
@@ -229,7 +230,7 @@ export default class BossRaidScene extends Phaser.Scene {
     this._updateLivePlayers(dt);
 
     if (!this._myPlayer?.body?.active) return;
-    if (this._myPlayerState === 'dead') return;
+    if (this._myPlayerState === 'dead' || this._downed) return; // nokautuotas — negali judėti
 
     const attacking = this._myPlayerState === 'attacking';
     let moving = false;
@@ -392,9 +393,43 @@ export default class BossRaidScene extends Phaser.Scene {
     this._joystickRight = !!right;
   }
 
-  // Block mygtukas — rodo/slepia skydą (boss raid'e kosmetinis, nes boso atakos be HP)
+  // Block mygtukas — rodo/slepia skydą (gina nuo boso atakos, serveris skaičiuoja žalą)
   setBlock(down) {
+    if (this._downed) { this._myBlocking = false; return; }
     this._myBlocking = !!down;
+  }
+
+  // Group A: mano HP + downed būsena iš serverio. Atnaujina HP bar'ą ir nokauto vizualą.
+  setMyVitals({ hp, maxHp, state } = {}) {
+    if (!this._sceneReady || !this._myPlayer) return;
+    const p = this._myPlayer;
+
+    // HP bar (origin 0 → trumpėja iš dešinės). displayWidth/setFillStyle, nes
+    // tiesioginis .width/.fillColor Phaser Rectangle'e neperpiešia.
+    if (p.hpBar?.active && typeof hp === 'number' && maxHp > 0) {
+      const pct = Math.max(0, Math.min(1, hp / maxHp));
+      p.hpBar.displayWidth = 56 * pct;
+      p.hpBar.setFillStyle(pct > 0.5 ? 0x22c55e : pct > 0.25 ? 0xf59e0b : 0xef4444);
+    }
+
+    const downed = state === 'downed';
+    if (downed && !this._downed) {
+      this._downed = true;
+      this._myBlocking = false;
+      if (p.body?.active && p.animPrefix) {
+        const dk = `${p.animPrefix}_dead`;
+        if (this.anims.exists(dk)) p.body.play(dk, true);
+        if (p.body.setTint) p.body.setTint(0x888888); // pilkas = nokautuotas
+      }
+    } else if (!downed && this._downed) {
+      this._downed = false;
+      this._myPlayerState = 'idle';
+      if (p.body?.active) {
+        if (p.body.clearTint) p.body.clearTint();
+        const ik = `${p.animPrefix}_idle`;
+        if (p.animPrefix && this.anims.exists(ik)) p.body.play(ik, true);
+      }
+    }
   }
 
   // Piešia/atnaujina mano žaidėjo skydą kas kadrą (portas iš Arena _syncBlockGuard)
@@ -447,7 +482,7 @@ export default class BossRaidScene extends Phaser.Scene {
 
   triggerPlayerAttack() {
     if (!this._sceneReady || !this._myPlayer?.body?.active) return;
-    if (this._myPlayerState === 'attacking' || this._myPlayerState === 'dead') return;
+    if (this._myPlayerState === 'attacking' || this._myPlayerState === 'dead' || this._downed) return;
 
     this._myPlayerState  = 'attacking';
     this._myPlayerFacing = 1;
@@ -489,7 +524,7 @@ export default class BossRaidScene extends Phaser.Scene {
 
   triggerJump() {
     if (!this._sceneReady || !this._myPlayer?.body?.active) return;
-    if (this._myPlayerState === 'attacking' || this._myPlayerState === 'dead') return;
+    if (this._myPlayerState === 'attacking' || this._myPlayerState === 'dead' || this._downed) return;
     if (this._isJumping) return; // blokuoja dvigubą šuolį ore
     // Jump cooldown — bendras su Arena (combatTuning), kad jaustųsi vienodai
     const now = this.time.now;
@@ -536,7 +571,7 @@ export default class BossRaidScene extends Phaser.Scene {
 
   triggerAbility(cls, abilityKey = '') {
     if (!this._sceneReady || !this._myPlayer?.body?.active) return;
-    if (this._myPlayerState === 'dead') return;
+    if (this._myPlayerState === 'dead' || this._downed) return;
     const key = abilityKey || `${cls}_default`;
 
     // Žaidėjas vizualiai atlieka veiksmą leidžiant skill (kaip Arenoje) — anksčiau
@@ -1242,8 +1277,8 @@ export default class BossRaidScene extends Phaser.Scene {
   _applyLivePlayerState(slot, state) {
     if (!slot?.sprite?.active || !slot.sheetKey) return;
     if (slot.lpcState === state) return; // nieko nepasikeitė
-    // idle ir moving sutraukiami į 'idle' — walk/idle parenka movement loop'as
-    const norm = (state === 'moving') ? 'idle' : state;
+    // idle/moving → 'idle' (walk/idle parenka movement loop'as); downed → 'dead' anim
+    const norm = (state === 'moving') ? 'idle' : (state === 'downed') ? 'dead' : state;
     slot.lpcState = norm;
 
     const base = slot.sheetKey;

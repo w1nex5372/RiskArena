@@ -211,6 +211,15 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           });
         };
         room.state.players.onAdd((player, sessionId) => {
+          if (sessionId === room.sessionId) {
+            // My own vitals (Group A) — HP bar + downed state from server
+            const pushMine = () => sceneRef.current?.setMyVitals?.({
+              hp: player.hp, maxHp: player.maxHp, state: player.state,
+            });
+            pushMine();
+            player.onChange(pushMine);
+            return;
+          }
           pushPlayer(player, sessionId);
           // Re-render on any field change (state, x, facingRight) — Phase 4 + 5
           player.onChange(() => pushPlayer(player, sessionId));
@@ -743,8 +752,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           onAttack={handleAttack}
           onAbility={handleAbility}
           onItemAbility={handleItemAbility}
-          onBlockDown={() => sceneRef.current?.setBlock(true)}
-          onBlockUp={() => sceneRef.current?.setBlock(false)}
+          onBlockDown={() => { sceneRef.current?.setBlock(true);  colyseusRoomRef.current?.send('block', { down: true }); }}
+          onBlockUp={() =>   { sceneRef.current?.setBlock(false); colyseusRoomRef.current?.send('block', { down: false }); }}
         />
       </div>
     </div>

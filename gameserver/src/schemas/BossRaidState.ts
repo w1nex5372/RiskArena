@@ -18,6 +18,12 @@ export class RaidPlayer extends Schema {
   @type("number")  x: number = 90;             // horizontali pozicija pikseliais
   @type("boolean") facingRight: boolean = true; // į kurią pusę žiūri (true = link boso)
 
+  // Group A: HP + gynyba (bendra combat logika su Arena per shared/combat.ts)
+  @type("number")  hp: number = 100;           // dabartinė žaidėjo HP
+  @type("number")  maxHp: number = 100;        // maksimali HP (pagal klasę)
+  @type("boolean") blocking: boolean = false;  // ar laiko block (gina nuo boso atakos)
+  @type("number")  defendReduction: number = 0; // pasyvi armor redukcija (0..1)
+
   // Server-only — nesinchronizuojama su klientais
   lastAttackAt: number = 0;
   // Kada transient būsena (attacking/hit) turi grįžti į idle (Date.now() ms). 0 = nėra deadline.

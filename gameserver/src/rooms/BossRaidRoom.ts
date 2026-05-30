@@ -2,6 +2,8 @@ import "reflect-metadata";
 import { Room, Client } from "colyseus";
 import axios from "axios";
 import { BossRaidState, RaidPlayer } from "../schemas/BossRaidState";
+// Shared combat rules — single source of truth (also used by ArenaRoom)
+import { classMaxHp, resolveDamage } from "../shared/combat";
 
 const FASTAPI_URL       = process.env.FASTAPI_URL       || "http://localhost:8001";
 const SKIP_AUTH         = process.env.SKIP_AUTH         === "true";
@@ -20,7 +22,12 @@ const STATE = {
   ATTACKING: "attacking",
   HIT:       "hit",
   DEAD:      "dead",
+  DOWNED:    "downed",     // Group A: nokautuotas (hp<=0), atsigauna po REVIVE_MS
 } as const;
+
+// Group A: boso atakos žala pagal fazę (žaidėjo HP ~100-150; block mažina 65%)
+const BOSS_ATTACK_DAMAGE: Record<number, number> = { 1: 8, 2: 14, 3: 22 };
+const REVIVE_MS = 5000; // kiek laiko nokautuotas žaidėjas atsigauna
 
 const ATTACK_STATE_MS = 400; // kiek laiko žaidėjas lieka "attacking" po smūgio
 const HIT_STATE_MS    = 500; // kiek laiko žaidėjas lieka "hit" kai bosas pataiko
@@ -87,6 +94,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
     // "move" — klientas praneša savo poziciją (Phase 5). Serveris apkarpo ir saugo.
     this.onMessage("move", (client, msg) => this.handleMove(client, msg));
 
+    // "block" — klientas laiko/atleidžia block mygtuką (Group A gynyba)
+    this.onMessage("block", (client, msg) => this.handleBlock(client, msg));
+
     // Simulation tick — grąžina pasibaigusias transient būsenas (attacking/hit) į idle.
     // Viena vieta valdo visų žaidėjų būsenų gyvavimo laiką (vietoj N atskirų setTimeout'ų).
     this.setSimulationInterval(() => this.tick(), SIM_TICK_MS);
@@ -149,6 +159,10 @@ export class BossRaidRoom extends Room<BossRaidState> {
     // Išdėstome pradinę poziciją cikliškai — kad nauji žaidėjai nestovėtų vienas ant kito
     p.x = SPAWN_SLOTS_X[this.state.players.size % SPAWN_SLOTS_X.length];
     p.facingRight = true;
+    // Group A: HP pagal klasę (bendra su Arena per shared/combat)
+    p.maxHp = classMaxHp(p.characterClass);
+    p.hp    = p.maxHp;
+    p.defendReduction = Number(auth?.defend_reduction ?? 0) || 0;
 
     this.state.players.set(client.sessionId, p);
     this.state.playerCount = this.state.players.size;
@@ -173,6 +187,8 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
     const player = this.state.players.get(client.sessionId);
     if (!player) return;
+    // Group A: negali atakuoti kai nokautuotas arba laikant block (trade-off kaip Arena)
+    if (player.state === STATE.DOWNED || player.blocking) return;
 
     // Server-side cooldown — klientas negali apgauti siųsdamas žinutes greičiau
     const now = Date.now();
@@ -242,6 +258,15 @@ export class BossRaidRoom extends Room<BossRaidState> {
     }
   }
 
+  // ── Block (Group A) ──────────────────────────────────────────────────────────
+  // Kol laikomas, gina nuo boso atakos (žr. doBossAttack). Negali atakuoti laikant
+  // block (handleAttack patikrina) — toks pat trade-off kaip Arenoje.
+  private handleBlock(client: Client, msg: any) {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || p.state === STATE.DOWNED || p.state === STATE.DEAD) return;
+    p.blocking = !!msg?.down;
+  }
+
   // ── Simulation tick — transient būsenų gyvavimo laikas ───────────────────────
   // Kas SIM_TICK_MS tikriname kiekvieną žaidėją: jei jo attacking/hit būsena
   // pasibaigė (now >= stateUntil), grąžiname į idle. Vienintelė vieta kur
@@ -251,6 +276,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
     this.state.players.forEach((p) => {
       if (p.state === STATE.DEAD) return; // dead yra terminalinė
       if (p.stateUntil > 0 && now >= p.stateUntil && p.state !== STATE.IDLE) {
+        if (p.state === STATE.DOWNED) p.hp = p.maxHp; // revive — atstatom HP
         p.state      = STATE.IDLE;
         p.stateUntil = 0;
       }
@@ -276,26 +302,42 @@ export class BossRaidRoom extends Room<BossRaidState> {
     const now        = Date.now();
     const sessionIds = Array.from(this.state.players.keys());
 
-    let targets: string[] = [];
+    const hits: Array<{ sid: string; dmg: number; blocked: boolean; hp: number; downed: boolean }> = [];
     if (sessionIds.length > 0) {
       // Fisher–Yates dalinis maišymas — paimame iki BOSS_MAX_TARGETS pirmų
       for (let i = sessionIds.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [sessionIds[i], sessionIds[j]] = [sessionIds[j], sessionIds[i]];
       }
-      const count = Math.min(BOSS_MAX_TARGETS, sessionIds.length);
-      targets = sessionIds.slice(0, count);
+      const count  = Math.min(BOSS_MAX_TARGETS, sessionIds.length);
+      const picked = sessionIds.slice(0, count);
+      const rawDmg = BOSS_ATTACK_DAMAGE[this.state.phase] ?? BOSS_ATTACK_DAMAGE[1];
 
-      targets.forEach((sid) => {
+      picked.forEach((sid) => {
         const p = this.state.players.get(sid);
-        if (!p || p.state === STATE.DEAD) return;
-        p.state      = STATE.HIT;
-        p.stateUntil = now + HIT_STATE_MS;
+        if (!p || p.state === STATE.DOWNED || p.state === STATE.DEAD) return;
+        // Group A: bosas visada dešinėj, tad block (laikant) gina nepriklausomai nuo
+        // krypties — vengia "skydas rodomas bet neblokuoja". Block mažina žalą per
+        // shared resolveDamage (kaip Arena), bet pilnai neatremia.
+        const blocked = p.blocking;
+        const dmg = resolveDamage(rawDmg, { blocked, defendReduction: p.defendReduction });
+        p.hp = Math.max(0, p.hp - dmg);
+
+        if (p.hp <= 0) {
+          // Nokautas — atsigauna po REVIVE_MS (tick() atstato HP)
+          p.state      = STATE.DOWNED;
+          p.stateUntil = now + REVIVE_MS;
+          p.blocking   = false;
+        } else if (!blocked) {
+          p.state      = STATE.HIT;
+          p.stateUntil = now + HIT_STATE_MS;
+        }
+        hits.push({ sid, dmg, blocked, hp: p.hp, downed: p.hp <= 0 });
       });
     }
 
-    // Visiems klientams — kad boso smūgio animacija būtų vienoda visiems ekranuose
-    this.broadcast("boss_attack", { phase: this.state.phase, targets });
+    // Visiems klientams — boso smūgio animacija + per-target rezultatai (žala/block/downed)
+    this.broadcast("boss_attack", { phase: this.state.phase, targets: hits });
 
     this.scheduleBossAttack();
   }
