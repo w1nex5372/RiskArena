@@ -1,65 +1,22 @@
 import Phaser from 'phaser';
 
-const W = 800;
-const H = 420;
-const FLOOR_Y = 360;
-
-// Per-class column counts (warrior/mage = 13, rogue = 18 from generator output)
-const CLASS_COLS = { warrior: 13, mage: 13, rogue: 18 };
-
-// Build frame-index helper for a given column count
-const makeF = (cols) => (row, col) => row * cols + col;
-
-// Animation row definitions — same rows work for all LPC sheets
-const ANIM_ROW_DEFS = {
-  idle:   { rowFn: (F) => [F(11, 0)],                                    rate: 1,  loop: -1 },
-  walk:   { rowFn: (F) => Array.from({ length: 9 }, (_, i) => F(11, i)), rate: 9,  loop: -1 },
-  attack: { rowFn: (F) => Array.from({ length: 6 }, (_, i) => F(15, i)), rate: 12, loop: 0  },
-  hurt:   { rowFn: (F) => [F(20, 0), F(20, 1), F(20, 2)],               rate: 8,  loop: 0  },
-  dead:   { rowFn: (F) => Array.from({ length: 6 }, (_, i) => F(20, i)), rate: 6,  loop: 0  },
-  jump:   { rowFn: (F) => Array.from({ length: 6 }, (_, i) => F(4, i)),  rate: 10, loop: 0  },
-};
-
-const STATE_ANIM = {
-  idle:      'idle',
-  walking:   'walk',
-  attacking: 'attack',
-  hurt:      'hurt',
-  dead:      'dead',
-  jumping:   'jump',
-  blocking:  'idle',
-};
+// Shared combat sprite/animation contracts — single source of truth (Phase 7)
+import {
+  W, H, FLOOR_Y, CLASS_COLS, makeF, ANIM_ROW_DEFS, STATE_ANIM,
+  SPRITE_SCALE, SPRITE_HEIGHT, FOOT_OFFSET,
+  CLASS_COLORS, CLASS_HEX, CLASS_WEAPON, CLASS_WEAPON_ICON,
+  WEAPON_SHEET_COLS, WEAPON_ANIM_ROWS, HELD_WEAPON_POSE,
+} from '../combatSprites';
+// Shared skill VFX — single source of truth (also used by BossRaidScene)
+import { showGuardBreak, showBash, showFireball, showBlink } from '../combatEffects';
 
 const WEAPON_DEBUG_STATES = ['idle', 'walk', 'attack', 'hurt', 'dead', 'jump'];
 
-const SPRITE_SCALE   = 2.0;
-const SPRITE_HEIGHT  = 64 * SPRITE_SCALE;
-// LPC art leaves ~6px empty at frame bottom; at 2x scale push sprite down 12px to land on floor
-const FOOT_OFFSET    = 12;
-
-const CLASS_COLORS = { warrior: 0xe74c3c, mage: 0x9b59b6, rogue: 0x2ecc71 };
-const CLASS_HEX    = { warrior: '#e74c3c', mage: '#9b59b6', rogue: '#2ecc71' };
-const CLASS_WEAPON      = { warrior: 'warrior_katana', mage: 'mage_staff', rogue: 'rogue_scimitar' };
-const CLASS_WEAPON_ICON = {
-  warrior: '/items/icons/warrior_katana_icon.png',
-  mage: '/items/icons/mage_staff_icon.png',
-  rogue: '/items/icons/rogue_scimitar_icon.png',
-};
 function resolveRuntimeAssetUrl(path) {
   if (!path) return '';
   if (/^https?:\/\//i.test(path)) return path;
   return path;
 }
-// Per-weapon sheet column counts (width / 64)
-const WEAPON_SHEET_COLS = { warrior: 18, mage: 24, rogue: 18 };
-// LPC weapon exports are transparent overlay sheets. For the waiting/idle pose,
-// row 65 col 2 gives a readable held weapon; the pure idle rows render as a flat
-// horizontal slash across the body with these exported weapon sheets.
-const WEAPON_ANIM_ROWS  = {
-  warrior: { idle: 65, idleCol: 2, walk: 57, walkStartCol: 0, walkFrames: 9, attack: 65, attackFrames: 6, hurt: 68, dead: 69 },
-  mage:    { idle: 11, idleCol: 0, walk: 11, walkFrames: 9, attack: 64, attackCols: [1,4,7], hurt: 20, dead: 20 },
-  rogue:   { idle: 65, idleCol: 2, walk: 57, walkStartCol: 0, walkFrames: 9, attack: 65, attackFrames: 6, hurt: 68, dead: 69 },
-};
 
 // Weapon sheets are 64x64 overlays, but the exported melee frames sit high inside
 // the cell. These anchors move the full overlay down into the character hand zone.
@@ -76,12 +33,6 @@ const WEAPON_VISUAL_SCALE = {
 };
 
 const WEAPON_POSE_PRESETS = {
-};
-
-const HELD_WEAPON_POSE = {
-  warrior: { xOff: 21, yOff: -50, scale: 0.105, rotation: -25 },
-  mage:    { xOff: 17, yOff: -45, scale: 0.100, rotation: -26 },
-  rogue:   { xOff: 22, yOff: -42, scale: 0.100, rotation: -35 },
 };
 
 function getWeaponScale(cls) {
@@ -1939,220 +1890,19 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   _showGuardBreakEffect(fromX, fromY, toX, toY, hit) {
-    const asNumber = (value, fallback) => {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : fallback;
-    };
-    const impactX = asNumber(toX, asNumber(fromX, W / 2));
-    const impactY = asNumber(toY, asNumber(fromY, FLOOR_Y)) - 34;
-
-    const lbl = this.add.text(impactX, impactY - 44, 'GUARD BREAK!', {
-      fontSize: '18px', fontFamily: 'monospace', fontStyle: 'bold',
-      color: '#facc15', stroke: '#020617', strokeThickness: 5,
-    }).setOrigin(0.5).setDepth(13);
-    this.tweens.add({
-      targets: lbl,
-      y: impactY - 86,
-      alpha: 0,
-      scaleX: 1.12,
-      scaleY: 1.12,
-      duration: 680,
-      ease: 'Power1',
-      onComplete: () => { if (lbl.active) lbl.destroy(); },
-    });
-
-    const ring = this.add.graphics().setDepth(9);
-    ring.lineStyle(4, 0xfacc15, 0.95);
-    ring.strokeCircle(impactX, impactY, 18);
-    ring.lineStyle(2, 0x60a5fa, 0.85);
-    ring.strokeCircle(impactX, impactY, 28);
-    ring.lineStyle(3, 0xf8fafc, 0.9);
-    for (let i = 0; i < 6; i += 1) {
-      const a = (Math.PI * 2 * i) / 6;
-      ring.beginPath();
-      ring.moveTo(impactX + Math.cos(a) * 8, impactY + Math.sin(a) * 8);
-      ring.lineTo(impactX + Math.cos(a) * 44, impactY + Math.sin(a) * 44);
-      ring.strokePath();
-    }
-    this.tweens.add({
-      targets: ring,
-      alpha: 0,
-      scaleX: 2.4,
-      scaleY: 2.4,
-      duration: 380,
-      ease: 'Power2',
-      onComplete: () => { if (ring.active) ring.destroy(); },
-    });
-
-    const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xfacc15, 0.12).setDepth(7);
-    this.tweens.add({
-      targets: flash,
-      alpha: 0,
-      duration: 220,
-      ease: 'Power2',
-      onComplete: () => { if (flash.active) flash.destroy(); },
-    });
-
-    const burstCount = this._isMobile ? 10 : 22;
-    const burst = this.add.particles(impactX, impactY, 'dust_particle', {
-      speed: { min: 80, max: 210 },
-      angle: { min: 0, max: 360 },
-      scale: { start: 0.75, end: 0 },
-      alpha: { start: 0.85, end: 0 },
-      tint: [0xfacc15, 0x60a5fa, 0xf8fafc],
-      lifespan: 340,
-      quantity: burstCount,
-      emitting: false,
-    }).setDepth(8);
-    burst.explode(burstCount);
-    this.time.delayedCall(430, () => { if (burst.active) burst.destroy(); });
-
-    if (!hit) this._showCombatText(impactX, impactY - 8, 'MISS', '#94a3b8');
-    this.cameras.main.shake(hit ? 170 : 100, hit ? 0.011 : 0.005);
+    showGuardBreak(this, { fromX, fromY, toX, toY, hit });
   }
 
   _showBashEffect(x, y, hit, abilityKey = '') {
-    const variant = {
-      warrior_titan_bash: { label: 'TITAN BASH!', text: '#facc15', stroke: 0xfacc15, flash: 0xfacc15, sx: 13, sy: 6.4, shake: 0.013 },
-      warrior_bash: { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 },
-      warrior_default: { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 },
-    }[abilityKey] || { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 };
-    const ring = this.add.circle(x, y, 10, 0xff6600, 0).setDepth(8);
-    ring.setStrokeStyle(3, hit ? variant.stroke : 0x886600);
-    const lbl = this.add.text(x, y - 60, variant.label, {
-      fontSize: '20px', fontFamily: 'monospace', fontStyle: 'bold',
-      color: variant.text, stroke: '#000', strokeThickness: 4,
-    }).setOrigin(0.5).setDepth(13);
-    this.tweens.add({ targets: lbl, y: y - 100, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
-    this.tweens.add({
-      targets: ring, scaleX: variant.sx, scaleY: variant.sy, alpha: 0,
-      duration: 400, ease: 'Power2',
-      onComplete: () => ring.destroy(),
-    });
-    const flash = this.add.rectangle(W / 2, H / 2, W, H, variant.flash, abilityKey === 'warrior_titan_bash' ? 0.16 : 0.1).setDepth(7);
-    this.tweens.add({ targets: flash, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
-    this._showCombatText(x, y - 34, hit ? 'HIT' : 'MISS', hit ? '#facc15' : '#94a3b8');
-    if (hit) this.cameras.main.shake(140, variant.shake);
+    showBash(this, { x, y, hit, abilityKey });
   }
 
   _showFireballEffect(fromX, fromY, toX, toY, hit, abilityKey = '') {
-    const variant = {
-      mage_inferno_blast: { label: 'INFERNO!', color: '#fb7185', ball: 0xdc2626, core: 0xfef08a, tints: [0xdc2626, 0xfb7185, 0xfef08a], radius: 15, blast: 1.9, shake: 0.008 },
-      mage_ember_bolt: { label: 'EMBER!', color: '#f97316', ball: 0xf97316, core: 0xffee00, tints: [0xf97316, 0xffaa00, 0xffee00], radius: 9, blast: 1.25, shake: 0.004 },
-      mage_fireball: { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 },
-      mage_default: { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 },
-    }[abilityKey] || { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 };
-    const ball = this.add.circle(fromX, fromY - 30, variant.radius, variant.ball).setDepth(9);
-    const lbl = this.add.text(fromX, fromY - 70, variant.label, {
-      fontSize: '18px', fontFamily: 'monospace', fontStyle: 'bold',
-      color: variant.color, stroke: '#000', strokeThickness: 4,
-    }).setOrigin(0.5).setDepth(13);
-    this.tweens.add({ targets: lbl, y: fromY - 110, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
-    const core = this.add.circle(fromX, fromY - 30, 5, variant.core).setDepth(9);
-
-    // Fire particle trail following the ball
-    const trail = this._isMobile ? null : this.add.particles(fromX, fromY - 30, 'fire_particle', {
-      speed:    { min: 20, max: 60 },
-      angle:    { min: 160, max: 200 },
-      scale:    { start: 1.0, end: 0 },
-      alpha:    { start: 0.85, end: 0 },
-      tint:     variant.tints,
-      lifespan: 180,
-      quantity: 3,
-      emitting: true,
-    }).setDepth(8);
-
-    this.tweens.add({
-      targets: [ball, core], x: toX, y: toY - 30,
-      duration: 320, ease: 'Linear',
-      onUpdate: () => {
-        if (ball.active && trail) trail.setPosition(ball.x, ball.y);
-      },
-      onComplete: () => {
-        if (trail) trail.destroy();
-        if (ball.active) ball.destroy();
-        if (core.active) core.destroy();
-        if (!this.scene?.isActive()) return;
-
-        // Impact explosion
-        const blastCount = this._isMobile ? (hit ? 6 : 3) : (hit ? 20 : 8);
-        const blast = this.add.particles(toX, toY - 30, 'fire_particle', {
-          speed: { min: 80, max: 200 },
-          angle: { min: 0, max: 360 },
-          scale: { start: variant.blast, end: 0 },
-          alpha: { start: 1, end: 0 },
-          tint:  variant.tints,
-          lifespan: 320,
-          quantity: blastCount,
-          emitting: false,
-        }).setDepth(9);
-        blast.explode(blastCount);
-        this.time.delayedCall(400, () => { if (blast.active) blast.destroy(); });
-
-        if (hit) {
-          const ring = this.add.circle(toX, toY - 30, 8, variant.ball).setDepth(9);
-          this.tweens.add({ targets: ring, scaleX: 6, scaleY: 6, alpha: 0, duration: 350, ease: 'Power2', onComplete: () => { if (ring.active) ring.destroy(); } });
-          this._showCombatText(toX, toY - 72, 'HIT', '#facc15');
-          this.cameras.main.shake(90, variant.shake);
-        } else {
-          this._showCombatText(toX, toY - 72, 'DODGE', '#93c5fd');
-        }
-      },
-    });
+    showFireball(this, { fromX, fromY, toX, toY, hit, abilityKey });
   }
 
   _showBlinkEffect(fromX, fromY, toX, abilityKey = '') {
-    const variant = {
-      rogue_nightfall: { label: 'NIGHTFALL!', color: '#a855f7', fill: 0xa855f7, tints: [0xa855f7, 0x6366f1, 0xf0abfc], qty: 22, scale: 1.9 },
-      rogue_shadowstep: { label: 'SHADOWSTEP!', color: '#38bdf8', fill: 0x38bdf8, tints: [0x38bdf8, 0x0f172a, 0xa5f3fc], qty: 16, scale: 1.6 },
-      rogue_blink: { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 },
-      rogue_default: { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 },
-    }[abilityKey] || { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 };
-    const centerY = fromY - SPRITE_HEIGHT / 2;
-    const lbl = this.add.text(toX, fromY - 70, variant.label, {
-      fontSize: '20px', fontFamily: 'monospace', fontStyle: 'bold',
-      color: variant.color, stroke: '#000', strokeThickness: 4,
-    }).setOrigin(0.5).setDepth(13);
-    this.tweens.add({ targets: lbl, y: fromY - 110, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
-
-    // Smoke burst at departure point
-    const depart = this.add.particles(fromX, centerY, 'smoke_particle', {
-      speed:    { min: 30, max: 90 },
-      angle:    { min: 0, max: 360 },
-      scale:    { start: variant.scale, end: 0 },
-      alpha:    { start: 0.7, end: 0 },
-      tint:     variant.tints,
-      lifespan: 380,
-      quantity: variant.qty,
-      emitting: false,
-    }).setDepth(6);
-    depart.explode(variant.qty);
-    this.time.delayedCall(500, () => { if (depart.active) depart.destroy(); });
-
-    // Ghost silhouette fades out
-    const ghost = this.add.rectangle(fromX, centerY, 42, 72, variant.fill, 0.4).setDepth(6);
-    this.tweens.add({ targets: ghost, alpha: 0, scaleY: 0.3, duration: 240, ease: 'Power2', onComplete: () => { if (ghost.active) ghost.destroy(); } });
-
-    // Arrival: smoke + flash
-    this.time.delayedCall(160, () => {
-      if (!this.scene?.isActive()) return;
-
-      const arrive = this.add.particles(toX, centerY, 'smoke_particle', {
-        speed:    { min: 40, max: 110 },
-        angle:    { min: 0, max: 360 },
-        scale:    { start: variant.scale + 0.2, end: 0 },
-        alpha:    { start: 0.85, end: 0 },
-        tint:     variant.tints,
-        lifespan: 350,
-        quantity: variant.qty + 4,
-        emitting: false,
-      }).setDepth(6);
-      arrive.explode(variant.qty + 4);
-      this.time.delayedCall(450, () => { if (arrive.active) arrive.destroy(); });
-
-      const flash = this.add.circle(toX, fromY - 30, 22, variant.fill, 0.8).setDepth(6);
-      this.tweens.add({ targets: flash, scaleX: 4.5, scaleY: 4.5, alpha: 0, duration: 320, ease: 'Power2', onComplete: () => { if (flash.active) flash.destroy(); } });
-    });
+    showBlink(this, { fromX, fromY, toX, abilityKey });
   }
 
   update(time) {

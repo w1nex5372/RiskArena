@@ -3,6 +3,7 @@ import { createServer } from "http";
 import express from "express";
 import { Server } from "colyseus";
 import { ArenaRoom } from "./rooms/ArenaRoom";
+import { BossRaidRoom } from "./rooms/BossRaidRoom";
 
 const PORT = Number(process.env.PORT) || 2567;
 
@@ -16,6 +17,7 @@ const httpServer = createServer(app);
 const gameServer = new Server({ server: httpServer });
 
 gameServer.define("arena_room", ArenaRoom).filterBy(["mode"]);
+gameServer.define("boss_raid_room", BossRaidRoom);
 
 gameServer.listen(PORT).then(() => {
   console.log(`[Colyseus] Game server running on port ${PORT}`);

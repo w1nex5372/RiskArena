@@ -145,7 +145,9 @@ async def _fetch_recent_attackers(conn, raid_id: str, seconds: int = 15, limit: 
     """Return distinct users who dealt damage in the last `seconds` seconds."""
     rows = await conn.fetch(
         """
-        SELECT DISTINCT ON (d.user_id) d.user_id, u.first_name, u.class_name
+        SELECT DISTINCT ON (d.user_id)
+               d.user_id, u.first_name, u.class_name,
+               u.battle_spritesheet_path, u.character_spritesheet_path
         FROM boss_raid_damage d
         JOIN users u ON u.id = d.user_id
         WHERE d.raid_id = $1
@@ -157,7 +159,15 @@ async def _fetch_recent_attackers(conn, raid_id: str, seconds: int = 15, limit: 
         seconds,
         limit,
     )
-    return [{"user_id": r["user_id"], "first_name": r["first_name"], "class_name": r["class_name"]} for r in rows]
+    return [
+        {
+            "user_id": r["user_id"],
+            "first_name": r["first_name"],
+            "class_name": r["class_name"],
+            "sheetPath": r["battle_spritesheet_path"] or r["character_spritesheet_path"] or "",
+        }
+        for r in rows
+    ]
 
 
 async def get_raid_state(raid_id: str, user_id: str) -> Optional[Dict]:
@@ -293,6 +303,66 @@ async def _settle_raid_tx(conn, raid_id: str) -> List[Dict]:
     return reward_dicts
 
 
+async def record_damage_only(raid_id: str, user_id: str, damage: int) -> None:
+    """
+    Persist one damage record for a Colyseus-driven attack and keep DB HP in sync.
+    Colyseus owns authoritative HP in memory; DB mirrors it so syncFromFastApi()
+    returns correct HP after a gameserver restart.
+    """
+    now = datetime.now(timezone.utc)
+    async with get_pool().acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO boss_raid_damage (raid_id, user_id, damage, dealt_at)
+            VALUES ($1, $2, $3, $4)
+            """,
+            raid_id,
+            user_id,
+            damage,
+            now,
+        )
+        # Atomic decrement — GREATEST(0, …) mirrors Colyseus Math.max(0, hp - dmg).
+        # Skips update if raid already defeated/expired so rewards are not disrupted.
+        await conn.execute(
+            """
+            UPDATE boss_raids
+            SET current_hp = GREATEST(0, current_hp - $2)
+            WHERE id = $1 AND status = 'active'
+            """,
+            raid_id,
+            damage,
+        )
+    await asyncio.gather(
+        _daily_quests.increment_quest(user_id, "boss_raid"),
+        _daily_quests.increment_quest(user_id, "deal_damage", amount=damage),
+        return_exceptions=True,
+    )
+
+
+async def defeat_raid(raid_id: str) -> List[Dict]:
+    """
+    Mark a raid as defeated (called by Colyseus when HP reaches 0) and settle rewards.
+    Safe to call multiple times — guarded by rewards_settled flag inside _settle_raid_tx.
+    Returns reward dicts (empty list if already settled).
+    """
+    async with get_pool().acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT * FROM boss_raids WHERE id = $1 FOR UPDATE",
+                raid_id,
+            )
+            if not row:
+                raise LookupError(f"Raid {raid_id} not found")
+            if row["status"] not in ("active", "defeated"):
+                return []
+            if row["status"] == "active":
+                await conn.execute(
+                    "UPDATE boss_raids SET status = 'defeated' WHERE id = $1",
+                    raid_id,
+                )
+            return await _settle_raid_tx(conn, raid_id)
+
+
 async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]], int]:
     """
     Apply one attack to the current active boss.
@@ -402,6 +472,37 @@ async def attack_boss(user_id: str) -> Tuple[Dict, Optional[List[Dict]], int]:
             state["player_count"] = await _fetch_player_count(conn, raid_id)
             state["recent_attackers"] = await _fetch_recent_attackers(conn, raid_id)
             return state, rewards, damage
+
+
+async def get_raid_result(raid_id: str) -> Optional[Dict]:
+    """
+    Return a finished raid's status + already-settled rewards (read from boss_raid_rewards).
+    Used by the Colyseus room to broadcast raid_finished after detecting expiry.
+    Returns None if the raid does not exist.
+    """
+    async with get_pool().acquire() as conn:
+        raid = await conn.fetchrow(
+            "SELECT id, name, status FROM boss_raids WHERE id = $1", raid_id
+        )
+        if not raid:
+            return None
+        reward_rows = await conn.fetch(
+            "SELECT user_id, coins, xp, item_drop FROM boss_raid_rewards WHERE raid_id = $1",
+            raid_id,
+        )
+    return {
+        "status": raid["status"],
+        "boss_name": raid["name"],
+        "rewards": [
+            {
+                "user_id": r["user_id"],
+                "coins": r["coins"],
+                "xp": r["xp"],
+                "item_drop": r["item_drop"],
+            }
+            for r in reward_rows
+        ],
+    }
 
 
 async def settle_expired_raids() -> List[Dict]:

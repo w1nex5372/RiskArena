@@ -1,14 +1,26 @@
 """
 Boss Raid HTTP endpoints.
 """
+import os
 import random
-import time
+import secrets as _secrets
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import boss_repo
 import boss_domain as _boss_domain
 from auth import get_authenticated_user_id, require_admin_request
+
+_INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
+
+
+def _require_internal(request: Request) -> None:
+    """Validates x-internal-secret header — called by Colyseus gameserver endpoints."""
+    header = request.headers.get("x-internal-secret", "")
+    if not _INTERNAL_SECRET:
+        raise HTTPException(status_code=500, detail="INTERNAL_SECRET is not configured")
+    if not _secrets.compare_digest(header, _INTERNAL_SECRET):
+        raise HTTPException(status_code=403, detail="Unauthorized")
 
 router = APIRouter(prefix="/boss-raid", tags=["boss-raid"])
 
@@ -19,11 +31,6 @@ _sio = None
 def set_sio(sio_instance) -> None:
     global _sio
     _sio = sio_instance
-
-
-# In-memory rate limiter: key is f"{user_id}:{raid_id}"
-_attack_timestamps: dict[str, float] = {}
-ATTACK_COOLDOWN_S = 6.0
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -49,74 +56,100 @@ async def get_current_boss(http_request: Request):
     return state
 
 
-@router.post("/attack")
-async def attack_boss(http_request: Request):
+# NOTE: The legacy HTTP POST /boss-raid/attack endpoint was removed in Phase 6.
+# Attacks are now fully owned by the Colyseus BossRaidRoom (room.send("attack")),
+# which persists damage via /internal/record-damage. The old endpoint's Socket.IO
+# emits (boss_update / damage_tick) are obsolete — the client reads HP from Colyseus
+# delta-sync instead.
+
+
+# ── Internal endpoints (called by Colyseus BossRaidRoom, not by clients) ─────
+
+@router.get("/internal/active-state")
+async def internal_active_state(http_request: Request):
     """
-    Deal one hit to the current active boss.
-    Returns updated boss state.
-    Emits boss_update to all clients after every hit.
-    Emits damage_tick to all clients with per-hit damage info.
-    Emits raid_finished to all clients (with full rewards list) when the raid ends.
-    Rate-limited to once every ATTACK_COOLDOWN_S seconds per user per raid.
+    Return the current active raid's basic state for Colyseus room sync.
+    No user auth — validated by x-internal-secret header.
     """
-    user_id = get_authenticated_user_id(http_request)
-
-    # --- Server-side rate limiting ---
-    # Identify the active raid to build the rate-limit key.
-    active_raid = await boss_repo.get_active_raid()
-    if not active_raid:
-        raise HTTPException(status_code=404, detail="No active boss raid")
-    raid_id = active_raid["id"]
-
-    rate_key = f"{user_id}:{raid_id}"
-    last_attack = _attack_timestamps.get(rate_key, 0.0)
-    if time.time() - last_attack < ATTACK_COOLDOWN_S:
-        raise HTTPException(status_code=429, detail="Attack cooldown active")
-
+    _require_internal(http_request)
     try:
-        state, rewards, hit_damage = await boss_repo.attack_boss(user_id)
+        raid = await boss_repo.get_active_raid()
+    except Exception as exc:
+        raise _http_error(exc)
+    if not raid:
+        raise HTTPException(status_code=404, detail="No active boss raid")
+    return {
+        "id":         raid["id"],
+        "name":       raid["name"],
+        "current_hp": raid["current_hp"],
+        "max_hp":     raid["max_hp"],
+        "phase":      raid["phase"],
+        "status":     raid["status"],
+    }
+
+
+class RecordDamageBody(BaseModel):
+    raid_id: str = Field(..., min_length=1)
+    user_id: str = Field(..., min_length=1)
+    damage:  int = Field(..., ge=1, le=100_000)
+
+
+class DefeatRaidBody(BaseModel):
+    raid_id: str = Field(..., min_length=1)
+
+
+@router.post("/internal/record-damage")
+async def internal_record_damage(body: RecordDamageBody, http_request: Request):
+    """
+    Persist damage dealt by a Colyseus-managed attack.
+    HP is NOT updated here — Colyseus owns authoritative HP.
+    Called once per attack by BossRaidRoom.ts.
+    """
+    _require_internal(http_request)
+    try:
+        await boss_repo.record_damage_only(body.raid_id, body.user_id, body.damage)
+    except Exception as exc:
+        raise _http_error(exc)
+    return {"ok": True}
+
+
+@router.post("/internal/defeat")
+async def internal_defeat_raid(body: DefeatRaidBody, http_request: Request):
+    """
+    Mark the raid as defeated and settle rewards.
+    Called by BossRaidRoom.ts when HP reaches 0.
+    Returns full rewards list so BossRaidRoom can broadcast directly to clients.
+    Safe to call multiple times — idempotent via rewards_settled flag.
+    """
+    _require_internal(http_request)
+    try:
+        rewards = await boss_repo.defeat_raid(body.raid_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         raise _http_error(exc)
 
-    # Record successful attack timestamp
-    _attack_timestamps[rate_key] = time.time()
+    raid = await boss_repo.get_raid(body.raid_id)
+    boss_name = raid["name"] if raid else ""
 
-    # Push live HP/phase update to every connected client
-    if _sio:
-        await _sio.emit("boss_update", {
-            "id": state["id"],
-            "current_hp": state["current_hp"],
-            "max_hp": state["max_hp"],
-            "phase": state["phase"],
-            "status": state["status"],
-            "top_dealers": state.get("top_dealers", []),
-            "attacker_id": user_id,
-            "my_damage": state.get("my_damage", 0),
-            "player_count": state.get("player_count", 0),
-            "recent_attackers": state.get("recent_attackers", []),
-        })
+    return {"ok": True, "rewards": rewards, "boss_name": boss_name}
 
-        # Emit per-hit damage info to all clients
-        await _sio.emit("damage_tick", {
-            "raid_id": state["id"],
-            "attacker_id": user_id,
-            "damage": hit_damage,
-        })
 
-        # Raid just ended — broadcast result with all reward rows;
-        # each client filters for its own user_id
-        if rewards is not None:
-            await _sio.emit("raid_finished", {
-                "boss_name": state["name"],
-                "status": state["status"],
-                "rewards": rewards,
-            })
-            # Prune rate-limit entries for this finished raid to avoid unbounded growth
-            finished_raid_id = state["id"]
-            for key in [k for k in _attack_timestamps if k.endswith(f":{finished_raid_id}")]:
-                del _attack_timestamps[key]
-
-    return state
+@router.get("/internal/raid-result/{raid_id}")
+async def internal_raid_result(raid_id: str, http_request: Request):
+    """
+    Return a finished raid's status + settled rewards.
+    Called by BossRaidRoom.ts when it detects (via liveness poll) that its raid
+    expired, so it can broadcast raid_finished with the same reward shape as defeat.
+    """
+    _require_internal(http_request)
+    try:
+        result = await boss_repo.get_raid_result(raid_id)
+    except Exception as exc:
+        raise _http_error(exc)
+    if not result:
+        raise HTTPException(status_code=404, detail="Raid not found")
+    return result
 
 
 class SpawnRaidRequest(BaseModel):

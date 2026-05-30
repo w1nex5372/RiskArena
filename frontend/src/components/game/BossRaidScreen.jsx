@@ -1,13 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock3, Coins, Gem, Skull, Swords, Trophy, Users, Zap } from 'lucide-react';
+import * as Colyseus from 'colyseus.js';
 import { Button } from '../ui/button';
 import apiClient from '../../api/client';
 import Phaser from 'phaser';
 import BossRaidScene from '../arena/scenes/BossRaidScene';
 import WeaponIcon from '../WeaponIcon';
 import ArmorIcon from '../ArmorIcon';
+import { BattleControlsOverlay, CLASS_COOLDOWNS } from '../arena/BattleControls';
+import { getStoredSessionToken } from '../../utils/storage';
 
-const ATTACK_ANIM_LOCK = 6000; // mirrors backend boss attack cooldown
+const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
+  const override = new URLSearchParams(window.location.search).get('gameServerUrl');
+  if (override) return override;
+  return `${window.location.origin}/colyseus`;
+})();
+
+const ATTACK_ANIM_LOCK = 600;  // ms — button locked only during animation
 
 const fmt = (secs) => {
   if (secs == null) return '--:--';
@@ -32,88 +41,6 @@ const LOOT_TIERS = [
   { pct: 60.0, label: 'No drop',   color: '#334155' },
 ];
 
-// ── Joystick ──────────────────────────────────────────────────────────────────
-function JoystickControl({ onChange }) {
-  const baseRef      = useRef(null);
-  const pointerIdRef = useRef(null);
-  const currentRef   = useRef({ left: false, right: false });
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
-
-  const applyPointer = useCallback((clientX, clientY) => {
-    const rect = baseRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const radius      = rect.width / 2;
-    const maxDistance = radius - 18;
-    const dx       = clientX - (rect.left + radius);
-    const dy       = clientY - (rect.top  + radius);
-    const distance = Math.min(Math.hypot(dx, dy), maxDistance);
-    const angle    = Math.atan2(dy, dx);
-    const x        = Math.cos(angle) * distance;
-    const y        = Math.sin(angle) * distance;
-    const next     = { left: x < -18, right: x > 18 };
-    setKnob({ x, y });
-    if (next.left !== currentRef.current.left || next.right !== currentRef.current.right) {
-      currentRef.current = next;
-      onChange(next);
-    }
-  }, [onChange]);
-
-  const reset = useCallback(() => {
-    pointerIdRef.current = null;
-    setKnob({ x: 0, y: 0 });
-    currentRef.current = { left: false, right: false };
-    onChange({ left: false, right: false });
-  }, [onChange]);
-
-  return (
-    <div
-      ref={baseRef}
-      onPointerDown={(e) => {
-        e.preventDefault();
-        pointerIdRef.current = e.pointerId;
-        e.currentTarget.setPointerCapture?.(e.pointerId);
-        applyPointer(e.clientX, e.clientY);
-      }}
-      onPointerMove={(e) => {
-        if (pointerIdRef.current !== e.pointerId) return;
-        e.preventDefault();
-        applyPointer(e.clientX, e.clientY);
-      }}
-      onPointerUp={(e) => {
-        if (pointerIdRef.current !== e.pointerId) return;
-        e.preventDefault();
-        reset();
-      }}
-      onPointerCancel={(e) => {
-        if (pointerIdRef.current !== e.pointerId) return;
-        e.preventDefault();
-        reset();
-      }}
-      style={{
-        width: 132, height: 132, borderRadius: '50%',
-        position: 'relative', touchAction: 'none',
-        userSelect: 'none', WebkitUserSelect: 'none',
-        background: 'radial-gradient(circle, rgba(50,72,112,0.78) 0%, rgba(15,23,42,0.86) 64%, rgba(2,6,23,0.92) 100%)',
-        border: '2px solid rgba(148,163,184,0.22)',
-        boxShadow: 'inset 0 0 24px rgba(0,0,0,0.42), 0 4px 14px rgba(0,0,0,0.5)',
-        flexShrink: 0,
-      }}
-    >
-      <div style={{ position: 'absolute', left: 12,  top: '50%', transform: 'translateY(-50%)', color: 'rgba(226,232,240,0.72)', fontSize: 18, fontWeight: 900, pointerEvents: 'none' }}>←</div>
-      <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'rgba(226,232,240,0.72)', fontSize: 18, fontWeight: 900, pointerEvents: 'none' }}>→</div>
-      <div style={{
-        position: 'absolute', left: '50%', top: '50%',
-        width: 54, height: 54, borderRadius: '50%',
-        transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
-        background: 'linear-gradient(180deg, rgba(226,232,240,0.94), rgba(100,116,139,0.9))',
-        border: '2px solid rgba(255,255,255,0.35)',
-        boxShadow: '0 8px 18px rgba(0,0,0,0.45)',
-        pointerEvents: 'none',
-      }} />
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [bossState,       setBossState]       = useState(null);
@@ -128,30 +55,45 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [damageFeed,      setDamageFeed]      = useState([]);
 
   // Equipment state — mirrors RealTimeArenaScreen
-  const [equipped,        setEquipped]        = useState({ weapon: null, armor: null, ability: null });
-  const [equippedSheet,   setEquippedSheet]   = useState('');
-  const [equipmentLoaded, setEquipmentLoaded] = useState(false);
+  const [equipped,         setEquipped]         = useState({ weapon: null, armor: null, ability: null });
+  const [equippedSheet,    setEquippedSheet]    = useState('');
+  const [abilityReady,     setAbilityReady]     = useState(true);
+  const [itemAbilityReady, setItemAbilityReady] = useState(true);
   const playerClass = (user?.class_name || 'warrior').toLowerCase();
 
-  const attackLockTimer  = useRef(null);
-  const raidInterval     = useRef(null);
-  const containerRef     = useRef(null);
-  const gameRef          = useRef(null);
-  const sceneRef         = useRef(null);
+  const attackLockTimer    = useRef(null);
+  const abilityCdTimer     = useRef(null);
+  const itemAbilityCdTimer = useRef(null);
+  const raidInterval       = useRef(null);
+  const containerRef       = useRef(null);
+  const gameRef            = useRef(null);
+  const sceneRef           = useRef(null);
+  const colyseusRoomRef    = useRef(null);
+  const equippedSheetRef   = useRef(''); // always holds latest value — avoids stale closure in Phaser 'ready'
 
   // ── Fetch equipment on mount ───────────────────────────────────────────────
   useEffect(() => {
-    setEquipmentLoaded(false);
     apiClient.get('/me/equipped')
       .then((res) => {
+        const sheet = res.data?.battle_spritesheet_path || '';
         setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
-        setEquippedSheet(res.data?.battle_spritesheet_path || '');
-        setEquipmentLoaded(true);
+        setEquippedSheet(sheet);
+        equippedSheetRef.current = sheet;
+        // If scene is already running (user loaded fast), refresh the player sprite
+        if (sceneRef.current && sheet) {
+          sceneRef.current.setRaidData({
+            myUserId: user?.id,
+            myPlayer: {
+              class_name: (user?.class_name || 'warrior').toLowerCase(),
+              sheetPath:  sheet,
+              username:   user?.first_name || 'You',
+            },
+          });
+        }
       })
       .catch(() => {
         setEquipped({ weapon: null, armor: null, ability: null });
         setEquippedSheet('');
-        setEquipmentLoaded(true);
       });
   }, [user?.id]); // eslint-disable-line
 
@@ -166,7 +108,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       type:            Phaser.AUTO,
       parent:          containerRef.current,
       width:           800,
-      height:          460,
+      height:          420,
       backgroundColor: '#04020e',
       scene:           [BossRaidScene],
       scale:           { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
@@ -183,14 +125,16 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         bossHp:          bossState.current_hp,
         bossMaxHp:       bossState.max_hp,
         bossPhase:       bossState.phase,
+        myUserId:        user?.id,
         myPlayer: {
           class_name: playerClass,
-          // battle_spritesheet_path has armor+weapon composited in — use it when available
-          sheetPath:  equippedSheet || user?.character_spritesheet_path || null,
+          sheetPath:  equippedSheetRef.current || user?.character_spritesheet_path || null,
           username:   user?.first_name || 'You',
         },
         recentAttackers: bossState.recent_attackers || [],
       });
+      // Phase 5: scena siunčia mano poziciją serveriui (room iš colyseusRoomRef)
+      sceneRef.current?.setMoveCallback((d) => colyseusRoomRef.current?.send('move', d));
     });
 
     return () => {
@@ -209,40 +153,120 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     }
   }, [raidEnded]);
 
-  // ── Socket events ──────────────────────────────────────────────────────────
+  // ── Colyseus connection — active only while in battle view ────────────────
+  useEffect(() => {
+    if (view !== 'battle' || !bossState) return;
+
+    let cancelled = false;
+
+    async function connectBossRoom() {
+      try {
+        const token  = user?.session_token || getStoredSessionToken();
+        const client = new Colyseus.Client(GAME_SERVER_URL);
+        const room   = await client.joinOrCreate('boss_raid_room', {
+          sessionToken: token,
+          devUsername:  user?.first_name || 'Raider',
+        });
+
+        if (cancelled) { room.leave(); return; }
+        colyseusRoomRef.current = room;
+
+        // HP / phase / playerCount — live from Colyseus delta-sync
+        room.state.onChange(() => {
+          const s = room.state;
+          setBossState((prev) => prev ? {
+            ...prev,
+            current_hp:   s.currentHp,
+            max_hp:        s.maxHp,
+            phase:         s.phase,
+            player_count:  s.playerCount,
+          } : prev);
+          sceneRef.current?.onBossUpdate({
+            current_hp: s.currentHp,
+            max_hp:      s.maxHp,
+            phase:       s.phase,
+          });
+
+          // Fallback: if raid_finished message never arrives, show "no loot" after 4s.
+          // Covers both defeat and time-based expiry (Phase 6).
+          if (s.status === 'defeated' || s.status === 'expired') {
+            setTimeout(() => setRaidEnded((was) => was ? was : true), 4000);
+            clearInterval(raidInterval.current);
+          }
+        });
+
+        // Live players (Phase 4) — server holds each player's action state,
+        // the scene renders it. We skip our own session (rendered separately).
+        const pushPlayer = (player, sessionId) => {
+          if (sessionId === room.sessionId) return;
+          sceneRef.current?.upsertRaidPlayer({
+            sessionId,
+            userId:          player.userId,
+            username:        player.username,
+            characterClass:  player.characterClass,
+            spritesheetPath: player.spritesheetPath,
+            state:           player.state,
+            x:               player.x,
+            facingRight:     player.facingRight,
+          });
+        };
+        room.state.players.onAdd((player, sessionId) => {
+          pushPlayer(player, sessionId);
+          // Re-render on any field change (state, x, facingRight) — Phase 4 + 5
+          player.onChange(() => pushPlayer(player, sessionId));
+        });
+        room.state.players.onRemove((_player, sessionId) => {
+          sceneRef.current?.removeRaidPlayer(sessionId);
+        });
+
+        // boss_attack — server decides who gets hit; play the swing in sync
+        room.onMessage('boss_attack', (data) => {
+          sceneRef.current?.onBossAttack(data);
+        });
+
+        // damage_dealt — sent only to the attacker by BossRaidRoom.ts
+        room.onMessage('damage_dealt', (data) => {
+          sceneRef.current?.showDamageNumber(data.damage);
+          setDamageFeed((prev) =>
+            [{ id: Date.now(), text: `💥 ${data.damage}` }, ...prev].slice(0, 5)
+          );
+          // totalDamage is authoritative in room.state (accumulated server-side)
+          const me = room.state.players.get(room.sessionId);
+          if (me) setMyDamage(me.totalDamage);
+        });
+
+        // raid_finished — broadcast by BossRaidRoom.ts after FastAPI settles rewards
+        room.onMessage('raid_finished', (data) => {
+          setRaidEnded(true);
+          clearInterval(raidInterval.current);
+          if (Array.isArray(data.rewards) && user?.id) {
+            const mine = data.rewards.find((r) => String(r.user_id) === String(user.id));
+            if (mine) {
+              setLootResult({ coins: mine.coins, xp: mine.xp, item_drop: mine.item_drop ?? null });
+              if (mine.leveled_up) onLevelUp?.({ new_level: mine.new_level });
+            }
+          }
+          sceneRef.current?.onRaidFinished(data);
+        });
+
+        room.onLeave(() => { colyseusRoomRef.current = null; });
+      } catch (err) {
+        console.warn('[BossRaid] Colyseus connect failed:', err?.message);
+      }
+    }
+
+    connectBossRoom();
+
+    return () => {
+      cancelled = true;
+      colyseusRoomRef.current?.leave();
+      colyseusRoomRef.current = null;
+    };
+  }, [view === 'battle']); // eslint-disable-line
+
+  // ── Socket events — only boss_spawned (raid_finished now via Colyseus) ──────
   useEffect(() => {
     if (!socket) return;
-
-    const onBossUpdate = (data) => {
-      setBossState((prev) => (prev ? { ...prev, ...data } : data));
-      if (data.top_dealers) setTopDealers(data.top_dealers.slice(0, 3));
-      if (typeof data.my_damage === 'number' && String(data.attacker_id) === String(user?.id)) {
-        setMyDamage(data.my_damage);
-      }
-      sceneRef.current?.onBossUpdate(data);
-    };
-
-    const onRaidFinished = (data) => {
-      setRaidEnded(true);
-      if (Array.isArray(data.rewards) && user?.id) {
-        const mine = data.rewards.find((r) => String(r.user_id) === String(user.id));
-        if (mine) {
-          setLootResult({ coins: mine.coins, xp: mine.xp, item_drop: mine.item_drop ?? null });
-          if (mine.leveled_up) onLevelUp?.({ new_level: mine.new_level });
-        }
-      }
-      clearInterval(raidInterval.current);
-      sceneRef.current?.onRaidFinished(data);
-    };
-
-    const onDamageTick = (data) => {
-      if (typeof data.damage === 'number') {
-        sceneRef.current?.showDamageNumber(data.damage);
-        setDamageFeed((prev) =>
-          [{ id: Date.now(), text: `💥 ${data.damage}` }, ...prev].slice(0, 5)
-        );
-      }
-    };
 
     const onBossSpawned = () => {
       setView('lobby');
@@ -254,16 +278,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       fetchBossState();
     };
 
-    socket.on('boss_update',   onBossUpdate);
-    socket.on('raid_finished', onRaidFinished);
-    socket.on('damage_tick',   onDamageTick);
-    socket.on('boss_spawned',  onBossSpawned);
+    socket.on('boss_spawned', onBossSpawned);
 
     return () => {
-      socket.off('boss_update',   onBossUpdate);
-      socket.off('raid_finished', onRaidFinished);
-      socket.off('damage_tick',   onDamageTick);
-      socket.off('boss_spawned',  onBossSpawned);
+      socket.off('boss_spawned', onBossSpawned);
       clearTimeout(attackLockTimer.current);
       clearInterval(raidInterval.current);
     };
@@ -293,25 +311,43 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     }
   };
 
-  const handleAttack = async () => {
+  const handleAttack = () => {
     if (attackLocked || raidEnded || !bossState) return;
     sceneRef.current?.triggerPlayerAttack();
     setAttackLocked(true);
     clearTimeout(attackLockTimer.current);
     attackLockTimer.current = setTimeout(() => setAttackLocked(false), ATTACK_ANIM_LOCK);
-    try {
-      const res = await apiClient.post('/boss-raid/attack');
-      if (res.data) {
-        setBossState((prev) => prev ? { ...prev, ...res.data } : res.data);
-        if (res.data.top_dealers) setTopDealers(res.data.top_dealers.slice(0, 3));
-        if (typeof res.data.my_damage === 'number') setMyDamage(res.data.my_damage);
-      }
-    } catch { /* 429 from backend rate limiter — silently ignored */ }
+    // Colyseus handles the attack — server-side cooldown guards spam
+    colyseusRoomRef.current?.send('attack');
   };
 
-  const handleJoystick = useCallback((input) => {
-    sceneRef.current?.setJoystickInput(input);
+  const handleJoystick = useCallback(({ left, right, up }) => {
+    sceneRef.current?.setJoystickInput({ left, right });
+    if (up) sceneRef.current?.triggerJump();
   }, []);
+
+  const handleAbility = useCallback(() => {
+    if (!abilityReady || raidEnded) return;
+    sceneRef.current?.triggerAbility(playerClass);
+    setAbilityReady(false);
+    clearTimeout(abilityCdTimer.current);
+    const cd = CLASS_COOLDOWNS[playerClass] ?? 6000;
+    abilityCdTimer.current = setTimeout(() => setAbilityReady(true), cd);
+  }, [abilityReady, raidEnded, playerClass]);
+
+  const handleItemAbility = useCallback(() => {
+    if (!itemAbilityReady || raidEnded) return;
+    sceneRef.current?.triggerAbility(playerClass);
+    setItemAbilityReady(false);
+    clearTimeout(itemAbilityCdTimer.current);
+    const cd = Number(
+      equipped?.ability?.ability_cooldown_ms ||
+      equipped?.ability?.cooldown_ms ||
+      CLASS_COOLDOWNS[playerClass] ||
+      6000
+    );
+    itemAbilityCdTimer.current = setTimeout(() => setItemAbilityReady(true), cd);
+  }, [itemAbilityReady, raidEnded, equipped?.ability, playerClass]);
 
   // ── Error / loading states ────────────────────────────────────────────────
   if (loadError === 'no_raid') {
@@ -580,20 +616,19 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
         {/* Join CTA */}
         <Button
-          disabled={!equipmentLoaded}
           onClick={() => setView('battle')}
           style={{
             width: '100%', height: 62, borderRadius: 22, fontWeight: 900, fontSize: 18,
-            color: equipmentLoaded ? 'white' : '#64748b',
-            background: equipmentLoaded ? 'linear-gradient(135deg,#8b0000,#c0392b)' : 'rgba(255,255,255,0.06)',
+            color: 'white',
+            background: 'linear-gradient(135deg,#8b0000,#c0392b)',
             border: '1px solid rgba(201,168,76,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            animation: equipmentLoaded ? 'joinBtnPulse 2s ease-in-out infinite' : undefined,
-            cursor: equipmentLoaded ? 'pointer' : 'wait',
+            animation: 'joinBtnPulse 2s ease-in-out infinite',
+            cursor: 'pointer',
           }}
         >
           <Swords style={{ width: 22, height: 22 }} />
-          {equipmentLoaded ? 'Join Raid' : 'Loading Gear'}
+          Join Raid
         </Button>
       </div>
     );
@@ -611,10 +646,6 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     }}>
       <style>{`
         @keyframes phasePulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-        @keyframes attackGlow {
-          0%,100% { box-shadow: 0 0 16px rgba(139,0,0,0.5); }
-          50%     { box-shadow: 0 0 32px rgba(200,0,0,0.9), 0 0 50px rgba(139,0,0,0.4); }
-        }
         @keyframes feedFade {
           0%   { opacity: 1; transform: translateY(0); }
           80%  { opacity: 1; }
@@ -673,7 +704,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         </div>
       </div>
 
-      {/* ── Phaser canvas ──────────────────────────────────────────────────── */}
+      {/* ── Phaser canvas + overlaid controls ────────────────────────────── */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
@@ -689,10 +720,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           ))}
         </div>
 
-        {/* My damage chip */}
+        {/* My damage chip — top-left so it doesn't overlap joystick */}
         {myDamage > 0 && (
           <div style={{
-            position: 'absolute', bottom: 10, left: 10,
+            position: 'absolute', top: 8, left: 10,
             background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(201,168,76,0.3)',
             borderRadius: 10, padding: '4px 10px', pointerEvents: 'none',
           }}>
@@ -701,56 +732,20 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           </div>
         )}
 
-        {/* Equipped items row — bottom-right overlay */}
-        <div style={{
-          position: 'absolute', bottom: 10, right: 10,
-          display: 'flex', gap: 6, pointerEvents: 'none',
-        }}>
-          {equipped.weapon && (
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(201,168,76,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <WeaponIcon imagePath={equipped.weapon.image_path} size={26} borderRadius={4} enchantLevel={equipped.weapon.enchant_level || 0} />
-            </div>
-          )}
-          {equipped.armor && (
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(100,116,139,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ArmorIcon imagePath={equipped.armor.image_path} size={26} borderRadius={4} />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Bottom controls bar ───────────────────────────────────────────── */}
-      <div style={{
-        flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '12px 20px 18px',
-        background: 'rgba(0,0,0,0.6)', borderTop: '1px solid rgba(255,255,255,0.06)',
-      }}>
-        {/* Joystick */}
-        <JoystickControl onChange={handleJoystick} />
-
-        {/* Right side — attack */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Attack button */}
-          <button
-            disabled={!canAttack}
-            onClick={handleAttack}
-            style={{
-              width: 72, height: 72, borderRadius: '50%',
-              fontWeight: 900, fontSize: 15, letterSpacing: 1,
-              color: canAttack ? 'white' : '#475569',
-              background: canAttack ? 'linear-gradient(135deg,#8b0000,#c0392b)' : 'rgba(255,255,255,0.06)',
-              border: canAttack ? '2px solid rgba(201,168,76,0.4)' : '2px solid rgba(255,255,255,0.08)',
-              cursor: canAttack ? 'pointer' : 'not-allowed',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-              animation: canAttack ? 'attackGlow 1.8s ease-in-out infinite' : undefined,
-              touchAction: 'manipulation', flexShrink: 0,
-              boxShadow: canAttack ? '0 4px 14px rgba(0,0,0,0.5)' : 'none',
-            }}
-          >
-            <Swords style={{ width: 26, height: 26 }} />
-            <span style={{ fontSize: 10 }}>ATK</span>
-          </button>
-        </div>
+        <BattleControlsOverlay
+          showBlock={true}
+          playerClass={playerClass}
+          abilityReady={abilityReady}
+          itemAbilityReady={itemAbilityReady}
+          equippedAbility={equipped?.ability || null}
+          canAttack={canAttack}
+          onJoystick={handleJoystick}
+          onAttack={handleAttack}
+          onAbility={handleAbility}
+          onItemAbility={handleItemAbility}
+          onBlockDown={() => {}}
+          onBlockUp={() => {}}
+        />
       </div>
     </div>
   );

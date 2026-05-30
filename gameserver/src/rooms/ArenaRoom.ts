@@ -24,7 +24,7 @@ const SKIP_AUTH = process.env.SKIP_AUTH === "true";
 // ── Game constants ────────────────────────────────────────────────────────────
 const ARENA_WIDTH = 800;
 const FLOOR_Y = 360;
-const PLAYER_SPEED = 6;           // units per tick (~90 px/s at 15 FPS)
+const PLAYER_SPEED = 8;           // units per tick (~120 px/s at 15 FPS) — matches BossRaid combatTuning MOVE_SPEED_PX_S
 const GRAVITY = 1.5;              // applied every tick
 const JUMP_VELOCITY = -20;        // negative = upward
 const JUMP_COOLDOWN_MS = 800;

@@ -5577,15 +5577,12 @@ async def boss_raid_spawner():
 
     while True:
         try:
-            # Settle expired raids and emit raid_finished for each
+            # Settle expired raids in the DB. Client notification (raid_finished) is
+            # handled by the Colyseus BossRaidRoom, which detects expiry on its liveness
+            # poll and broadcasts settled rewards — no Socket.IO emit needed here (Phase 6).
             settled = await _boss_repo.settle_expired_raids()
             for s in settled:
                 logging.info(f"[BossRaid] Settled expired raid {s['raid_id']}: {s['name']}")
-                await sio.emit("raid_finished", {
-                    "boss_name": s["name"],
-                    "status": "expired",
-                    "rewards": s["rewards"],
-                })
 
             # Spawn a new boss if none is active
             active = await _boss_repo.get_active_raid()
