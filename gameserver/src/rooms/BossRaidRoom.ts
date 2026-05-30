@@ -38,7 +38,7 @@ const BOSS_MAX_TARGETS = 3; // kiek žaidėjų bosas gali pataikyti vienu smūgi
 // Pozicija yra grynai kosmetinė (neturi įtakos damage'ui), todėl ji client-authoritative:
 // klientas siunčia savo x, serveris tik apkarpo į ribas ir saugo. Anti-cheat čia nereikia.
 const MOVE_MIN_X = 30;
-const MOVE_MAX_X = 390;
+const MOVE_MAX_X = 470; // turi sutapti su BossRaidScene PLAYER_STOP_X (kitaip serveris apkarpytų poziciją)
 const SPAWN_SLOTS_X = [90, 150, 220, 300, 360]; // pradinės pozicijos — kad žaidėjai nesistumtų į krūvą
 const MOVE_MIN_INTERVAL_MS = 50; // server-side throttle "move" žinutėms (≤20/s/žaidėjui)
 
@@ -304,7 +304,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
   private async syncFromFastApi() {
     if (!this.state) return;
     try {
-      const res = await axios.get(`${FASTAPI_URL}/boss-raid/internal/active-state`, {
+      const res = await axios.get(`${FASTAPI_URL}/api/boss-raid/internal/active-state`, {
         headers: INTERNAL_SECRET ? { "x-internal-secret": INTERNAL_SECRET } : {},
         timeout: 5000,
       });
@@ -331,7 +331,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
   private async checkRaidLiveness() {
     if (this.state.status !== "active" || !this.state.raidId) return;
     try {
-      const res = await axios.get(`${FASTAPI_URL}/boss-raid/internal/active-state`, {
+      const res = await axios.get(`${FASTAPI_URL}/api/boss-raid/internal/active-state`, {
         headers: INTERNAL_SECRET ? { "x-internal-secret": INTERNAL_SECRET } : {},
         timeout: 5000,
         validateStatus: () => true, // 404 = nėra aktyvaus raid'o, tvarkome patys
@@ -361,7 +361,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
     let status   = "expired";
     try {
       const res = await axios.get(
-        `${FASTAPI_URL}/boss-raid/internal/raid-result/${this.state.raidId}`,
+        `${FASTAPI_URL}/api/boss-raid/internal/raid-result/${this.state.raidId}`,
         { headers: INTERNAL_SECRET ? { "x-internal-secret": INTERNAL_SECRET } : {}, timeout: 5000 }
       );
       if (Array.isArray(res.data?.rewards)) rewards = res.data.rewards;
@@ -378,7 +378,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
   private async persistDamage(userId: string, damage: number) {
     if (!this.state.raidId) return;
     await axios.post(
-      `${FASTAPI_URL}/boss-raid/internal/record-damage`,
+      `${FASTAPI_URL}/api/boss-raid/internal/record-damage`,
       { raid_id: this.state.raidId, user_id: userId, damage },
       {
         headers: INTERNAL_SECRET ? { "x-internal-secret": INTERNAL_SECRET } : {},
@@ -391,7 +391,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
   private async notifyFastApiDefeated() {
     if (!this.state.raidId) return;
     const res = await axios.post(
-      `${FASTAPI_URL}/boss-raid/internal/defeat`,
+      `${FASTAPI_URL}/api/boss-raid/internal/defeat`,
       { raid_id: this.state.raidId },
       {
         headers: INTERNAL_SECRET ? { "x-internal-secret": INTERNAL_SECRET } : {},

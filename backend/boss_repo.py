@@ -146,8 +146,7 @@ async def _fetch_recent_attackers(conn, raid_id: str, seconds: int = 15, limit: 
     rows = await conn.fetch(
         """
         SELECT DISTINCT ON (d.user_id)
-               d.user_id, u.first_name, u.class_name,
-               u.battle_spritesheet_path, u.character_spritesheet_path
+               d.user_id, u.first_name, u.class_name
         FROM boss_raid_damage d
         JOIN users u ON u.id = d.user_id
         WHERE d.raid_id = $1
@@ -164,7 +163,9 @@ async def _fetch_recent_attackers(conn, raid_id: str, seconds: int = 15, limit: 
             "user_id": r["user_id"],
             "first_name": r["first_name"],
             "class_name": r["class_name"],
-            "sheetPath": r["battle_spritesheet_path"] or r["character_spritesheet_path"] or "",
+            # Sprite path skaičiuojamas dinamiškai (ne saugomas users lentelėje);
+            # REST recent_attackers naudoja klasės sprite, live render — Colyseus.
+            "sheetPath": "",
         }
         for r in rows
     ]
