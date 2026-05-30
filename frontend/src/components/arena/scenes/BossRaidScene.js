@@ -92,7 +92,7 @@ const BOSS_ANIM_DEFS = {
 const BOSS_X         = 610;
 const BOSS_Y         = FLOOR_Y;
 const PLAYER_START_X = 90;
-const PLAYER_STOP_X  = 390;
+const PLAYER_STOP_X  = 470; // kiek dešinėn galima nueiti — arčiau boso (BOSS_X=610)
 const PLAYER_SPEED   = MOVE_SPEED_PX_S; // px/sec — bendras su Arena (combatTuning)
 
 const ATTACKER_SLOTS_X = [140, 210, 290, 370, 450];
@@ -136,11 +136,15 @@ export default class BossRaidScene extends Phaser.Scene {
     this._myPlayer        = null;  // objektas su body, weapon, hpBar ir kt.
     this._myPlayerX       = PLAYER_START_X; // X pozicija pikseliais
     this._myPlayerState   = 'idle';          // 'idle' | 'walk' | 'attacking' | 'dead'
+    this._attackGen       = 0;               // didinama kiekvienos atakos — kad senas backstop nenutrauktų naujos
     this._myPlayerFacing  = 1;               // 1 = dešinėn, -1 = kairėn
     this._joystickLeft    = false;           // joystick input iš React komponento
     this._joystickRight   = false;
     this._jumpOffsetY     = 0;     // šuolio aukštis pikseliais (tweenuojamas 0→60→0)
     this._isJumping       = false; // guard — neleidžia dvigubo šuolio
+    this._myBlocking      = false; // ar laikomas block mygtukas (rodo skydą)
+    this._myBlockFx       = null;  // skydo grafika
+    this._myBlockTween    = null;  // skydo pulsavimo tween
 
     // --- Kiti žaidėjai (5 slots ekrano centre) ---
     this._attackerSlots   = [];
@@ -225,18 +229,22 @@ export default class BossRaidScene extends Phaser.Scene {
     this._updateLivePlayers(dt);
 
     if (!this._myPlayer?.body?.active) return;
-    if (this._myPlayerState === 'attacking' || this._myPlayerState === 'dead') return;
+    if (this._myPlayerState === 'dead') return;
 
+    const attacking = this._myPlayerState === 'attacking';
     let moving = false;
 
-    if (this._joystickLeft && this._myPlayerX > 30) {
-      this._myPlayerX -= PLAYER_SPEED * dt;
-      this._myPlayerFacing = -1;
-      moving = true;
-    } else if (this._joystickRight && this._myPlayerX < PLAYER_STOP_X) {
-      this._myPlayerX += PLAYER_SPEED * dt;
-      this._myPlayerFacing = 1;
-      moving = true;
+    // Judėjimas tik kai NEatakuojam (bet poziciją sinchronizuojam visada — žr. žemiau)
+    if (!attacking) {
+      if (this._joystickLeft && this._myPlayerX > 30) {
+        this._myPlayerX -= PLAYER_SPEED * dt;
+        this._myPlayerFacing = -1;
+        moving = true;
+      } else if (this._joystickRight && this._myPlayerX < PLAYER_STOP_X) {
+        this._myPlayerX += PLAYER_SPEED * dt;
+        this._myPlayerFacing = 1;
+        moving = true;
+      }
     }
 
     const p = this._myPlayer;
@@ -250,11 +258,14 @@ export default class BossRaidScene extends Phaser.Scene {
       if (p.aura?.active)   p.aura.setY(vy - SPRITE_HEIGHT / 2);
     }
 
-    // Perkelia VISUS žaidėjo objektus (sprite, weapon, HP bar, vardas) į naują X/Y
+    // VISADA perkelia žaidėjo objektus į teisingą X/Y — net attacking metu, kad jump'o
+    // offset'as atsistatytų ir char neužšaltų ore. Anim keitimas _syncMyPlayerVisuals
+    // viduje guard'intas (nekeičia anim attacking/jumping metu).
     this._syncMyPlayerVisuals(moving);
+    this._syncMyBlockGuard(); // skydas seka žaidėją (jei laikomas block)
 
-    // Phase 5: praneš serveriui mano poziciją (kiti žaidėjai mato mano judėjimą)
-    this._maybeSendMove();
+    // Phase 5: praneš serveriui mano poziciją tik kai nejudam per attack
+    if (!attacking) this._maybeSendMove();
   }
 
   // Throttle'inamai siunčia mano x/kryptį serveriui kai jos pasikeičia.
@@ -381,6 +392,59 @@ export default class BossRaidScene extends Phaser.Scene {
     this._joystickRight = !!right;
   }
 
+  // Block mygtukas — rodo/slepia skydą (boss raid'e kosmetinis, nes boso atakos be HP)
+  setBlock(down) {
+    this._myBlocking = !!down;
+  }
+
+  // Piešia/atnaujina mano žaidėjo skydą kas kadrą (portas iš Arena _syncBlockGuard)
+  _syncMyBlockGuard() {
+    const p = this._myPlayer;
+    const blocking = this._myBlocking && p?.body?.active && this._myPlayerState !== 'dead';
+    if (!blocking) {
+      if (this._myBlockFx?.active) this._myBlockFx.setVisible(false);
+      return;
+    }
+    if (!this._myBlockFx?.active) {
+      this._myBlockFx = this.add.graphics().setDepth(3);
+      this._myBlockTween = this.tweens.add({
+        targets: this._myBlockFx, alpha: { from: 0.62, to: 1 },
+        yoyo: true, repeat: -1, duration: 520, ease: 'Sine.easeInOut',
+      });
+    }
+    const visualY = (FLOOR_Y + FOOT_OFFSET) - this._jumpOffsetY;
+    const topY    = visualY - SPRITE_HEIGHT;
+    const x       = this._myPlayerX;
+    const xMul    = this._myPlayerFacing >= 0 ? 1 : -1;
+    const shieldX = x + xMul * 31;
+    const shieldY = Math.max(topY + 46, visualY - 62);
+    const g = this._myBlockFx;
+    g.clear();
+    g.setVisible(true);
+    g.fillStyle(0x60a5fa, 0.14);
+    g.lineStyle(3, 0xbfdbfe, 0.9);
+    g.beginPath();
+    g.moveTo(shieldX, shieldY - 38);
+    g.lineTo(shieldX + xMul * 24, shieldY - 23);
+    g.lineTo(shieldX + xMul * 18, shieldY + 16);
+    g.lineTo(shieldX, shieldY + 34);
+    g.lineTo(shieldX - xMul * 18, shieldY + 16);
+    g.lineTo(shieldX - xMul * 24, shieldY - 23);
+    g.closePath();
+    g.fillPath();
+    g.strokePath();
+    g.lineStyle(1, 0xe0f2fe, 0.6);
+    g.beginPath();
+    g.moveTo(shieldX, shieldY - 25);
+    g.lineTo(shieldX + xMul * 12, shieldY - 13);
+    g.lineTo(shieldX + xMul * 9, shieldY + 9);
+    g.lineTo(shieldX, shieldY + 20);
+    g.lineTo(shieldX - xMul * 9, shieldY + 9);
+    g.lineTo(shieldX - xMul * 12, shieldY - 13);
+    g.closePath();
+    g.strokePath();
+  }
+
   triggerPlayerAttack() {
     if (!this._sceneReady || !this._myPlayer?.body?.active) return;
     if (this._myPlayerState === 'attacking' || this._myPlayerState === 'dead') return;
@@ -399,18 +463,23 @@ export default class BossRaidScene extends Phaser.Scene {
     const idleKey   = `${p.animPrefix}_idle`;
 
     if (p.animPrefix && this.anims.exists(attackKey) && p.body.play) {
+      const gen = ++this._attackGen;
       p.body.play(attackKey, true);
-      p.body.once('animationcomplete', () => {
-        if (!p.body?.active) return;
+      const finish = () => {
+        // gen tikrina kad nereaguotume į SENĄ ataką (kitaip stale backstop nutrauktų naują)
+        if (this._myPlayerState !== 'attacking' || this._attackGen !== gen) return;
         this._myPlayerState = 'idle';
-        if (this.anims.exists(idleKey)) p.body.play(idleKey, true);
+        if (p.body?.active && this.anims.exists(idleKey)) p.body.play(idleKey, true);
         if (p.weapon?.active) {
           const wk = `${p.cls}_weapon_idle`;
           if (this.anims.exists(wk)) p.weapon.play?.(wk, true);
         }
-      });
+      };
+      p.body.once('animationcomplete', finish);
+      // Backstop — jei animationcomplete nutraukiamas (pvz. jump paleidžia idle), vis tiek atsistatom
+      this.time.delayedCall(700, finish);
     } else {
-      this.time.delayedCall(400, () => { this._myPlayerState = 'idle'; });
+      this.time.delayedCall(400, () => { if (this._myPlayerState === 'attacking') this._myPlayerState = 'idle'; });
     }
   }
 
@@ -446,7 +515,11 @@ export default class BossRaidScene extends Phaser.Scene {
         this._jumpOffsetY = 0;
         this._isJumping   = false;
         if (!p.body?.active) return;
-        if (p.animPrefix && this.anims.exists(idleKey) && p.body.play) p.body.play(idleKey, true);
+        // NEnutraukiam attack/cast animacijos jei žaidėjas atakavo ore — kitaip jos
+        // animationcomplete neįvyktų ir būsena užstrigtų 'attacking' (char užšaltų).
+        if (this._myPlayerState !== 'attacking' && p.animPrefix && this.anims.exists(idleKey) && p.body.play) {
+          p.body.play(idleKey, true);
+        }
         const baseY = FLOOR_Y + FOOT_OFFSET;
         // Nusileidimo dulkės — explode() iššauna N dalelių iš karto (ne loop)
         if (this.hitEmitter?.active) {
@@ -474,13 +547,16 @@ export default class BossRaidScene extends Phaser.Scene {
       this._myPlayerFacing = 1;
       if (p.body.setFlipX) p.body.setFlipX(false);
       if (p.weapon?.active) this._swingHeldWeapon(p);
+      const gen = ++this._attackGen;
       p.body.play(`${p.animPrefix}_attack`, true);
-      p.body.once('animationcomplete', () => {
-        if (!p.body?.active) return;
+      const finish = () => {
+        if (this._myPlayerState !== 'attacking' || this._attackGen !== gen) return;
         this._myPlayerState = 'idle';
         const ik = `${p.animPrefix}_idle`;
-        if (this.anims.exists(ik)) p.body.play(ik, true);
-      });
+        if (p.body?.active && this.anims.exists(ik)) p.body.play(ik, true);
+      };
+      p.body.once('animationcomplete', finish);
+      this.time.delayedCall(700, finish); // backstop — kad būsena niekada neužstrigtų
     }
 
     const x = this._myPlayerX;
@@ -716,7 +792,7 @@ export default class BossRaidScene extends Phaser.Scene {
 
   _buildAttackerSlots() {
     this._attackerSlots = ATTACKER_SLOTS_X.map((x, idx) => ({
-      x, y: FLOOR_Y, sprite: null, nameText: null, cls: null, sheetKey: null, active: false,
+      x, y: FLOOR_Y + FOOT_OFFSET, sprite: null, nameText: null, cls: null, sheetKey: null, active: false,
       bounceTween: null, idx, sessionId: null, lpcState: 'idle', desiredState: null,
       curX: null, targetX: null, facingRight: true, moveAnim: null,
     }));
@@ -996,7 +1072,7 @@ export default class BossRaidScene extends Phaser.Scene {
     slot.cls   = cls;
 
     if (!slot.nameText) {
-      slot.nameText = this.add.text(slot.x, slot.y - 58, '', {
+      slot.nameText = this.add.text(slot.x, slot.y - 130, '', {
         fontSize: '9px', fontFamily: 'monospace', color: '#94a3b8', stroke: '#000000', strokeThickness: 2,
       }).setOrigin(0.5, 1).setDepth(7).setVisible(false);
     }
@@ -1018,7 +1094,7 @@ export default class BossRaidScene extends Phaser.Scene {
     const afterLoad = () => {
       if (!this.textures.exists(safeKey)) { this._spawnAttackerFallback(slot, cls); return; }
       this._registerBodyAnims(safeKey, safeKey, 13);
-      this._spawnAttackerLpc(slot, safeKey, 0.75, 1.8);
+      this._spawnAttackerLpc(slot, safeKey, 0.75, SPRITE_SCALE);
     };
     if (this.textures.exists(safeKey)) { afterLoad(); return; }
     if (this._dynamicLoads.has(safeKey)) return;
@@ -1033,7 +1109,7 @@ export default class BossRaidScene extends Phaser.Scene {
     if (this.textures.exists(texKey)) {
       slot.sheetKey = texKey;
       this._registerBodyAnims(texKey, texKey, CLASS_COLS[cls] ?? 13);
-      this._spawnAttackerLpc(slot, texKey, 1.0, 1.8);
+      this._spawnAttackerLpc(slot, texKey, 1.0, SPRITE_SCALE);
     } else {
       this._spawnAttackerRect(slot, cls);
     }
@@ -1043,13 +1119,14 @@ export default class BossRaidScene extends Phaser.Scene {
     if (slot.bounceTween) { slot.bounceTween.stop(); slot.bounceTween = null; }
     if (slot.sprite?.active) slot.sprite.destroy();
     const sprite = this.add.sprite(slot.x, slot.y, texKey)
-      .setOrigin(0.5, originY).setScale(scale).setDepth(4).setFlipX(true);
+      .setOrigin(0.5, originY).setScale(scale).setDepth(4).setFlipX(false);
+    if (slot.cls === 'rogue') sprite.setScale(scale, scale * 0.86); // toks pat squash kaip my player
     slot.sprite = sprite;
-    const ak = `${texKey}_attack`;
     const ik = `${texKey}_idle`;
-    if (this.anims.exists(ak)) sprite.play(ak);
-    else if (this.anims.exists(ik)) sprite.play(ik);
-    slot.bounceTween = this.tweens.add({ targets: sprite, y: `-=${6}`, duration: 260, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: slot.idx * 120 });
+    const ak = `${texKey}_attack`;
+    if (this.anims.exists(ik)) sprite.play(ik);       // idle ant spawn (ne attack)
+    else if (this.anims.exists(ak)) sprite.play(ak);
+    // BE "bounce" tween — žaidėjas stovi ant žemės kaip my player (anksčiau plūduriavo)
     // Phase 4: jei serveris jau pranešė šio žaidėjo veiksmo būseną, pritaikome ją dabar
     if (slot.desiredState != null) { slot.lpcState = null; this._applyLivePlayerState(slot, slot.desiredState); }
   }

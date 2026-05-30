@@ -743,8 +743,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           onAttack={handleAttack}
           onAbility={handleAbility}
           onItemAbility={handleItemAbility}
-          onBlockDown={() => {}}
-          onBlockUp={() => {}}
+          onBlockDown={() => sceneRef.current?.setBlock(true)}
+          onBlockUp={() => sceneRef.current?.setBlock(false)}
         />
       </div>
     </div>
