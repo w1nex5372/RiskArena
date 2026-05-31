@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, Suspense, lazy } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
@@ -15,26 +15,29 @@ import RouletteWheel from './components/game/RouletteWheel';
 import StaticRouletteResult from './components/game/StaticRouletteResult';
 import CountdownTimer from './components/game/CountdownTimer';
 import PromoCodeBox from './components/shop/PromoCodeBox';
-import ProfileScreen from './components/profile/ProfileScreen';
-import AdminPanel from './components/admin/AdminPanel';
 import TopBar from './components/layout/TopBar';
 import BottomNav from './components/layout/BottomNav';
 import HomeScreen from './components/home/HomeScreen';
 import RoomLobby from './components/rooms/RoomLobby';
-import ArenaScreen from './components/game/ArenaScreen';
-import ArenaEntryScreen from './components/game/ArenaEntryScreen';
-import RealTimeArenaScreen from './components/arena/RealTimeArenaScreen';
-import WeaponDebugScreen from './components/arena/WeaponDebugScreen';
-import BossRaidScreen from './components/game/BossRaidScreen';
-import TournamentScreen from './components/game/TournamentScreen';
-import LeaderboardScreen from './components/leaderboard/LeaderboardScreen';
-import InventoryScreen from './components/inventory/InventoryScreen';
-import CharacterCreationScreen from './components/onboarding/CharacterCreationScreen';
-import DailyQuestsScreen from './components/game/DailyQuestsScreen';
-import DailyChestScreen from './components/game/DailyChestScreen';
-import SettingsScreen from './components/settings/SettingsScreen';
-import TosScreen from './components/settings/TosScreen';
-import PrivacyScreen from './components/settings/PrivacyScreen';
+
+// Code-split heavy / non-initial screens so they download on demand instead of
+// bloating the first-load bundle. Each becomes its own JS chunk loaded on navigation.
+const ProfileScreen = lazy(() => import('./components/profile/ProfileScreen'));
+const AdminPanel = lazy(() => import('./components/admin/AdminPanel'));
+const ArenaScreen = lazy(() => import('./components/game/ArenaScreen'));
+const ArenaEntryScreen = lazy(() => import('./components/game/ArenaEntryScreen'));
+const RealTimeArenaScreen = lazy(() => import('./components/arena/RealTimeArenaScreen'));
+const WeaponDebugScreen = lazy(() => import('./components/arena/WeaponDebugScreen'));
+const BossRaidScreen = lazy(() => import('./components/game/BossRaidScreen'));
+const TournamentScreen = lazy(() => import('./components/game/TournamentScreen'));
+const LeaderboardScreen = lazy(() => import('./components/leaderboard/LeaderboardScreen'));
+const InventoryScreen = lazy(() => import('./components/inventory/InventoryScreen'));
+const CharacterCreationScreen = lazy(() => import('./components/onboarding/CharacterCreationScreen'));
+const DailyQuestsScreen = lazy(() => import('./components/game/DailyQuestsScreen'));
+const DailyChestScreen = lazy(() => import('./components/game/DailyChestScreen'));
+const SettingsScreen = lazy(() => import('./components/settings/SettingsScreen'));
+const TosScreen = lazy(() => import('./components/settings/TosScreen'));
+const PrivacyScreen = lazy(() => import('./components/settings/PrivacyScreen'));
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
@@ -63,10 +66,22 @@ axios.interceptors.request.use((config) => {
 
 // Countdown Timer Component
 // Roulette Wheel Component
+// Lightweight fallback shown while a lazily-loaded screen chunk downloads.
+function ScreenLoader() {
+  return (
+    <div className="flex items-center justify-center w-full" style={{ minHeight: '40vh' }}>
+      <div
+        className="animate-spin rounded-full"
+        style={{ width: 36, height: 36, border: '3px solid rgba(220,38,38,0.25)', borderTopColor: '#dc2626' }}
+      />
+    </div>
+  );
+}
+
 // Static wheel showing final position for missed games (no animation)
 function App() {
   if (new URLSearchParams(window.location.search).get('weaponDebug') === '1') {
-    return <WeaponDebugScreen />;
+    return <Suspense fallback={<ScreenLoader />}><WeaponDebugScreen /></Suspense>;
   }
 
   // Core state
@@ -256,20 +271,14 @@ function App() {
     let pollCount = 0;
 
     const fetchParticipants = async () => {
+      if (document.hidden) return; // don't poll while backgrounded
       pollCount++;
-      console.log(`🔄 Poll #${pollCount} - Fetching participants for ${lobbyData.room_type}...`);
-      
+
       try {
         const response = await axios.get(`${API}/room-participants/${lobbyData.room_type}`);
         const players = response.data.players || [];
-        
-        console.log(`👥 Found ${players.length} players in ${lobbyData.room_type}:`, players);
-        
-        setRoomParticipants(prev => {
-          const updated = { ...prev, [lobbyData.room_type]: players };
-          console.log('🔄 Updated roomParticipants:', updated);
-          return updated;
-        });
+
+        setRoomParticipants(prev => ({ ...prev, [lobbyData.room_type]: players }));
 
         // Update min/max players in lobbyData if server returned them
         if (response.data.min_players || response.data.max_players) {
@@ -277,17 +286,12 @@ function App() {
         }
 
         const minNeeded = response.data.min_players || lobbyData.min_players || 3;
-        // React will automatically re-render when state changes
+        // React will automatically re-render when state changes.
+        // game_finished socket event handles winner display from here.
         if (players.length >= minNeeded) {
-          console.log(`🎉 ${minNeeded} PLAYERS FOUND! Starting winner detection cycle...`);
-          
-          // Show "Game Starting" message
-          toast.success(`🎰 Room Full! Game starting...`, { duration: 3000 });
-          
-          // Socket event 'game_finished' will handle winner display - no need for polling
-          console.log('🚀 Waiting for game_finished socket event from server...');
+          toast.success(`🎰 Room Full! Game starting...`, { id: `room-full-${lobbyData.room_type}`, duration: 3000 });
         }
-        
+
       } catch (error) {
         console.error('Error fetching participants:', error);
         // Don't show error toast for every poll failure, just log it
@@ -308,7 +312,10 @@ function App() {
       console.log('🧹 Cleaning up lobby polling');
       clearInterval(pollInterval);
     };
-  }, [inLobby, lobbyData]);
+    // Depend on room_type only (stable per lobby session). Depending on the whole
+    // lobbyData object would restart this interval on every poll, since the poll
+    // itself calls setLobbyData (new object reference each time).
+  }, [inLobby, lobbyData?.room_type]); // eslint-disable-line
 
   // GAME STATE POLLING — primary mechanism for showing roulette (socket events are unreliable)
   // Polls /api/room/{room_id} every 1s while user is in a game room
@@ -320,6 +327,9 @@ function App() {
     let lastMatchId = '';
 
     const pollGameState = async () => {
+      // Skip polling while app is backgrounded (saves battery + server load).
+      // Interval resumes automatically when the tab/app becomes visible again.
+      if (document.hidden) return;
       try {
         const response = await axios.get(`${API}/room/${roomId}`);
         const data = response.data;
@@ -374,10 +384,16 @@ function App() {
       }
     };
 
-    const interval = setInterval(pollGameState, 500);
+    const interval = setInterval(pollGameState, 1000);
     pollGameState(); // immediate first check
+    // Poll immediately when app returns to foreground (don't wait for next tick)
+    const onVisible = () => { if (!document.hidden) pollGameState(); };
+    document.addEventListener('visibilitychange', onVisible);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [activeGameRoomId]);
 
   // Mobile detection - force mobile for Telegram WebApp
@@ -407,9 +423,6 @@ function App() {
   useEffect(() => {
     if (inLobby && lobbyData) {
       const currentRoomPlayers = roomParticipants[lobbyData.room_type] || [];
-      console.log(`📊 [Room Monitor] ${lobbyData.room_type} room has ${currentRoomPlayers.length}/${lobbyData.max_players || 3} players`);
-      console.log('📊 [Room Monitor] Players:', currentRoomPlayers.map(p => p.username).join(', '));
-      
       const minNeeded = lobbyData.min_players || 3;
       if (currentRoomPlayers.length >= minNeeded && !showGetReadyRef.current) {
         console.log(`✅ [Room Monitor] ${minNeeded} PLAYERS REACHED - room_ready socket event will handle roulette`);
@@ -2114,6 +2127,7 @@ function App() {
   useEffect(() => {
     if (!user) return;
     const fetchWinners = async () => {
+      if (document.hidden) return; // don't poll while backgrounded
       try {
         const res = await axios.get(`${API}/game-history?limit=5`);
         setRecentWinners(res.data.games || []);
@@ -2236,7 +2250,9 @@ function App() {
   if (!user.class_name) {
     return (
       <>
-        <CharacterCreationScreen user={user} onComplete={handleCharacterCreated} />
+        <Suspense fallback={<ScreenLoader />}>
+          <CharacterCreationScreen user={user} onComplete={handleCharacterCreated} />
+        </Suspense>
         <Toaster richColors position="top-right" />
       </>
     );
@@ -2429,6 +2445,7 @@ function App() {
           style={{ background: '#0f172a', minHeight: '100vh', width: '100%' }}
         >
           <div style={{ width: '100%' }}>
+            <Suspense fallback={<ScreenLoader />}>
 
             {/* 🏆 WINNER ANNOUNCEMENT SCREEN - Responsive & Scrollable */}
             {showWinnerScreen && winnerData && (
@@ -3172,6 +3189,7 @@ function App() {
               </Card>
             )}
 
+            </Suspense>
           </div>
         </main>
       </div>
