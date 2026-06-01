@@ -1,0 +1,16 @@
+{
+  "schema_version": "boss_definitions.v1",
+  "bosses": {
+    "wartotaur": {
+      "label": "Wartotaur",
+      "sprite": "wartotaur",
+      "hp_per_level": 500,
+      "hit_x": 500,
+      "max_targets": 3,
+      "attack": {
+        "damage_by_phase": { "1": 8, "2": 14, "3": 22 },
+        "cadence_by_phase": { "1": [2800, 5000], "2": [2000, 3500], "3": [1200, 2400] }
+      }
+    }
+  }
+}

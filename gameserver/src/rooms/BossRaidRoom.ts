@@ -8,6 +8,8 @@ import { classMaxHp, resolveDamage } from "../shared/combat";
 import { classGuard, classMoveSpeed, classBasicAttack } from "../shared/classes";
 // Shared ability metadata helpers — single source of truth (also used by ArenaRoom)
 import { abilityMeta, abilityNumber, abilityCooldownMs, abilityAllowedForClass } from "../shared/abilities";
+// Shared boss metadata (boss_definitions.json) — BOSS REGISTRY: žala/dažnis/range/targets per boss
+import { DEFAULT_BOSS_KIND, bossAttackDamage, bossAttackCadence, bossMaxTargets, bossHitX } from "../shared/bosses";
 
 const FASTAPI_URL       = process.env.FASTAPI_URL       || "http://localhost:8001";
 const SKIP_AUTH         = process.env.SKIP_AUTH         === "true";
@@ -29,26 +31,17 @@ const STATE = {
   DOWNED:    "downed",     // Group A: nokautuotas (hp<=0), atsigauna po REVIVE_MS
 } as const;
 
-// Group A: boso atakos žala pagal fazę (žaidėjo HP ~100-150; block mažina 65%)
-const BOSS_ATTACK_DAMAGE: Record<number, number> = { 1: 8, 2: 14, 3: 22 };
+// Group A: boso atakos žala pagal fazę gyvena boss_definitions.json (žr. ../shared/bosses).
 const REVIVE_MS = 5000; // kiek laiko nokautuotas žaidėjas atsigauna
 
 const ATTACK_STATE_MS = 400; // kiek laiko žaidėjas lieka "attacking" po smūgio
 const HIT_STATE_MS    = 500; // kiek laiko žaidėjas lieka "hit" kai bosas pataiko
 const SIM_TICK_MS     = 100; // kas kiek tikriname ar transient būsenos pasibaigė
 
-// Boso atakos dažnis pagal fazę [minMs, maxMs] — kuo žemesnė boso HP, tuo agresyviau
-const BOSS_ATTACK_CADENCE: Record<number, [number, number]> = {
-  1: [2800, 5000],
-  2: [2000, 3500],
-  3: [1200, 2400],
-};
-const BOSS_MAX_TARGETS = 3; // kiek žaidėjų bosas gali pataikyti vienu smūgiu
-
-// Boso "hit" pozicija X — naudojama range patikrai. Žaidėjai juda iki MOVE_MAX_X (470);
+// Boso atakos dažnis [minMs, maxMs], max targets ir "hit" pozicija X gyvena
+// boss_definitions.json (žr. ../shared/bosses). Žaidėjai juda iki MOVE_MAX_X (470);
 // bosas dešinėj (~500). Melee (bash range 120, warrior basic 86) reikia prieiti arti;
 // projectile (range 800) ir mage basic (150) pataiko iš toliau.
-const BOSS_HIT_X = 500;
 
 // ── Movement model (Phase 5) ──────────────────────────────────────────────────
 // Pozicija yra grynai kosmetinė (neturi įtakos damage'ui), todėl ji client-authoritative:
@@ -89,6 +82,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
   private bossAttackTimer: any = null;
   // Periodinis raid'o gyvybingumo tikrinimas (clock.setInterval handle)
   private resyncTimer: any = null;
+  // Aktyvaus boso tipas — nustatomas iš FastAPI (d.kind), su atsarga į DEFAULT_BOSS_KIND.
+  // Iš jo skaitomi boss combat parametrai per ../shared/bosses (BOSS REGISTRY).
+  private bossKind: string = DEFAULT_BOSS_KIND;
 
   // ── Room kūrimas ────────────────────────────────────────────────────────────
   async onCreate(options: any) {
@@ -308,7 +304,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
   // Ar žaidėjas pakankamai arti boso konkrečios atakos/ability range'ui
   private inBossRange(player: RaidPlayer, range: number): boolean {
-    return Math.abs(BOSS_HIT_X - player.x) <= range;
+    return Math.abs(bossHitX(this.bossKind) - player.x) <= range;
   }
 
   // ── Boso pralaimėjimo apdorojimas (bendras handleAttack + handleAbility) ──────
@@ -379,12 +375,12 @@ export class BossRaidRoom extends Room<BossRaidState> {
   private scheduleBossAttack() {
     if (this.bossAttackTimer) { this.bossAttackTimer.clear?.(); this.bossAttackTimer = null; }
     if (this.state.status !== "active") return;
-    const [minMs, maxMs] = BOSS_ATTACK_CADENCE[this.state.phase] ?? BOSS_ATTACK_CADENCE[1];
+    const [minMs, maxMs] = bossAttackCadence(this.bossKind, this.state.phase);
     const delay = minMs + Math.floor(Math.random() * (maxMs - minMs));
     this.bossAttackTimer = this.clock.setTimeout(() => this.doBossAttack(), delay);
   }
 
-  // Bosas atakuoja: pasirenka iki BOSS_MAX_TARGETS atsitiktinių prisijungusių žaidėjų,
+  // Bosas atakuoja: pasirenka iki bossMaxTargets() atsitiktinių prisijungusių žaidėjų,
   // pažymi juos "hit" būsena (be HP — kol kas tik vizualinė reakcija), ir broadcast'ina
   // "boss_attack" kad klientai sinchroniškai parodytų boso smūgį bei pataikytus žaidėjus.
   private doBossAttack() {
@@ -395,14 +391,14 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
     const hits: Array<{ sid: string; dmg: number; blocked: boolean; hp: number; downed: boolean }> = [];
     if (sessionIds.length > 0) {
-      // Fisher–Yates dalinis maišymas — paimame iki BOSS_MAX_TARGETS pirmų
+      // Fisher–Yates dalinis maišymas — paimame iki bossMaxTargets() pirmų
       for (let i = sessionIds.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [sessionIds[i], sessionIds[j]] = [sessionIds[j], sessionIds[i]];
       }
-      const count  = Math.min(BOSS_MAX_TARGETS, sessionIds.length);
+      const count  = Math.min(bossMaxTargets(this.bossKind), sessionIds.length);
       const picked = sessionIds.slice(0, count);
-      const rawDmg = BOSS_ATTACK_DAMAGE[this.state.phase] ?? BOSS_ATTACK_DAMAGE[1];
+      const rawDmg = bossAttackDamage(this.bossKind, this.state.phase);
 
       picked.forEach((sid) => {
         const p = this.state.players.get(sid);
@@ -452,6 +448,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
       }
       this.state.raidId    = String(d.id);
       this.state.bossName  = String(d.name || "Boss");
+      // Forward-compatible: backend dar nesiunčia `kind` — krenta į DEFAULT_BOSS_KIND.
+      // Kai pridės, boss combat parametrai automatiškai persijungia (BOSS REGISTRY).
+      this.bossKind        = String(d.kind || DEFAULT_BOSS_KIND);
       this.state.currentHp = Number(d.current_hp ?? 1000);
       this.state.maxHp     = Number(d.max_hp     ?? 1000);
       this.state.phase     = Number(d.phase      ?? 1);
