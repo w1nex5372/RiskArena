@@ -158,6 +158,11 @@ export const STAT_LABELS = {
   risk_success_bonus: 'Risk',
   boss_damage_percent: 'Boss Damage',
   lifesteal_percent: 'Lifesteal',
+  base_hp: 'Base HP',
+  move_speed: 'Speed',
+  guard_max: 'Guard',
+  attack_range: 'Range',
+  backstab_bonus_percent: 'Backstab',
 };
 
 const PERCENT_STATS = new Set([
@@ -169,6 +174,7 @@ const PERCENT_STATS = new Set([
   'risk_success_bonus',
   'boss_damage_percent',
   'lifesteal_percent',
+  'backstab_bonus_percent',
 ]);
 
 export function formatStatValue(stat, value) {

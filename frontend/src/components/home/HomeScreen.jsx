@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, ClipboardList, Clock3, Gift, RefreshCw, Skull, Swords, Trophy, Zap } from 'lucide-react';
 import apiClient from '../../api/client';
+import { getClassInfo, normalizeCharacterClass } from '../../utils/characters';
+import ClassStatRow from '../character/ClassStatRow';
 
 const GAME_MODES = [
   {
@@ -74,6 +76,11 @@ export default function HomeScreen({
   const rank = user?.rank || null;
   const streak = user?.streak || 0;
   const arenaOnline = (rooms || []).reduce((sum, r) => sum + (r.players_count || 0), 0);
+
+  // Resolve the player's class for the identity card. classKey is null when no
+  // class has been chosen yet, so we can show a "pick your fighter" prompt instead.
+  const classKey = normalizeCharacterClass(user?.class_name);
+  const classInfo = classKey ? getClassInfo(classKey) : null;
   const [chest, setChest] = useState(null);
   const [chestLoading, setChestLoading] = useState(true);
   const [chestError, setChestError] = useState(false);
@@ -233,6 +240,114 @@ export default function HomeScreen({
             </div>
           )}
         </div>
+      </div>
+
+      {/* ── YOUR CLASS CARD ─────────────────────────────────── */}
+      <div style={{ margin: '16px 16px 0' }}>
+        {classInfo ? (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveTab?.('arena')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab?.('arena'); }}
+            aria-label={`Your class: ${classInfo.name}. Open arena.`}
+            style={{
+              width: '100%',
+              padding: 16,
+              borderRadius: 16,
+              background: `linear-gradient(135deg, rgba(15,23,42,0.94), rgba(13,13,26,0.9) 60%, ${classInfo.glow})`,
+              border: `1px solid ${classInfo.color}66`,
+              boxShadow: `0 10px 28px ${classInfo.glow}`,
+              cursor: 'pointer',
+              textAlign: 'left',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ position: 'absolute', right: -28, top: -28, width: 130, height: 130, background: `radial-gradient(circle, ${classInfo.glow}, transparent 68%)`, pointerEvents: 'none' }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, position: 'relative' }}>
+              {/* class icon */}
+              <div style={{
+                width: 52, height: 52, borderRadius: 14, flexShrink: 0,
+                background: `${classInfo.color}22`,
+                border: `1px solid ${classInfo.color}55`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 28, lineHeight: 1, userSelect: 'none',
+              }}>
+                {classInfo.icon}
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 2 }}>
+                  <span style={{ fontSize: 10, fontWeight: 900, color: '#c9a84c', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                    Your Class
+                  </span>
+                  {classInfo.role && (
+                    <span style={{
+                      background: `${classInfo.color}1f`,
+                      border: `1px solid ${classInfo.color}44`,
+                      color: '#e2e8f0',
+                      fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 999,
+                      textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap',
+                    }}>
+                      {classInfo.role}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ color: '#f8fafc', fontSize: 19, fontWeight: 900, lineHeight: 1.1 }}>
+                    {classInfo.name}
+                  </span>
+                  {classInfo.title && (
+                    <span style={{ color: 'rgba(203,213,225,0.6)', fontSize: 12, fontWeight: 600, lineHeight: 1.1 }}>
+                      {classInfo.title}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <ChevronRight size={18} strokeWidth={2.6} style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
+            </div>
+
+            {/* stat row */}
+            <ClassStatRow classInfo={classInfo} style={{ marginTop: 12, position: 'relative' }} />
+          </div>
+        ) : (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setActiveTab?.('arena')}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setActiveTab?.('arena'); }}
+            aria-label="Choose your class. Open arena."
+            style={{
+              width: '100%', padding: '14px 16px', borderRadius: 16,
+              background: 'linear-gradient(135deg, rgba(15,23,42,0.92), rgba(42,31,9,0.7))',
+              border: '1px solid rgba(201,168,76,0.28)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left',
+            }}
+          >
+            <div style={{
+              width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+              background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c9a84c',
+            }}>
+              <Swords size={22} strokeWidth={2.4} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 900, color: '#c9a84c', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 3 }}>
+                Your Class
+              </div>
+              <div style={{ color: '#f8fafc', fontSize: 14, fontWeight: 850, lineHeight: 1.15 }}>
+                Choose your fighter
+              </div>
+              <div style={{ color: 'rgba(203,213,225,0.6)', fontSize: 11, fontWeight: 600, marginTop: 3 }}>
+                Pick a class to see its HP, attack and guard.
+              </div>
+            </div>
+            <ChevronRight size={18} strokeWidth={2.6} style={{ color: 'rgba(255,255,255,0.4)', flexShrink: 0 }} />
+          </div>
+        )}
       </div>
 
       {/* ── DAILY QUESTS CARD ───────────────────────────────── */}

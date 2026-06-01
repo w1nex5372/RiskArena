@@ -135,6 +135,7 @@ export default class BossRaidScene extends Phaser.Scene {
     // Phaser veikia atskirai nuo React — duomenys laikomi scene viduje, ne useState
     this._myPlayer        = null;  // objektas su body, weapon, hpBar ir kt.
     this._myPlayerX       = PLAYER_START_X; // X pozicija pikseliais
+    this._mySpeed         = MOVE_SPEED_PX_S; // px/s — pakeičiamas pagal klasę iš serverio (setMyVitals)
     this._myPlayerState   = 'idle';          // 'idle' | 'walk' | 'attacking' | 'dead'
     this._attackGen       = 0;               // didinama kiekvienos atakos — kad senas backstop nenutrauktų naujos
     this._myPlayerFacing  = 1;               // 1 = dešinėn, -1 = kairėn
@@ -238,11 +239,11 @@ export default class BossRaidScene extends Phaser.Scene {
     // Judėjimas tik kai NEatakuojam (bet poziciją sinchronizuojam visada — žr. žemiau)
     if (!attacking) {
       if (this._joystickLeft && this._myPlayerX > 30) {
-        this._myPlayerX -= PLAYER_SPEED * dt;
+        this._myPlayerX -= (this._mySpeed || PLAYER_SPEED) * dt;
         this._myPlayerFacing = -1;
         moving = true;
       } else if (this._joystickRight && this._myPlayerX < PLAYER_STOP_X) {
-        this._myPlayerX += PLAYER_SPEED * dt;
+        this._myPlayerX += (this._mySpeed || PLAYER_SPEED) * dt;
         this._myPlayerFacing = 1;
         moving = true;
       }
@@ -400,9 +401,12 @@ export default class BossRaidScene extends Phaser.Scene {
   }
 
   // Group A: mano HP + downed būsena iš serverio. Atnaujina HP bar'ą ir nokauto vizualą.
-  setMyVitals({ hp, maxHp, state } = {}) {
+  setMyVitals({ hp, maxHp, state, moveSpeed } = {}) {
     if (!this._sceneReady || !this._myPlayer) return;
     const p = this._myPlayer;
+
+    // Greitis pagal klasę (iš serverio / battle_classes.json)
+    if (typeof moveSpeed === 'number' && moveSpeed > 0) this._mySpeed = moveSpeed;
 
     // HP bar (origin 0 → trumpėja iš dešinės). displayWidth/setFillStyle, nes
     // tiesioginis .width/.fillColor Phaser Rectangle'e neperpiešia.

@@ -1,9 +1,28 @@
 import React, { useCallback, useRef, useState } from 'react';
+import battleAbilities from '../../generated/battle_abilities.json';
+import battleClasses from '../../generated/battle_classes.json';
 
 // ── Shared constants ──────────────────────────────────────────────────────────
-export const CLASS_COOLDOWNS = { warrior: 8000, mage: 6000, rogue: 5000 };
+const ABILITY_DATA = battleAbilities?.abilities || {};
+const CLASS_DATA = battleClasses?.classes || {};
 
-export const ABILITY_NAMES = { warrior: 'Bash', mage: 'Fireball', rogue: 'Blink' };
+export const CLASS_DEFAULT_ABILITY_KEYS = Object.fromEntries(
+  Object.entries(CLASS_DATA).map(([classKey, meta]) => [classKey, meta.default_ability_key || `${classKey}_default`])
+);
+
+export const CLASS_COOLDOWNS = Object.fromEntries(
+  Object.entries(CLASS_DEFAULT_ABILITY_KEYS).map(([classKey, abilityKey]) => [
+    classKey,
+    Number(ABILITY_DATA[abilityKey]?.cooldown_ms || 6000),
+  ])
+);
+
+export const ABILITY_NAMES = Object.fromEntries(
+  Object.entries(CLASS_DEFAULT_ABILITY_KEYS).map(([classKey, abilityKey]) => [
+    classKey,
+    ABILITY_DATA[abilityKey]?.label || 'Ability',
+  ])
+);
 
 export const CLASS_ABILITY_ICONS = {
   warrior: '/items/skills/class_bash.png',

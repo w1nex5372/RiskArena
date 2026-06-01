@@ -4,6 +4,10 @@ import axios from "axios";
 import { BossRaidState, RaidPlayer } from "../schemas/BossRaidState";
 // Shared combat rules — single source of truth (also used by ArenaRoom)
 import { classMaxHp, resolveDamage } from "../shared/combat";
+// Shared class metadata (battle_classes.json) — per-class HP/greitis/žala/block
+import { classGuard, classMoveSpeed, classBasicAttack } from "../shared/classes";
+// Shared ability metadata helpers — single source of truth (also used by ArenaRoom)
+import { abilityMeta, abilityNumber, abilityCooldownMs, abilityAllowedForClass } from "../shared/abilities";
 
 const FASTAPI_URL       = process.env.FASTAPI_URL       || "http://localhost:8001";
 const SKIP_AUTH         = process.env.SKIP_AUTH         === "true";
@@ -91,6 +95,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
     // "attack" žinutė ateina kai žaidėjas paspaudžia attack mygtuką
     this.onMessage("attack", (client) => this.handleAttack(client));
 
+    // "ability" — žaidėjas panaudoja klasės/item ability prieš bosą (Group A item 1)
+    this.onMessage("ability", (client, msg) => this.handleAbility(client, msg));
+
     // "move" — klientas praneša savo poziciją (Phase 5). Serveris apkarpo ir saugo.
     this.onMessage("move", (client, msg) => this.handleMove(client, msg));
 
@@ -159,10 +166,12 @@ export class BossRaidRoom extends Room<BossRaidState> {
     // Išdėstome pradinę poziciją cikliškai — kad nauji žaidėjai nestovėtų vienas ant kito
     p.x = SPAWN_SLOTS_X[this.state.players.size % SPAWN_SLOTS_X.length];
     p.facingRight = true;
-    // Group A: HP pagal klasę (bendra su Arena per shared/combat)
+    // Group A: HP + greitis pagal klasę (iš battle_classes.json — vienas šaltinis su Arena)
     p.maxHp = classMaxHp(p.characterClass);
     p.hp    = p.maxHp;
     p.defendReduction = Number(auth?.defend_reduction ?? 0) || 0;
+    // move_speed json'e yra units/tick (Arena 66ms tick); px/s = units * (1000/66)
+    p.moveSpeed = Math.round(classMoveSpeed(p.characterClass) * (1000 / 66));
 
     this.state.players.set(client.sessionId, p);
     this.state.playerCount = this.state.players.size;
@@ -195,8 +204,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
     if (now - player.lastAttackAt < ATTACK_COOLDOWN_MS) return;
     player.lastAttackAt = now;
 
-    // Damage skaičiavimas (Phase 1: be item bonusų — pridėsime vėliau)
-    const damage = rollDamage();
+    // Basic attack žala pagal klasę (iš battle_classes.json — warrior kerta stipriau)
+    const ba = classBasicAttack(player.characterClass);
+    const damage = ba.damage_min + Math.floor(Math.random() * Math.max(1, ba.damage_max - ba.damage_min + 1));
 
     // Taikome HP
     const newHp    = Math.max(0, this.state.currentHp - damage);
@@ -217,7 +227,71 @@ export class BossRaidRoom extends Room<BossRaidState> {
     // (kad galėtų parodyti skaičių virš boso)
     client.send("damage_dealt", { damage, hp: newHp, maxHp: this.state.maxHp });
 
-    // Bosas nugalėtas
+    // Bosas nugalėtas — bendra logika (žr. maybeHandleBossDefeated, kad nebūtų dubliuota)
+    this.maybeHandleBossDefeated(newHp);
+
+    // DB'e išsaugome damage (per FastAPI) — async, neblokuoja room'o
+    this.persistDamage(player.userId, damage).catch((err) =>
+      console.warn("[BossRaidRoom] Failed to persist damage:", err?.message)
+    );
+  }
+
+  // ── Ability handler (Group A item 1) ─────────────────────────────────────────
+  // Žaidėjas panaudoja klasės default arba įsigytą item ability prieš bosą.
+  // Žala ir cooldown imami iš bendro shared/battle_abilities.json (server-authoritative —
+  // klientu nepasitikime nei žalai, nei cooldown'ui). Damage taikomas TIKSLIAI kaip
+  // handleAttack (computePhase, attacking būsena, damage_dealt, defeat, persistDamage).
+  private async handleAbility(client: Client, msg: any) {
+    // Raid turi būti aktyvus
+    if (this.state.status !== "active" || this.state.currentHp <= 0) return;
+
+    const player = this.state.players.get(client.sessionId);
+    if (!player) return;
+    // Negali naudoti ability kai nokautuotas arba laikant block (kaip handleAttack)
+    if (player.state === STATE.DOWNED || player.blocking) return;
+
+    // Ability key — tuščias => klasės default. Validuojame priklausomybę klasei.
+    let abilityKey = String(msg?.abilityKey || "");
+    if (!abilityKey) abilityKey = `${player.characterClass}_default`;
+    if (!abilityAllowedForClass(player.characterClass, abilityKey)) return;
+
+    // Per-ability server-side cooldown PAGAL KEY — klasės ir item ability nepriklausomi
+    // (anti-cheat; klientas negali spam'inti). Naudoja shared metadata cooldown_ms.
+    const now = Date.now();
+    if (now - (player.abilityCooldowns[abilityKey] || 0) < abilityCooldownMs(abilityKey, 6000)) return;
+    player.abilityCooldowns[abilityKey] = now;
+
+    // Damage iš shared metadata (fallback 20 jei trūksta lauko)
+    const meta   = abilityMeta(abilityKey);
+    const damage = abilityNumber(meta, "damage", 20);
+
+    // Taikome HP — tiksliai kaip handleAttack
+    const newHp    = Math.max(0, this.state.currentHp - damage);
+    const newPhase = computePhase(newHp, this.state.maxHp);
+
+    this.state.currentHp = newHp;
+    this.state.phase     = newPhase;
+    player.totalDamage  += damage;
+
+    // Veiksmo būsena → attacking (kaip handleAttack). tick() grąžins į idle.
+    if (player.state !== STATE.HIT) {
+      player.state      = STATE.ATTACKING;
+      player.stateUntil = now + ATTACK_STATE_MS;
+    }
+
+    client.send("damage_dealt", { damage, hp: newHp, maxHp: this.state.maxHp });
+
+    this.maybeHandleBossDefeated(newHp);
+
+    this.persistDamage(player.userId, damage).catch((err) =>
+      console.warn("[BossRaidRoom] Failed to persist damage:", err?.message)
+    );
+  }
+
+  // ── Boso pralaimėjimo apdorojimas (bendras handleAttack + handleAbility) ──────
+  // Iškviečiama po žalos taikymo. Jei bosas nukrito iki 0 (ir vis dar buvo aktyvus),
+  // užbaigia raid'ą, sustabdo timer'ius, užrakina room'ą ir praneša FastAPI.
+  private maybeHandleBossDefeated(newHp: number) {
     if (newHp <= 0 && this.state.status === "active") {
       this.state.status = "defeated";
       if (this.bossAttackTimer) { this.bossAttackTimer.clear?.(); this.bossAttackTimer = null; }
@@ -228,16 +302,10 @@ export class BossRaidRoom extends Room<BossRaidState> {
       console.log(`[BossRaidRoom] Boss defeated! raidId=${this.state.raidId}`);
 
       // Pranešame FastAPI kad settler'intų rewards
-      // (Phase 1: tik log'inam — rewards migration bus vėliau)
       this.notifyFastApiDefeated().catch((err) =>
         console.warn("[BossRaidRoom] Failed to notify FastAPI of defeat:", err?.message)
       );
     }
-
-    // DB'e išsaugome damage (per FastAPI) — async, neblokuoja room'o
-    this.persistDamage(player.userId, damage).catch((err) =>
-      console.warn("[BossRaidRoom] Failed to persist damage:", err?.message)
-    );
   }
 
   // ── Movement (Phase 5) ───────────────────────────────────────────────────────
@@ -320,7 +388,11 @@ export class BossRaidRoom extends Room<BossRaidState> {
         // krypties — vengia "skydas rodomas bet neblokuoja". Block mažina žalą per
         // shared resolveDamage (kaip Arena), bet pilnai neatremia.
         const blocked = p.blocking;
-        const dmg = resolveDamage(rawDmg, { blocked, defendReduction: p.defendReduction });
+        const dmg = resolveDamage(rawDmg, {
+          blocked,
+          defendReduction: p.defendReduction,
+          blockReduction: classGuard(p.characterClass).block_reduction, // per-klasę iš battle_classes.json
+        });
         p.hp = Math.max(0, p.hp - dmg);
 
         if (p.hp <= 0) {

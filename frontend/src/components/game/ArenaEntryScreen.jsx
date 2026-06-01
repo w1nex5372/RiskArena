@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
 import apiClient from '../../api/client';
-import { CLASS_MODIFIERS, CLASS_INFO } from '../../utils/characters';
+import { CLASS_INFO } from '../../utils/characters';
 import { getItemImageSrc, getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
 import CharacterPortrait from '../arena/CharacterPortrait';
+import ClassStatRow from '../character/ClassStatRow';
 import WeaponIcon from '../WeaponIcon';
 
 function SlotImage({ item, FallbackIcon, size = 44 }) {
@@ -118,10 +119,15 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
         });
 
     loadEquipped();
+    // Re-sync equipped gear when returning to the app. visibilitychange is more
+    // reliable than window 'focus' inside the Telegram WebView.
+    const onVisible = () => { if (document.visibilityState === 'visible') loadEquipped(); };
     window.addEventListener('focus', loadEquipped);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', loadEquipped);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [user?.class_name, user?.id]);
 
@@ -170,16 +176,11 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
   };
 
   const getEquipped = (slotKey) => equipped?.[slotKey] || null;
-  // Merge class base modifiers + equipped item modifiers for total stat display
-  const activeClass = (user?.class_name || '').trim().toLowerCase();
-  const classMods = CLASS_MODIFIERS[activeClass] || {};
-  const totalCombatStats = {};
-  [classMods, loadoutEffectiveStats].forEach((mods) => {
-    Object.entries(mods || {}).forEach(([k, v]) => {
-      totalCombatStats[k] = (totalCombatStats[k] || 0) + Number(v || 0);
-    });
-  });
-  const totalStatChips = getStatEntries(totalCombatStats);
+  // Base class identity (HP / ATK / Guard / Speed) is shown in ClassStatRow.
+  // These chips surface only the bonuses contributed by equipped gear
+  // (loadout_effective_stats = aggregated item modifiers), so the two displays
+  // never duplicate the same number.
+  const gearStatChips = getStatEntries(loadoutEffectiveStats || {});
 
   return (
     <div style={{ background: '#1a1a2e', minHeight: '100%', paddingBottom: 100, color: '#e8e0d0' }}>
@@ -216,11 +217,24 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
                 </h2>
               </div>
               <p style={{ color: classInfo.color, fontSize: 12, fontWeight: 700, margin: '0 0 4px' }}>
-                {classInfo.title}
+                {classInfo.role || classInfo.title}
               </p>
-              {totalStatChips.length > 0 ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
-                  {totalStatChips.slice(0, 6).map((chip) => (
+              {classInfo.roleDescription ? (
+                <p style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700, lineHeight: 1.35, margin: '0 0 6px' }}>
+                  {classInfo.roleDescription}
+                </p>
+              ) : null}
+
+              {/* Base class identity stats (HP / ATK / Guard / Speed) */}
+              <ClassStatRow classInfo={classInfo} showNote={false} style={{ marginTop: 8 }} />
+
+              {/* Bonuses from equipped gear (kept separate from base stats above) */}
+              {gearStatChips.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 8 }}>
+                  <span style={{ color: '#64748b', fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    Gear
+                  </span>
+                  {gearStatChips.slice(0, 6).map((chip) => (
                     <span
                       key={`${chip.key}-${chip.label}`}
                       style={{
@@ -238,11 +252,7 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
                     </span>
                   ))}
                 </div>
-              ) : (
-                <p style={{ color: '#64748b', fontSize: 10, fontWeight: 700, margin: '8px 0 0' }}>
-                  {classInfo.bonus}
-                </p>
-              )}
+              ) : null}
             </div>
 
             {/* Win / Loss pills */}

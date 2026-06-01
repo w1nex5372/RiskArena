@@ -17,6 +17,7 @@ export class RaidPlayer extends Schema {
   // moving" būsenos klientas neperduoda atskirai — ją išveda iš x pokyčio.
   @type("number")  x: number = 90;             // horizontali pozicija pikseliais
   @type("boolean") facingRight: boolean = true; // į kurią pusę žiūri (true = link boso)
+  @type("number")  moveSpeed: number = 120;     // px/s pagal klasę (iš battle_classes.json)
 
   // Group A: HP + gynyba (bendra combat logika su Arena per shared/combat.ts)
   @type("number")  hp: number = 100;           // dabartinė žaidėjo HP
@@ -26,6 +27,9 @@ export class RaidPlayer extends Schema {
 
   // Server-only — nesinchronizuojama su klientais
   lastAttackAt: number = 0;
+  // Per-ability cooldown PAGAL KEY (klasės ir item ability turi atskirus cooldown'us).
+  // { abilityKey: paskutinio panaudojimo Date.now() } — server-side anti-cheat.
+  abilityCooldowns: Record<string, number> = {};
   // Kada transient būsena (attacking/hit) turi grįžti į idle (Date.now() ms). 0 = nėra deadline.
   stateUntil: number = 0;
   // Paskutinio "move" žinutės laikas (server-side throttle, anti-spam)

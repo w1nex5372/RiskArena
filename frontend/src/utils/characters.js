@@ -1,48 +1,49 @@
-export const CHARACTER_CLASSES = ['warrior', 'mage', 'rogue'];
+import battleClasses from '../generated/battle_classes.json';
 
-export const CLASS_INFO = {
-  warrior: {
-    name: 'Warrior',
-    title: 'Son of Ares',
-    icon: '\u2694\uFE0F',
-    bonus: '+3 Attack, +15 HP',
-    bonuses: ['+3 Attack damage', '+15 HP'],
-    color: '#8b0000',
-    glow: 'rgba(139,0,0,0.5)',
-  },
-  mage: {
-    name: 'Mage',
-    title: 'Heir of Zeus',
-    icon: '\u26A1',
-    bonus: '+8 Ability, -10 HP',
-    bonuses: ['+8 Ability damage', '-10 HP'],
-    color: '#4a90d9',
-    glow: 'rgba(74,144,217,0.5)',
-  },
-  rogue: {
-    name: 'Rogue',
-    title: 'Shadow of Hermes',
-    icon: '\uD83D\uDDE1\uFE0F',
-    bonus: '+15% Risk chance',
-    bonuses: ['+15% Risk win chance', 'Fast strikes'],
-    color: '#c9a84c',
-    glow: 'rgba(201,168,76,0.5)',
-  },
-};
+const CLASS_DATA = battleClasses?.classes || {};
+const fallbackClass = 'warrior';
+
+export const CHARACTER_CLASSES = Object.keys(CLASS_DATA);
+
+export const CLASS_INFO = Object.fromEntries(
+  Object.entries(CLASS_DATA).map(([key, meta]) => [
+    key,
+    {
+      name: meta.label || key,
+      title: meta.title || meta.role || key,
+      role: meta.role || '',
+      roleDescription: meta.role_description || '',
+      icon: meta.icon || '',
+      bonus: (meta.passives || []).join(', '),
+      bonuses: meta.passives || [],
+      color: meta.color || '#c9a84c',
+      glow: meta.glow || 'rgba(201,168,76,0.5)',
+      stats: meta.presentation_stats || {},
+      // Base attack damage lives in basic_attack, not presentation_stats — surface it
+      // here so display surfaces (e.g. the home class card) can show ATK without
+      // reaching into the raw schema. These are base values before weapon/item bonuses.
+      attack: {
+        min: meta.basic_attack?.damage_min ?? null,
+        max: meta.basic_attack?.damage_max ?? null,
+        range: meta.basic_attack?.range ?? null,
+        backstabMultiplier: meta.basic_attack?.backstab_multiplier ?? null,
+      },
+    },
+  ])
+);
 
 export function normalizeCharacterClass(className) {
   const normalized = String(className || '').trim().toLowerCase();
   return CHARACTER_CLASSES.includes(normalized) ? normalized : null;
 }
 
-export function getClassInfo(className, fallbackClass = 'warrior') {
+export function getClassInfo(className, fallback = fallbackClass) {
   const normalized = normalizeCharacterClass(className);
   if (normalized) return CLASS_INFO[normalized];
-  return fallbackClass ? CLASS_INFO[fallbackClass] || null : null;
+  return fallback ? CLASS_INFO[fallback] || null : null;
 }
 
-export const CLASS_MODIFIERS = {
-  warrior: { attack_bonus: 3, hp_bonus: 15 },
-  mage: { ability_bonus: 8, hp_bonus: -10 },
-  rogue: { risk_win_chance: 0.15 },
-};
+// Display-only class identity stats. Combat resolution is server-authoritative.
+export const CLASS_MODIFIERS = Object.fromEntries(
+  Object.entries(CLASS_DATA).map(([key, meta]) => [key, meta.presentation_stats || {}])
+);

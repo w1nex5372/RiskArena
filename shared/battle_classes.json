@@ -1,0 +1,124 @@
+{
+  "schema_version": "battle_classes.v1",
+  "classes": {
+    "warrior": {
+      "label": "Warrior",
+      "title": "Son of Ares",
+      "role": "Control Bruiser",
+      "role_description": "High HP, strong guard, close-range pressure and guardbreak control.",
+      "icon": "\u2694\ufe0f",
+      "color": "#8b0000",
+      "glow": "rgba(139,0,0,0.5)",
+      "base_hp": 165,
+      "move_speed": 7.6,
+      "default_ability_key": "warrior_default",
+      "basic_attack": {
+        "range": 86,
+        "damage_min": 18,
+        "damage_max": 26,
+        "cooldown_ms": 650
+      },
+      "guard": {
+        "max": 130,
+        "hold_drain_per_tick": 0.65,
+        "regen_per_tick": 2.8,
+        "regen_delay_ms": 700,
+        "hit_drain_mult": 1.15,
+        "break_stun_ms": 900,
+        "break_recover_ms": 1000,
+        "block_reduction": 0.7
+      },
+      "passives": [
+        "Heavy guard",
+        "Melee control",
+        "Guardbreak specialist"
+      ],
+      "presentation_stats": {
+        "base_hp": 165,
+        "move_speed": 7.6,
+        "guard_max": 130,
+        "attack_range": 86
+      }
+    },
+    "mage": {
+      "label": "Mage",
+      "title": "Heir of Zeus",
+      "role": "Ranged Burst",
+      "role_description": "Lower HP and guard, longer basic range, projectile burst and spacing tools.",
+      "icon": "\u26a1",
+      "color": "#4a90d9",
+      "glow": "rgba(74,144,217,0.5)",
+      "base_hp": 95,
+      "move_speed": 7,
+      "default_ability_key": "mage_default",
+      "basic_attack": {
+        "range": 150,
+        "damage_min": 10,
+        "damage_max": 16,
+        "cooldown_ms": 760
+      },
+      "guard": {
+        "max": 70,
+        "hold_drain_per_tick": 1.1,
+        "regen_per_tick": 1.9,
+        "regen_delay_ms": 850,
+        "hit_drain_mult": 1.5,
+        "break_stun_ms": 800,
+        "break_recover_ms": 1150,
+        "block_reduction": 0.55
+      },
+      "passives": [
+        "Ranged basic attack",
+        "High spell burst",
+        "Weak guard"
+      ],
+      "presentation_stats": {
+        "base_hp": 95,
+        "move_speed": 7,
+        "guard_max": 70,
+        "attack_range": 150
+      }
+    },
+    "rogue": {
+      "label": "Rogue",
+      "title": "Shadow of Hermes",
+      "role": "Mobility Assassin",
+      "role_description": "Low HP, high speed, weaker guard and bonus backstab damage from behind.",
+      "icon": "\ud83d\udde1\ufe0f",
+      "color": "#c9a84c",
+      "glow": "rgba(201,168,76,0.5)",
+      "base_hp": 105,
+      "move_speed": 9.4,
+      "default_ability_key": "rogue_default",
+      "basic_attack": {
+        "range": 76,
+        "damage_min": 12,
+        "damage_max": 19,
+        "cooldown_ms": 520,
+        "backstab_multiplier": 1.55
+      },
+      "guard": {
+        "max": 75,
+        "hold_drain_per_tick": 1,
+        "regen_per_tick": 2.2,
+        "regen_delay_ms": 650,
+        "hit_drain_mult": 1.45,
+        "break_stun_ms": 760,
+        "break_recover_ms": 900,
+        "block_reduction": 0.55
+      },
+      "passives": [
+        "Backstab damage",
+        "Fast movement",
+        "Reposition specialist"
+      ],
+      "presentation_stats": {
+        "base_hp": 105,
+        "move_speed": 9.4,
+        "guard_max": 75,
+        "attack_range": 76,
+        "backstab_bonus_percent": 0.55
+      }
+    }
+  }
+}

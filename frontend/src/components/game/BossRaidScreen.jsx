@@ -214,7 +214,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           if (sessionId === room.sessionId) {
             // My own vitals (Group A) — HP bar + downed state from server
             const pushMine = () => sceneRef.current?.setMyVitals?.({
-              hp: player.hp, maxHp: player.maxHp, state: player.state,
+              hp: player.hp, maxHp: player.maxHp, state: player.state, moveSpeed: player.moveSpeed,
             });
             pushMine();
             player.onChange(pushMine);
@@ -337,7 +337,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
   const handleAbility = useCallback(() => {
     if (!abilityReady || raidEnded) return;
-    sceneRef.current?.triggerAbility(playerClass, `${playerClass}_default`);
+    const abilityKey = `${playerClass}_default`;
+    sceneRef.current?.triggerAbility(playerClass, abilityKey);
+    // Serveris pritaiko žalą bosui (server-authoritative — žala/cooldown iš shared metadata)
+    colyseusRoomRef.current?.send('ability', { abilityKey });
     setAbilityReady(false);
     clearTimeout(abilityCdTimer.current);
     const cd = CLASS_COOLDOWNS[playerClass] ?? 6000;
@@ -346,7 +349,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
   const handleItemAbility = useCallback(() => {
     if (!itemAbilityReady || raidEnded) return;
-    sceneRef.current?.triggerAbility(playerClass, equipped?.ability?.ability_key || `${playerClass}_default`);
+    const abilityKey = equipped?.ability?.ability_key || equipped?.ability?.key || `${playerClass}_default`;
+    sceneRef.current?.triggerAbility(playerClass, abilityKey);
+    // Serveris pritaiko žalą bosui (server-authoritative — žala/cooldown iš shared metadata)
+    colyseusRoomRef.current?.send('ability', { abilityKey });
     setItemAbilityReady(false);
     clearTimeout(itemAbilityCdTimer.current);
     const cd = Number(

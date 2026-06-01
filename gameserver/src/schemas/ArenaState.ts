@@ -18,6 +18,9 @@ export class Player extends Schema {
   @type("boolean") isGrounded: boolean = true;
   @type("boolean") isStunned: boolean = false;
   @type("boolean") isBlocking: boolean = false;
+  @type("number") guard: number = 100;
+  @type("number") maxGuard: number = 100;
+  @type("boolean") guardBroken: boolean = false;
   @type("number")  abilityCharges: number = 1;  // 0 = cooldown, 1 = ready
   @type("number")  itemAbilityCharges: number = 1;  // separate cooldown for equipped ability item
   @type("number") attackBonus:    number = 0;  // from weapon
@@ -40,6 +43,8 @@ export class Player extends Schema {
   stunUntil: number = 0;
   abilityCooldownUntil: number = 0;
   itemAbilityCooldownUntil: number = 0;
+  guardBrokenUntil: number = 0;
+  guardRegenPausedUntil: number = 0;
   inputState: { left: boolean; right: boolean; attack: boolean; ability: boolean; itemAbility: boolean; up: boolean; block: boolean } = {
     left: false,
     right: false,

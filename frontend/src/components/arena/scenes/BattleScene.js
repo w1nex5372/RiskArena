@@ -472,19 +472,19 @@ export default class BattleScene extends Phaser.Scene {
   // ── Overlays (countdown / result / vs) ─────────────────────────────────
   _buildOverlays() {
     this.overlayBg = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.65)
-      .setVisible(false).setDepth(10);
+      .setVisible(false).setDepth(10).setScrollFactor(0);
     this.overlayText = this.add.text(W / 2, H / 2, '', {
       fontSize: '72px', fontFamily: 'monospace',
       color: '#c9a84c', fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 8,
-    }).setOrigin(0.5).setVisible(false).setDepth(11);
+    }).setOrigin(0.5).setVisible(false).setDepth(11).setScrollFactor(0);
     this.overlaySubText = this.add.text(W / 2, H / 2 + 70, '', {
       fontSize: '20px', fontFamily: 'monospace', color: '#f8fafc', fontStyle: 'bold',
-    }).setOrigin(0.5).setVisible(false).setDepth(11);
+    }).setOrigin(0.5).setVisible(false).setDepth(11).setScrollFactor(0);
     this.vsText = this.add.text(W / 2, 200, 'VS', {
       fontSize: '48px', fontFamily: 'monospace', color: '#ffffff', fontStyle: 'bold',
       stroke: '#c9a84c', strokeThickness: 4,
-    }).setOrigin(0.5).setAlpha(0).setVisible(false).setDepth(11);
+    }).setOrigin(0.5).setAlpha(0).setVisible(false).setDepth(11).setScrollFactor(0);
   }
 
   // ── Top HUD (permanent HP bars) ────────────────────────────────────────
@@ -546,6 +546,12 @@ export default class BattleScene extends Phaser.Scene {
       timerText, p1ClassBar, p2ClassBar,
       battleStartMs: 0,
     };
+    [
+      this._hudBg,
+      p1Name, p1HpBg, p1HpChip, p1HpBar, p1HpText,
+      p2Name, p2HpBg, p2HpChip, p2HpBar, p2HpText,
+      timerText, p1ClassBar, p2ClassBar,
+    ].forEach((obj) => obj?.setScrollFactor?.(0));
     this.setHudVisible(false);
 
   }
@@ -1092,6 +1098,10 @@ export default class BattleScene extends Phaser.Scene {
       if (this.room === room) {
         this.showDamageNumber(d.x, d.y, d.damage, {
           blocked: Boolean(d.blocked),
+          guardDamage: Number(d.guardDamage || 0),
+          guardRemaining: Number(d.guardRemaining || 0),
+          guardBroken: Boolean(d.guardBroken),
+          backstab: Boolean(d.backstab),
           attackerSid: d.attackerSid,
           targetSid: d.targetSid,
         });
@@ -1170,6 +1180,9 @@ export default class BattleScene extends Phaser.Scene {
     const hpBg   = this.add.rectangle(spawnX, hpY, 56, 7, 0x1a1a1a).setStrokeStyle(1, 0x444444).setDepth(3);
     const hpChip = this.add.rectangle(spawnX - 28, hpY, 56, 7, 0xf97316, 0.85).setOrigin(0, 0.5).setDepth(3.1);
     const hpBar  = this.add.rectangle(spawnX - 28, hpY, 56, 7, 0x22c55e).setOrigin(0, 0.5).setDepth(3.2);
+    const guardY = hpY + 8;
+    const guardBg = this.add.rectangle(spawnX, guardY, 56, 4, 0x0f172a, 0.72).setStrokeStyle(1, 0x1e3a8a, 0.85).setDepth(3);
+    const guardBar = this.add.rectangle(spawnX - 28, guardY, 56, 4, 0x38bdf8, 0.95).setOrigin(0, 0.5).setDepth(3.2);
 
     const meTag = isMe
       ? this.add.text(spawnX, meY, '▼ YOU', {
@@ -1189,7 +1202,7 @@ export default class BattleScene extends Phaser.Scene {
       bodyTextureKey: key,
       animPrefix: bodyDesc.animPrefix,
       usesGeneratedSheet: bodyDesc.generated,
-      nameLabel, classLabel, hpBg, hpChip, hpBar, meTag, dcLabel: null, stunLabel: null,
+      nameLabel, classLabel, hpBg, hpChip, hpBar, guardBg, guardBar, meTag, dcLabel: null, stunLabel: null, guardBreakLabel: null,
       blockFx: null,
       blockFxTween: null,
       maxHp: player.maxHp || 100,
@@ -1281,6 +1294,7 @@ export default class BattleScene extends Phaser.Scene {
     s.hpBg.setPosition(x, hpY);
     s.hpChip.setPosition(x - 28, hpY);
     s.hpBar.setPosition(x - 28, hpY);
+    this._syncGuardMeter(s, player, x, hpY + 8, topY);
     if (s.meTag) s.meTag.setPosition(x, meY);
     this._syncBlockGuard(s, player, x, visualY, topY);
 
@@ -1332,6 +1346,30 @@ export default class BattleScene extends Phaser.Scene {
       s.stunLabel = null;
     }
     if (s.stunLabel) s.stunLabel.setPosition(x, topY - 12);
+
+    if (player.guardBroken && !s.guardBreakLabel) {
+      s.guardBreakLabel = this.add.text(x, topY - 48, 'GUARD BREAK', {
+        fontSize: '11px',
+        fontFamily: 'monospace',
+        color: '#facc15',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 3,
+      }).setOrigin(0.5).setDepth(4);
+      this.tweens.add({
+        targets: s.guardBreakLabel,
+        alpha: { from: 1, to: 0.42 },
+        yoyo: true,
+        repeat: -1,
+        duration: 180,
+        ease: 'Sine.easeInOut',
+      });
+    } else if (!player.guardBroken && s.guardBreakLabel) {
+      this.tweens.killTweensOf(s.guardBreakLabel);
+      s.guardBreakLabel.destroy();
+      s.guardBreakLabel = null;
+    }
+    if (s.guardBreakLabel) s.guardBreakLabel.setPosition(x, topY - 48);
 
     // ── Animations ───────────────────────────────────────────────────────
     if (s.useLPC) {
@@ -1465,6 +1503,24 @@ export default class BattleScene extends Phaser.Scene {
     return Boolean(player?.isBlocking) || player?.state === 'blocking';
   }
 
+  _syncGuardMeter(s, player, x, guardY) {
+    const maxGuard = Number(player?.maxGuard ?? 100) || 100;
+    const guard = Math.max(0, Math.min(maxGuard, Number(player?.guard ?? maxGuard)));
+    const pct = maxGuard > 0 ? guard / maxGuard : 0;
+    const broken = Boolean(player?.guardBroken);
+    const visible = player?.state !== 'dead' && player?.state !== 'disconnected';
+    const alpha = broken || this._isBlocking(player) || pct < 0.98 ? 0.95 : 0.34;
+
+    s.guardBg?.setPosition(x, guardY).setVisible(visible).setAlpha(alpha * 0.78);
+    s.guardBar?.setPosition(x - 28, guardY).setVisible(visible).setAlpha(alpha);
+    if (!s.guardBar) return;
+    s.guardBar.width = 56 * pct;
+    s.guardBar.setFillStyle(
+      broken || pct <= 0.2 ? 0xef4444 : pct <= 0.45 ? 0xf59e0b : 0x38bdf8,
+      broken ? 0.92 : 0.95,
+    );
+  }
+
   _syncBlockGuard(s, player, x, visualY, topY) {
     const visible = this._isBlocking(player) && player.state !== 'dead' && player.state !== 'disconnected';
     if (!visible) {
@@ -1524,10 +1580,11 @@ export default class BattleScene extends Phaser.Scene {
     const s = this.sprites.get(sessionId);
     if (!s) return;
     if (s.stunLabel) this.tweens.killTweensOf(s.stunLabel);
+    if (s.guardBreakLabel) this.tweens.killTweensOf(s.guardBreakLabel);
     if (s.hpPulseTween) this.tweens.killTweensOf(s.hpBar);
     if (s.blockFxTween) this.tweens.killTweensOf(s.blockFx);
     if (s.enchantTrail) { s.enchantTrail.destroy(); }
-    [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpChip, s.hpBar, s.meTag, s.dcLabel, s.stunLabel, s.blockFx]
+    [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpChip, s.hpBar, s.guardBg, s.guardBar, s.meTag, s.dcLabel, s.stunLabel, s.guardBreakLabel, s.blockFx]
       .forEach((o) => o?.destroy());
     this.sprites.delete(sessionId);
   }
@@ -1670,7 +1727,7 @@ export default class BattleScene extends Phaser.Scene {
 
     // Show result after zoom settles
     this.time.delayedCall(950, () => {
-      if (!this.scene?.isActive()) return;
+      if (!this.sys?.isActive?.()) return;
       // Pull camera back
       this.cameras.main.zoomTo(1, 500, 'Sine.easeInOut');
       this.cameras.main.pan(W / 2, H / 2, 500, 'Sine.easeInOut');
@@ -1746,10 +1803,16 @@ export default class BattleScene extends Phaser.Scene {
       const impactY = targetSprite?.blockShieldY ?? gameY;
       this._showBlockImpact(impactX, impactY);
       this._pulseBlockGuard(targetSprite, impactX, impactY);
-      const text = damage > 0 ? `-${damage} BLOCK` : 'BLOCK';
+      const text = opts.guardBroken
+        ? 'GUARD BREAK'
+        : opts.guardDamage > 0
+          ? `-${damage} BLOCK | G-${opts.guardDamage}`
+          : damage > 0
+            ? `-${damage} BLOCK`
+            : 'BLOCK';
       const txt = this.add.text(impactX, impactY, text, {
-        fontSize: '20px', fontFamily: 'monospace',
-        color: '#93c5fd', fontStyle: 'bold',
+        fontSize: opts.guardBroken ? '22px' : '18px', fontFamily: 'monospace',
+        color: opts.guardBroken ? '#facc15' : '#93c5fd', fontStyle: 'bold',
         stroke: '#000', strokeThickness: 4,
       }).setOrigin(0.5).setDepth(6);
 
@@ -1779,10 +1842,12 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     // Floating number
-    const isBig  = damage >= 20;
-    const color  = isBig ? '#ff2200' : '#ef4444';
-    const size   = isBig ? '28px'    : '20px';
-    const txt = this.add.text(gameX, gameY, `-${damage}`, {
+    const isBackstab = Boolean(opts.backstab);
+    const isBig  = isBackstab || damage >= 20;
+    const color  = isBackstab ? '#f472b6' : isBig ? '#ff2200' : '#ef4444';
+    const size   = isBackstab ? '24px' : isBig ? '28px' : '20px';
+    const text = isBackstab ? `-${damage} BACKSTAB` : `-${damage}`;
+    const txt = this.add.text(gameX, gameY, text, {
       fontSize: size, fontFamily: 'monospace',
       color, fontStyle: 'bold',
       stroke: '#000', strokeThickness: isBig ? 5 : 3,
@@ -1861,6 +1926,9 @@ export default class BattleScene extends Phaser.Scene {
     const abilityKey = String(d.abilityKey || d.ability_key || '');
     if (abilityKey === 'warrior_guardbreak') {
       this._showGuardBreakEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit);
+      if (d.brokeBlock) {
+        this._showCombatText(d.toX ?? d.fromX, (d.toY ?? d.fromY) - 72, 'GUARD BROKEN', '#facc15', '18px');
+      }
       return;
     }
     if (d.cls === 'warrior') this._showBashEffect(d.fromX, d.fromY, d.hit, abilityKey);

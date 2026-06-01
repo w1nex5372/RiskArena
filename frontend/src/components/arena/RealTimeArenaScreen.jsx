@@ -2,19 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import * as Colyseus from 'colyseus.js';
 import BattleScene from './scenes/BattleScene';
-import { CLASS_INFO, CLASS_MODIFIERS } from '../../utils/characters';
+import { CLASS_INFO } from '../../utils/characters';
 import CharacterPortrait from './CharacterPortrait';
 import apiClient from '../../api/client';
 import { getStoredSessionToken } from '../../utils/storage';
 import WeaponIcon from '../WeaponIcon';
 import ArmorIcon from '../ArmorIcon';
 import { BattleControlsOverlay, ABILITY_NAMES } from './BattleControls';
-
-// Base arena stats (mirrors ArenaRoom.ts constants)
-const BASE_HP        = { warrior: 150, mage: 100, rogue: 120 };
-const BASE_ATK_MIN   = 15;
-const BASE_ATK_MAX   = 25;
-const ABILITY_DMG    = { warrior: 20, mage: 25, rogue: null };
 
 const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
   const override = new URLSearchParams(window.location.search).get('gameServerUrl');
@@ -166,11 +160,45 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
     }
 
     return () => {
-      gameRef.current?.destroy(true);
+      try {
+        gameRef.current?.destroy(false);
+      } catch {
+        // Ignore Phaser canvas cleanup races during React unmount.
+      }
+      try {
+        containerRef.current?.replaceChildren();
+      } catch {
+        // Container may already be gone.
+      }
       gameRef.current = null;
       sceneRef.current = null;
     };
   }, [updatePhase]);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    const game = gameRef.current;
+    if (!node || !game?.scale) return undefined;
+
+    let frame = 0;
+    const refreshScale = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        game.scale.refresh();
+      });
+    };
+
+    refreshScale();
+    const observer = window.ResizeObserver ? new ResizeObserver(refreshScale) : null;
+    observer?.observe(node);
+    window.addEventListener('resize', refreshScale);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener('resize', refreshScale);
+    };
+  }, [phase, isPortrait, equipped?.weapon?.id, equipped?.armor?.id, equipped?.ability?.id]);
 
   // ── 2. Connect to Colyseus ────────────────────────────────────────────────
   useEffect(() => {
@@ -469,7 +497,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       {/* Phaser canvas container */}
       <div
         ref={containerRef}
-        style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative' }}
+        style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}
       />
 
       {/* ── Absolute overlays (float over canvas, don't affect layout) ──── */}
@@ -571,13 +599,11 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
           { icon: '✨', label: 'ABILITY', item: equipped.ability },
         ];
 
-        // Compute full stats: base + class modifier + item bonuses
-        const classMods  = CLASS_MODIFIERS[cls] || {};
-        const totalHp    = (BASE_HP[cls] || 100) + (classMods.hp_bonus || 0) + (loadoutStats.hp_bonus || 0);
-        const totalAtkMin = BASE_ATK_MIN + (classMods.attack_bonus || 0) + (loadoutStats.attack_bonus || 0);
-        const totalAtkMax = BASE_ATK_MAX + (classMods.attack_bonus || 0) + (loadoutStats.attack_bonus || 0);
-        const baseAbilDmg = ABILITY_DMG[cls];
-        const totalAbilDmg = baseAbilDmg !== null ? baseAbilDmg + (classMods.ability_bonus || 0) + (loadoutStats.ability_bonus || 0) : null;
+        const classStats = info.stats || {};
+        const totalHp = Number(classStats.base_hp || 100) + Number(loadoutStats.hp_bonus || 0);
+        const guardMax = Number(classStats.guard_max || 100);
+        const attackRange = Number(classStats.attack_range || 0);
+        const speed = Number(classStats.move_speed || 0);
         const abilName   = ABILITY_NAMES[cls];
         return (
           <div style={{
@@ -639,8 +665,9 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
             }}>
               {[
                 { icon: '❤️', value: `${totalHp} HP`,                    color: '#f87171' },
-                { icon: '⚔️', value: `${totalAtkMin}–${totalAtkMax} ATK`, color: '#fbbf24' },
-                { icon: '✨', value: totalAbilDmg !== null ? `${abilName} ${totalAbilDmg} dmg` : abilName, color: '#a78bfa' },
+                { icon: '🛡️', value: `${guardMax} Guard`,                color: '#38bdf8' },
+                { icon: '⚔️', value: attackRange ? `${attackRange} Range` : info.role, color: '#fbbf24' },
+                { icon: '✨', value: speed ? `${abilName} · ${speed} SPD` : abilName, color: '#a78bfa' },
               ].map(s => (
                 <div key={s.icon} style={{
                   display: 'flex', alignItems: 'center', gap: 5,
