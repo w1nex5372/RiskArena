@@ -160,45 +160,11 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
     }
 
     return () => {
-      try {
-        gameRef.current?.destroy(false);
-      } catch {
-        // Ignore Phaser canvas cleanup races during React unmount.
-      }
-      try {
-        containerRef.current?.replaceChildren();
-      } catch {
-        // Container may already be gone.
-      }
+      gameRef.current?.destroy(true);
       gameRef.current = null;
       sceneRef.current = null;
     };
   }, [updatePhase]);
-
-  useEffect(() => {
-    const node = containerRef.current;
-    const game = gameRef.current;
-    if (!node || !game?.scale) return undefined;
-
-    let frame = 0;
-    const refreshScale = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        game.scale.refresh();
-      });
-    };
-
-    refreshScale();
-    const observer = window.ResizeObserver ? new ResizeObserver(refreshScale) : null;
-    observer?.observe(node);
-    window.addEventListener('resize', refreshScale);
-
-    return () => {
-      cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener('resize', refreshScale);
-    };
-  }, [phase, isPortrait, equipped?.weapon?.id, equipped?.armor?.id, equipped?.ability?.id]);
 
   // ── 2. Connect to Colyseus ────────────────────────────────────────────────
   useEffect(() => {
@@ -497,7 +463,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       {/* Phaser canvas container */}
       <div
         ref={containerRef}
-        style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}
+        style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative' }}
       />
 
       {/* ── Absolute overlays (float over canvas, don't affect layout) ──── */}

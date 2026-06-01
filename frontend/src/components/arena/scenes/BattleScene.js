@@ -11,6 +11,7 @@ import {
 import { showGuardBreak, showBash, showFireball, showBlink } from '../combatEffects';
 
 const WEAPON_DEBUG_STATES = ['idle', 'walk', 'attack', 'hurt', 'dead', 'jump'];
+const ARENA_CAMERA_Y = 72;
 
 function resolveRuntimeAssetUrl(path) {
   if (!path) return '';
@@ -168,6 +169,7 @@ export default class BattleScene extends Phaser.Scene {
     try {
       this._createParticleTexture();
     this._buildArena();
+    this.cameras.main.setScroll(0, ARENA_CAMERA_Y);
     if (!this._isMobile) this._buildFloorFog();
     this._registerAnimations();
     if (!this._isMobile) this._registerWeaponAnimations();
@@ -1730,7 +1732,7 @@ export default class BattleScene extends Phaser.Scene {
       if (!this.sys?.isActive?.()) return;
       // Pull camera back
       this.cameras.main.zoomTo(1, 500, 'Sine.easeInOut');
-      this.cameras.main.pan(W / 2, H / 2, 500, 'Sine.easeInOut');
+      this.cameras.main.pan(W / 2, H / 2 + ARENA_CAMERA_Y, 500, 'Sine.easeInOut');
 
       this.showOverlay(
         isWinner ? 'VICTORY!' : 'DEFEAT',
