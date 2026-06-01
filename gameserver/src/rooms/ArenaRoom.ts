@@ -522,7 +522,9 @@ export class ArenaRoom extends Room<ArenaState> {
     if (abilityType === "blink") {
       const offset = abilityNumber(meta, "offset", BLINK_OFFSET);
       const range = abilityNumber(meta, "range", offset);
+      let blinked = false;
       this.state.players.forEach((opp, oppSid) => {
+        if (blinked) return;
         if (oppSid === sessionId || opp.state === "dead") return;
         const dist = Math.abs(player.x - opp.x);
         if (dist > range + 120) return;
@@ -534,7 +536,17 @@ export class ArenaRoom extends Room<ArenaState> {
         });
         player.x = newX;
         player.facingRight = player.x < opp.x;
+        blinked = true;
       });
+      if (!blinked) {
+        const dir = player.facingRight ? 1 : -1;
+        const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, player.x + dir * offset));
+        this.broadcast("ability_used", {
+          sessionId, cls, abilityKey,
+          fromX: player.x, fromY: player.y, toX: newX, toY: player.y, hit: true,
+        });
+        player.x = newX;
+      }
       return true;
     }
 

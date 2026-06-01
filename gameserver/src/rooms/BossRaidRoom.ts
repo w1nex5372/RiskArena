@@ -45,6 +45,11 @@ const BOSS_ATTACK_CADENCE: Record<number, [number, number]> = {
 };
 const BOSS_MAX_TARGETS = 3; // kiek žaidėjų bosas gali pataikyti vienu smūgiu
 
+// Boso "hit" pozicija X — naudojama range patikrai. Žaidėjai juda iki MOVE_MAX_X (470);
+// bosas dešinėj (~500). Melee (bash range 120, warrior basic 86) reikia prieiti arti;
+// projectile (range 800) ir mage basic (150) pataiko iš toliau.
+const BOSS_HIT_X = 500;
+
 // ── Movement model (Phase 5) ──────────────────────────────────────────────────
 // Pozicija yra grynai kosmetinė (neturi įtakos damage'ui), todėl ji client-authoritative:
 // klientas siunčia savo x, serveris tik apkarpo į ribas ir saugo. Anti-cheat čia nereikia.
@@ -206,6 +211,12 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
     // Basic attack žala pagal klasę (iš battle_classes.json — warrior kerta stipriau)
     const ba = classBasicAttack(player.characterClass);
+    // Range — melee klasės (warrior/rogue) turi prieiti prie boso; mage range didesnis
+    if (!this.inBossRange(player, ba.range)) {
+      // Whiff — mostas parodomas, bet bosui žalos nedaro (reikia prieiti arčiau)
+      if (player.state !== STATE.HIT) { player.state = STATE.ATTACKING; player.stateUntil = now + ATTACK_STATE_MS; }
+      return;
+    }
     const damage = ba.damage_min + Math.floor(Math.random() * Math.max(1, ba.damage_max - ba.damage_min + 1));
 
     // Taikome HP
@@ -257,13 +268,20 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
     // Per-ability server-side cooldown PAGAL KEY — klasės ir item ability nepriklausomi
     // (anti-cheat; klientas negali spam'inti). Naudoja shared metadata cooldown_ms.
+    // Cooldown nustatomas net jei ability nedaro žalos (blink) ar prašauna — buvo "panaudotas".
     const now = Date.now();
     if (now - (player.abilityCooldowns[abilityKey] || 0) < abilityCooldownMs(abilityKey, 6000)) return;
     player.abilityCooldowns[abilityKey] = now;
 
-    // Damage iš shared metadata (fallback 20 jei trūksta lauko)
+    // Žala TIK iš metadata — be fallback. Blink/mobility (type: "blink") neturi "damage"
+    // lauko → 0 → jokios žalos bosui (teleportas vyksta client-side per move).
     const meta   = abilityMeta(abilityKey);
-    const damage = abilityNumber(meta, "damage", 20);
+    const damage = abilityNumber(meta, "damage", 0);
+    const range  = abilityNumber(meta, "range", 9999);
+
+    // Ne-žalos ability (blink) ARBA per toli (melee bash reikia prieiti; projectile range 800)
+    // → naudojimas užskaitytas (cooldown), bet bosui žalos nedaro.
+    if (damage <= 0 || !this.inBossRange(player, range)) return;
 
     // Taikome HP — tiksliai kaip handleAttack
     const newHp    = Math.max(0, this.state.currentHp - damage);
@@ -286,6 +304,11 @@ export class BossRaidRoom extends Room<BossRaidState> {
     this.persistDamage(player.userId, damage).catch((err) =>
       console.warn("[BossRaidRoom] Failed to persist damage:", err?.message)
     );
+  }
+
+  // Ar žaidėjas pakankamai arti boso konkrečios atakos/ability range'ui
+  private inBossRange(player: RaidPlayer, range: number): boolean {
+    return Math.abs(BOSS_HIT_X - player.x) <= range;
   }
 
   // ── Boso pralaimėjimo apdorojimas (bendras handleAttack + handleAbility) ──────
