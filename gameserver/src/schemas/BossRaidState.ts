@@ -24,6 +24,7 @@ export class RaidPlayer extends Schema {
   @type("number")  maxHp: number = 100;        // maksimali HP (pagal klasę)
   @type("boolean") blocking: boolean = false;  // ar laiko block (gina nuo boso atakos)
   @type("number")  defendReduction: number = 0; // pasyvi armor redukcija (0..1)
+  @type("number")  reviveSeconds: number = 0;  // kiek sek liko iki revive (nokautavus; death overlay)
 
   // Server-only — nesinchronizuojama su klientais
   lastAttackAt: number = 0;

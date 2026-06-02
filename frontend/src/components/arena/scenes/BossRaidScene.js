@@ -90,7 +90,10 @@ const BOSS_ANIM_DEFS = {
 };
 
 const BOSS_X         = 610;
-const BOSS_Y         = FLOOR_Y;
+// Bosą nuleidžiam žemiau FLOOR_Y, kad kojos sutaptų su žaidėjo grindimis
+// (žaidėjas stovi FLOOR_Y + FOOT_OFFSET; wartotaur kadras turi tuščio ploto apačioj).
+const BOSS_GROUND_OFFSET = 35;
+const BOSS_Y         = FLOOR_Y + BOSS_GROUND_OFFSET;
 const PLAYER_START_X = 90;
 const PLAYER_STOP_X  = 470; // kiek dešinėn galima nueiti — arčiau boso (BOSS_X=610)
 const PLAYER_SPEED   = MOVE_SPEED_PX_S; // px/sec — bendras su Arena (combatTuning)

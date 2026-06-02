@@ -34,6 +34,11 @@ const STATE = {
 // Group A: boso atakos žala pagal fazę gyvena boss_definitions.json (žr. ../shared/bosses).
 const REVIVE_MS = 60000; // 1 min — kiek laiko nokautuotas žaidėjas atsigauna
 
+// Nokautuotų žaidėjų revive laikas PAGAL userId — MODULE-level (gyvena per visus room'us
+// šiame gameserver procese), kad išėjus/grįžus (net solo, kai room'as disposinasi)
+// death timer'is nepasiresetintų (anti-exploit). { userId: reviveAt ms }
+const DOWNED_UNTIL = new Map<string, number>();
+
 const ATTACK_STATE_MS = 400; // kiek laiko žaidėjas lieka "attacking" po smūgio
 const HIT_STATE_MS    = 500; // kiek laiko žaidėjas lieka "hit" kai bosas pataiko
 const SIM_TICK_MS     = 100; // kas kiek tikriname ar transient būsenos pasibaigė
@@ -173,6 +178,18 @@ export class BossRaidRoom extends Room<BossRaidState> {
     p.defendReduction = Number(auth?.defend_reduction ?? 0) || 0;
     // move_speed json'e yra units/tick (Arena 66ms tick); px/s = units * (1000/66)
     p.moveSpeed = Math.round(classMoveSpeed(p.characterClass) * (1000 / 66));
+
+    // Anti-exploit: jei žaidėjas buvo nokautuotas ir išėjo — grįžęs lieka nokautuotas
+    // su LIKUSIU laiku (negali apeiti death timer'io išėjęs/atėjęs).
+    const reviveAt = DOWNED_UNTIL.get(p.userId);
+    if (reviveAt && Date.now() < reviveAt) {
+      p.hp            = 0;
+      p.state         = STATE.DOWNED;
+      p.stateUntil    = reviveAt;
+      p.reviveSeconds = Math.ceil((reviveAt - Date.now()) / 1000);
+    } else if (reviveAt) {
+      DOWNED_UNTIL.delete(p.userId); // revive laikas praėjo — gyvas
+    }
 
     this.state.players.set(client.sessionId, p);
     this.state.playerCount = this.state.players.size;
@@ -363,7 +380,11 @@ export class BossRaidRoom extends Room<BossRaidState> {
     this.state.players.forEach((p) => {
       if (p.state === STATE.DEAD) return; // dead yra terminalinė
       if (p.stateUntil > 0 && now >= p.stateUntil && p.state !== STATE.IDLE) {
-        if (p.state === STATE.DOWNED) p.hp = p.maxHp; // revive — atstatom HP
+        if (p.state === STATE.DOWNED) {
+          p.hp = p.maxHp;            // revive — atstatom HP
+          p.reviveSeconds = 0;
+          DOWNED_UNTIL.delete(p.userId);
+        }
         p.state      = STATE.IDLE;
         p.stateUntil = 0;
       }
@@ -415,10 +436,13 @@ export class BossRaidRoom extends Room<BossRaidState> {
         p.hp = Math.max(0, p.hp - dmg);
 
         if (p.hp <= 0) {
-          // Nokautas — atsigauna po REVIVE_MS (tick() atstato HP)
-          p.state      = STATE.DOWNED;
-          p.stateUntil = now + REVIVE_MS;
-          p.blocking   = false;
+          // Nokautas — atsigauna po REVIVE_MS (tick() atstato HP).
+          // downedUntil saugo revive laiką pagal userId → persist'ina per leave/rejoin.
+          p.state         = STATE.DOWNED;
+          p.stateUntil    = now + REVIVE_MS;
+          p.reviveSeconds = Math.ceil(REVIVE_MS / 1000);
+          p.blocking      = false;
+          DOWNED_UNTIL.set(p.userId, p.stateUntil);
         } else if (!blocked) {
           p.state      = STATE.HIT;
           p.stateUntil = now + HIT_STATE_MS;

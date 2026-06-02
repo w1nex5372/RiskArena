@@ -70,6 +70,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const itemAbilityCdTimer = useRef(null);
   const raidInterval       = useRef(null);
   const respawnTimerRef    = useRef(null); // death overlay countdown interval
+  const myReviveRef        = useRef(RESPAWN_SECONDS); // likęs revive laikas (sync iš serverio)
   const containerRef       = useRef(null);
   const gameRef            = useRef(null);
   const sceneRef           = useRef(null);
@@ -222,6 +223,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
               sceneRef.current?.setMyVitals?.({
                 hp: player.hp, maxHp: player.maxHp, state: player.state, moveSpeed: player.moveSpeed,
               });
+              // Likęs revive laikas iš serverio (rejoin atveju < 60) — countdown'ui
+              myReviveRef.current = player.reviveSeconds || RESPAWN_SECONDS;
               // Reflect downed state into React → death overlay (serveris autoritetas)
               setMyDowned(player.state === 'downed');
             };
@@ -316,7 +319,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   useEffect(() => {
     clearInterval(respawnTimerRef.current);
     if (!myDowned) { setRespawnIn(0); return; }
-    setRespawnIn(RESPAWN_SECONDS);
+    // Pradedam nuo serverio likusio laiko (rejoin atveju < 60), ne visada 60
+    setRespawnIn(myReviveRef.current || RESPAWN_SECONDS);
     respawnTimerRef.current = setInterval(() => {
       setRespawnIn((s) => {
         if (s <= 1) { clearInterval(respawnTimerRef.current); return 0; }
