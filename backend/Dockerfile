@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend /app/backend
 COPY tools /app/tools
 COPY shared /app/shared
+COPY frontend/public/items /app/frontend/public/items
 
 WORKDIR /app/backend
 ENV RISKARENA_ROOT=/app
