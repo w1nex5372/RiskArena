@@ -436,6 +436,16 @@ export default class BossRaidScene extends Phaser.Scene {
     }
   }
 
+  // Knockback — kai bosas pataiko be block'o, lokaliai stumiame žaidėją ATGAL nuo boso.
+  // Bosas dešinėj (BOSS_X), tad stumiame KAIRĖN. Movement čia client-authoritative, todėl
+  // pakanka pakeisti _myPlayerX — update() per-frame sync nusiųs naują poziciją serveriui.
+  knockbackMyPlayer(px = 40) {
+    if (this._downed) return;
+    this._myPlayerX = Math.max(30, this._myPlayerX - px);
+    // Subtilus "hurt" camera shake — tik jei kamera egzistuoja
+    if (this.cameras?.main) this.cameras.main.shake(120, 0.004);
+  }
+
   // Piešia/atnaujina mano žaidėjo skydą kas kadrą (portas iš Arena _syncBlockGuard)
   _syncMyBlockGuard() {
     const p = this._myPlayer;

@@ -32,7 +32,7 @@ const STATE = {
 } as const;
 
 // Group A: boso atakos žala pagal fazę gyvena boss_definitions.json (žr. ../shared/bosses).
-const REVIVE_MS = 5000; // kiek laiko nokautuotas žaidėjas atsigauna
+const REVIVE_MS = 60000; // 1 min — kiek laiko nokautuotas žaidėjas atsigauna
 
 const ATTACK_STATE_MS = 400; // kiek laiko žaidėjas lieka "attacking" po smūgio
 const HIT_STATE_MS    = 500; // kiek laiko žaidėjas lieka "hit" kai bosas pataiko

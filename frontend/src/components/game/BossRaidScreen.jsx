@@ -17,6 +17,7 @@ const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
 })();
 
 const ATTACK_ANIM_LOCK = 600;  // ms — button locked only during animation
+const RESPAWN_SECONDS  = 60;   // must match gameserver REVIVE_MS (BossRaidRoom.ts)
 
 const fmt = (secs) => {
   if (secs == null) return '--:--';
@@ -53,6 +54,9 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [lootResult,      setLootResult]      = useState(null);
   const [raidEnded,       setRaidEnded]       = useState(false);
   const [damageFeed,      setDamageFeed]      = useState([]);
+  // Death overlay — local player nokautuotas (serveris yra autoritetas; countdown kosmetinis)
+  const [myDowned,        setMyDowned]        = useState(false);
+  const [respawnIn,       setRespawnIn]       = useState(0);
 
   // Equipment state — mirrors RealTimeArenaScreen
   const [equipped,         setEquipped]         = useState({ weapon: null, armor: null, ability: null });
@@ -65,6 +69,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const abilityCdTimer     = useRef(null);
   const itemAbilityCdTimer = useRef(null);
   const raidInterval       = useRef(null);
+  const respawnTimerRef    = useRef(null); // death overlay countdown interval
   const containerRef       = useRef(null);
   const gameRef            = useRef(null);
   const sceneRef           = useRef(null);
@@ -213,9 +218,13 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         room.state.players.onAdd((player, sessionId) => {
           if (sessionId === room.sessionId) {
             // My own vitals (Group A) — HP bar + downed state from server
-            const pushMine = () => sceneRef.current?.setMyVitals?.({
-              hp: player.hp, maxHp: player.maxHp, state: player.state, moveSpeed: player.moveSpeed,
-            });
+            const pushMine = () => {
+              sceneRef.current?.setMyVitals?.({
+                hp: player.hp, maxHp: player.maxHp, state: player.state, moveSpeed: player.moveSpeed,
+              });
+              // Reflect downed state into React → death overlay (serveris autoritetas)
+              setMyDowned(player.state === 'downed');
+            };
             pushMine();
             player.onChange(pushMine);
             return;
@@ -231,6 +240,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         // boss_attack — server decides who gets hit; play the swing in sync
         room.onMessage('boss_attack', (data) => {
           sceneRef.current?.onBossAttack(data);
+          // Knockback: stumiame TIK jei mane pataikė be block'o ir tai nenokautavo
+          // (block apsaugo nuo knockback; nokautas nedaro dvigubo postūmio).
+          const mine = (data.targets || []).find((t) => t.sid === room.sessionId);
+          if (mine && !mine.blocked && !mine.downed) sceneRef.current?.knockbackMyPlayer?.();
         });
 
         // damage_dealt — sent only to the attacker by BossRaidRoom.ts
@@ -295,6 +308,23 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       clearInterval(raidInterval.current);
     };
   }, [socket]); // eslint-disable-line
+
+  // ── Death overlay countdown — kosmetinis (serveris atgaivina po REVIVE_MS) ──
+  // Kai myDowned tampa true, skaičiuojame respawnIn nuo RESPAWN_SECONDS iki 0.
+  // Overlay dingsta kai serveris perjungia state atgal į idle (myDowned=false),
+  // nepriklausomai nuo šio lokalaus laikmačio.
+  useEffect(() => {
+    clearInterval(respawnTimerRef.current);
+    if (!myDowned) { setRespawnIn(0); return; }
+    setRespawnIn(RESPAWN_SECONDS);
+    respawnTimerRef.current = setInterval(() => {
+      setRespawnIn((s) => {
+        if (s <= 1) { clearInterval(respawnTimerRef.current); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(respawnTimerRef.current);
+  }, [myDowned]);
 
   const fetchBossState = async () => {
     setLoadError(null);
@@ -744,6 +774,25 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           }}>
             <span style={{ fontSize: 10, color: '#64748b' }}>MY DMG </span>
             <span style={{ fontSize: 13, fontWeight: 900, color: '#c9a84c' }}>🔥 {myDamage.toLocaleString()}</span>
+          </div>
+        )}
+
+        {/* Death overlay — kai mane nokautavo (serveris autoritetas; countdown kosmetinis) */}
+        {myDowned && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 50,
+            background: 'rgba(0,0,0,0.72)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            pointerEvents: 'auto', // vizualiai blokuoja input kol nokautuotas (dingsta po revive)
+          }}>
+            <div style={{
+              fontSize: 44, fontWeight: 900, letterSpacing: 4,
+              fontFamily: 'monospace', color: '#ef4444',
+              textShadow: '0 0 18px rgba(139,0,0,0.7)',
+            }}>YOU DIED</div>
+            <div style={{ marginTop: 12, fontSize: 14, fontWeight: 700, color: '#64748b' }}>
+              Respawn in <span style={{ color: '#e8e0d0', fontWeight: 900 }}>{respawnIn}s</span>
+            </div>
           </div>
         )}
 
