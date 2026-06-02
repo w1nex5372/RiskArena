@@ -68,12 +68,17 @@ def normalize_build(build: dict[str, Any], catalog: dict[str, Any]) -> dict[str,
 
     weapon_cfg = build.get("weapon") or {"enabled": False}
     weapon_layers: list[dict[str, Any]] = []
+    weapon_rows: dict[str, Any] | None = None
+    weapon_path: str | None = None
     if weapon_cfg.get("enabled"):
         weapon_id = weapon_cfg.get("asset")
         weapon = (catalog.get("weapons") or {}).get(weapon_id)
         if not weapon:
             raise ValueError(f"Weapon {weapon_id} is not supported by the v1 LPC bake pipeline")
         weapon_layers = list(weapon.get("layers") or [])
+        if weapon.get("weaponRows") and weapon.get("weapon"):
+            weapon_rows = dict(weapon.get("weaponRows") or {})
+            weapon_path = str(weapon.get("weapon") or "")
 
     return {
         "schemaVersion": "character_build.v1",
@@ -81,6 +86,8 @@ def normalize_build(build: dict[str, Any], catalog: dict[str, Any]) -> dict[str,
         "bodyType": body_type,
         "layers": normalized_layers,
         "weaponLayers": weapon_layers,
+        "weaponRows": weapon_rows,
+        "weapon": weapon_path,
     }
 
 
@@ -107,6 +114,9 @@ def generate_user_sheet(
         "recipe": {"layers": normalized["layers"]},
         "weaponLayers": normalized["weaponLayers"],
     }
+    if normalized.get("weaponRows") and normalized.get("weapon"):
+        cfg["weaponRows"] = normalized["weaponRows"]
+        cfg["weapon"] = normalized["weapon"]
     manifest = {
         "universalLpcRoot": catalog["universalLpcRoot"],
         "sheet": {"width": int(sheet["width"]), "height": int(sheet["height"])},

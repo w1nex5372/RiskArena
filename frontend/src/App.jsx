@@ -2815,7 +2815,12 @@ function App() {
                 rooms={rooms}
                 onEnterBattle={enterArenaBattle}
                 onEnterRealTime={() => setInRealTimeArena(true)}
-                onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
+                onClassChange={(cls) => setUser((prev) => prev ? {
+                  ...prev,
+                  class_name: cls,
+                  battle_spritesheet_path: '',
+                  battle_spritesheet_hash: '',
+                } : prev)}
                 onNavigateInventory={() => setActiveTab('inventory')}
                 onEnergySpent={(energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev)}
               />
@@ -2833,7 +2838,12 @@ function App() {
                   setWinnerData(null);
                   setInRealTimeArena(true);
                 }}
-                onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
+                onClassChange={(cls) => setUser((prev) => prev ? {
+                  ...prev,
+                  class_name: cls,
+                  battle_spritesheet_path: '',
+                  battle_spritesheet_hash: '',
+                } : prev)}
                 onNavigateInventory={() => setActiveTab('inventory')}
                 onEnergySpent={(energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev)}
               />
@@ -2873,7 +2883,12 @@ function App() {
             {activeTab === 'inventory' && !inLobby && !showWinnerScreen && !gameInProgress && (
               <InventoryScreen
                 user={user}
-                onClassChange={(cls) => setUser((prev) => prev ? { ...prev, class_name: cls } : prev)}
+                onClassChange={(cls) => setUser((prev) => prev ? {
+                  ...prev,
+                  class_name: cls,
+                  battle_spritesheet_path: '',
+                  battle_spritesheet_hash: '',
+                } : prev)}
                 onUserUpdate={(fields) => {
                   setUser((prev) => {
                     if (!prev) return prev;

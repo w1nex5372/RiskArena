@@ -467,7 +467,11 @@ export class ArenaRoom extends Room<ArenaState> {
           });
         }
       });
-      this.broadcast("ability_used", { sessionId, cls, abilityKey, fromX: player.x, fromY: player.y, toX: targetX, toY: targetY, hit, brokeBlock });
+      this.broadcast("ability_used", {
+        sessionId, cls, abilityKey, slot,
+        fromX: player.x, fromY: player.y, toX: targetX, toY: targetY,
+        hit, brokeBlock, damage, stunMs, range, cooldownMs,
+      });
       return true;
     }
 
@@ -476,12 +480,16 @@ export class ArenaRoom extends Room<ArenaState> {
       const damage = abilityNumber(meta, "damage", BASH_DMG);
       const stunMs = abilityNumber(meta, "stun_ms", BASH_STUN_MS);
       let hit = false;
+      let targetX = player.x;
+      let targetY = player.y;
       this.state.players.forEach((opp, oppSid) => {
         if (oppSid === sessionId || opp.state === "dead") return;
         const dist  = Math.abs(player.x - opp.x);
         const yDist = Math.abs(player.y - opp.y);
         if (dist <= range && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
           hit = true;
+          targetX = opp.x;
+          targetY = opp.y;
           opp.stunUntil  = now + stunMs;
           opp.isStunned  = true;
           this.dealDamage(sessionId, opp, oppSid, damage + player.abilityBonus, now, {
@@ -489,7 +497,11 @@ export class ArenaRoom extends Room<ArenaState> {
           });
         }
       });
-      this.broadcast("ability_used", { sessionId, cls, abilityKey, fromX: player.x, fromY: player.y, hit });
+      this.broadcast("ability_used", {
+        sessionId, cls, abilityKey, slot,
+        fromX: player.x, fromY: player.y, toX: targetX, toY: targetY,
+        hit, damage, stunMs, range, cooldownMs,
+      });
       return true;
     }
 
@@ -501,9 +513,10 @@ export class ArenaRoom extends Room<ArenaState> {
         const yDist  = Math.abs(player.y - opp.y);
         const dodged = !opp.isGrounded && yDist > 60;
         this.broadcast("ability_used", {
-          sessionId, cls, abilityKey,
+          sessionId, cls, abilityKey, slot,
           fromX: player.x, fromY: player.y,
           toX: opp.x, toY: opp.y, hit: !dodged,
+          damage, knockback, range: abilityNumber(meta, "range", ARENA_WIDTH), cooldownMs,
         });
         if (!dodged) {
           const origX = opp.x;
@@ -531,8 +544,10 @@ export class ArenaRoom extends Room<ArenaState> {
         const dir  = opp.x > player.x ? 1 : -1;
         const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * offset));
         this.broadcast("ability_used", {
-          sessionId, cls, abilityKey,
+          sessionId, cls, abilityKey, slot,
           fromX: player.x, fromY: player.y, toX: newX, toY: player.y, hit: true,
+          mode: "target", targetSid: oppSid, targetX: opp.x, targetY: opp.y,
+          backstabReady: true, range, offset, cooldownMs,
         });
         player.x = newX;
         player.facingRight = player.x < opp.x;
@@ -542,8 +557,9 @@ export class ArenaRoom extends Room<ArenaState> {
         const dir = player.facingRight ? 1 : -1;
         const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, player.x + dir * offset));
         this.broadcast("ability_used", {
-          sessionId, cls, abilityKey,
+          sessionId, cls, abilityKey, slot,
           fromX: player.x, fromY: player.y, toX: newX, toY: player.y, hit: true,
+          mode: "dash", backstabReady: false, range, offset, cooldownMs,
         });
         player.x = newX;
       }

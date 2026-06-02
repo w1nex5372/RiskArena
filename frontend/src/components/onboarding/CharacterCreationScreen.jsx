@@ -322,6 +322,8 @@ export default function CharacterCreationScreen({ user, onComplete }) {
         character_build_json: response.data?.character_build_json || characterBuild,
         character_spritesheet_path: response.data?.character_spritesheet_path || '',
         character_spritesheet_hash: response.data?.character_spritesheet_hash || '',
+        battle_spritesheet_path: response.data?.battle_spritesheet_path || '',
+        battle_spritesheet_hash: response.data?.battle_spritesheet_hash || '',
       });
     } catch (err) {
       setError(err?.response?.data?.detail || 'Could not create character.');

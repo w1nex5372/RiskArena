@@ -285,7 +285,24 @@
       ]
     },
     "weapon.staff.mage_staff": {
-      "layers": []
+      "layers": [],
+      "weapon": "frontend/public/items/mage_staff.png",
+      "weaponRows": {
+        "walk": {
+          "bodyRow": 11,
+          "weaponRow": 11,
+          "frames": 9,
+          "xOff": 0,
+          "yOff": 0
+        },
+        "attack": {
+          "bodyRow": 15,
+          "weaponRow": 64,
+          "weaponCols": [1, 1, 4, 4, 7, 7],
+          "xOff": 0,
+          "yOff": 0
+        }
+      }
     }
   }
 }

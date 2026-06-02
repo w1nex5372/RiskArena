@@ -149,7 +149,16 @@ export function showFireball(scene, { fromX, fromY, toX, toY, hit = true, abilit
 }
 
 // ── Rogue: Blink ──────────────────────────────────────────────────────────────
-export function showBlink(scene, { fromX, fromY, toX, abilityKey = '' } = {}) {
+export function showBlink(scene, {
+  fromX,
+  fromY,
+  toX,
+  targetX,
+  targetY,
+  mode = 'dash',
+  backstabReady = false,
+  abilityKey = '',
+} = {}) {
   const variant = {
     rogue_nightfall: { label: 'NIGHTFALL!', color: '#a855f7', fill: 0xa855f7, tints: [0xa855f7, 0x6366f1, 0xf0abfc], qty: 22, scale: 1.9 },
     rogue_shadowstep: { label: 'SHADOWSTEP!', color: '#38bdf8', fill: 0x38bdf8, tints: [0x38bdf8, 0x0f172a, 0xa5f3fc], qty: 16, scale: 1.6 },
@@ -157,11 +166,32 @@ export function showBlink(scene, { fromX, fromY, toX, abilityKey = '' } = {}) {
     rogue_default: { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 },
   }[abilityKey] || { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 };
   const centerY = fromY - SPRITE_HEIGHT / 2;
-  const lbl = scene.add.text(toX, fromY - 70, variant.label, {
-    fontSize: '20px', fontFamily: 'monospace', fontStyle: 'bold',
-    color: variant.color, stroke: '#000', strokeThickness: 4,
+  const arrivalLabel = backstabReady ? 'BACKSTAB READY' : mode === 'dash' ? 'DASH' : variant.label;
+  const labelColor = backstabReady ? '#f472b6' : variant.color;
+  const lbl = scene.add.text(toX, fromY - 70, arrivalLabel, {
+    fontSize: backstabReady ? '17px' : '20px', fontFamily: 'monospace', fontStyle: 'bold',
+    color: labelColor, stroke: '#000', strokeThickness: 4,
   }).setOrigin(0.5).setDepth(13);
   scene.tweens.add({ targets: lbl, y: fromY - 110, alpha: 0, duration: 600, ease: 'Power1', onComplete: () => { if (lbl.active) lbl.destroy(); } });
+
+  const dashLine = scene.add.graphics().setDepth(6);
+  dashLine.lineStyle(4, variant.fill, 0.45);
+  dashLine.beginPath();
+  dashLine.moveTo(fromX, centerY);
+  dashLine.lineTo(toX, centerY);
+  dashLine.strokePath();
+  dashLine.lineStyle(1.5, 0xffffff, 0.42);
+  dashLine.beginPath();
+  dashLine.moveTo(fromX, centerY - 8);
+  dashLine.lineTo(toX, centerY - 8);
+  dashLine.strokePath();
+  scene.tweens.add({
+    targets: dashLine,
+    alpha: 0,
+    duration: 260,
+    ease: 'Power2',
+    onComplete: () => { if (dashLine.active) dashLine.destroy(); },
+  });
 
   const hasSmoke = scene.textures.exists('smoke_particle');
   if (hasSmoke) {
@@ -190,5 +220,30 @@ export function showBlink(scene, { fromX, fromY, toX, abilityKey = '' } = {}) {
     }
     const flash = scene.add.circle(toX, fromY - 30, 22, variant.fill, 0.8).setDepth(6);
     scene.tweens.add({ targets: flash, scaleX: 4.5, scaleY: 4.5, alpha: 0, duration: 320, ease: 'Power2', onComplete: () => { if (flash.active) flash.destroy(); } });
+
+    if (backstabReady && Number.isFinite(Number(targetX))) {
+      const markX = Number(targetX);
+      const markY = Number.isFinite(Number(targetY)) ? Number(targetY) - SPRITE_HEIGHT / 2 : centerY;
+      const mark = scene.add.graphics().setDepth(10);
+      mark.lineStyle(3, 0xf472b6, 0.95);
+      mark.strokeCircle(markX, markY, 28);
+      mark.lineStyle(2, 0xffffff, 0.75);
+      mark.beginPath();
+      mark.moveTo(markX - 18, markY - 8);
+      mark.lineTo(markX + 18, markY + 8);
+      mark.moveTo(markX + 18, markY - 8);
+      mark.lineTo(markX - 18, markY + 8);
+      mark.strokePath();
+      scene.tweens.add({
+        targets: mark,
+        alpha: 0,
+        scaleX: 1.7,
+        scaleY: 1.7,
+        duration: 420,
+        ease: 'Power2',
+        onComplete: () => { if (mark.active) mark.destroy(); },
+      });
+      scene._showCombatText?.(markX, markY - 36, 'BACKSTAB', '#f472b6', '15px');
+    }
   });
 }

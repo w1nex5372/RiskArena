@@ -1849,6 +1849,28 @@ export default class BattleScene extends Phaser.Scene {
     const color  = isBackstab ? '#f472b6' : isBig ? '#ff2200' : '#ef4444';
     const size   = isBackstab ? '24px' : isBig ? '28px' : '20px';
     const text = isBackstab ? `-${damage} BACKSTAB` : `-${damage}`;
+    if (isBackstab) {
+      const ring = this.add.graphics().setDepth(6);
+      ring.lineStyle(3, 0xf472b6, 0.95);
+      ring.strokeCircle(gameX, gameY + 16, 24);
+      ring.lineStyle(1.5, 0xffffff, 0.7);
+      ring.beginPath();
+      ring.moveTo(gameX - 18, gameY + 6);
+      ring.lineTo(gameX + 18, gameY + 26);
+      ring.moveTo(gameX + 18, gameY + 6);
+      ring.lineTo(gameX - 18, gameY + 26);
+      ring.strokePath();
+      this.tweens.add({
+        targets: ring,
+        alpha: 0,
+        scaleX: 1.8,
+        scaleY: 1.8,
+        duration: 360,
+        ease: 'Power2',
+        onComplete: () => { if (ring.active) ring.destroy(); },
+      });
+      this.cameras.main.shake(120, 0.005);
+    }
     const txt = this.add.text(gameX, gameY, text, {
       fontSize: size, fontFamily: 'monospace',
       color, fontStyle: 'bold',
@@ -1933,9 +1955,16 @@ export default class BattleScene extends Phaser.Scene {
       }
       return;
     }
-    if (d.cls === 'warrior') this._showBashEffect(d.fromX, d.fromY, d.hit, abilityKey);
+    if (d.cls === 'warrior') this._showBashEffect(d.toX ?? d.fromX, d.toY ?? d.fromY, d.hit, abilityKey);
     if (d.cls === 'mage')    this._showFireballEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit, abilityKey);
-    if (d.cls === 'rogue')   this._showBlinkEffect(d.fromX, d.fromY, d.toX, abilityKey);
+    if (d.cls === 'rogue') {
+      this._showBlinkEffect(d.fromX, d.fromY, d.toX, abilityKey, {
+        mode: d.mode,
+        targetX: d.targetX,
+        targetY: d.targetY,
+        backstabReady: d.backstabReady,
+      });
+    }
   }
 
   _showCombatText(x, y, label, color = '#f8fafc', size = '16px') {
@@ -1971,8 +2000,8 @@ export default class BattleScene extends Phaser.Scene {
     showFireball(this, { fromX, fromY, toX, toY, hit, abilityKey });
   }
 
-  _showBlinkEffect(fromX, fromY, toX, abilityKey = '') {
-    showBlink(this, { fromX, fromY, toX, abilityKey });
+  _showBlinkEffect(fromX, fromY, toX, abilityKey = '', extra = {}) {
+    showBlink(this, { fromX, fromY, toX, abilityKey, ...extra });
   }
 
   update(time) {

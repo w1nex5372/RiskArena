@@ -3481,11 +3481,14 @@ async def set_my_class(body: ClassUpdateBody, http_request: Request):
         raise HTTPException(status_code=404, detail="User not found")
     character_build = _character_build_for_user_payload(user_doc)
     preview_fields = await _character_preview_fields_for_user(user_doc)
+    battle_fields = await _runtime_character_sprite_payload_for_user(user_id)
     return {
         "id": user_doc.get("id"),
         "class_name": user_doc.get("class_name"),
         "character_build_json": character_build,
         **preview_fields,
+        "battle_spritesheet_path": battle_fields.get("battle_spritesheet_path", ""),
+        "battle_spritesheet_hash": battle_fields.get("battle_spritesheet_hash", ""),
         "message": f"Class updated to {class_name}",
     }
 
@@ -3532,10 +3535,13 @@ async def update_my_character_build(body: CharacterBuildUpdateBody, http_request
             user_id, class_name, json.dumps(validated),
         )
     preview_fields = await _character_preview_spritesheet_for_user(user_id, class_name, validated)
+    battle_fields = await _runtime_character_sprite_payload_for_user(user_id)
     return {
         "class_name": class_name,
         "character_build_json": validated,
         **preview_fields,
+        "battle_spritesheet_path": battle_fields.get("battle_spritesheet_path", ""),
+        "battle_spritesheet_hash": battle_fields.get("battle_spritesheet_hash", ""),
         "message": "Character build updated",
     }
 
@@ -3815,11 +3821,11 @@ async def _battle_spritesheet_for_loadout(
         "weapon": weapon.get("lpc_visual"),
         "armor": armor.get("lpc_visual"),
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:10]
-    sheet_hash = hashlib.sha1(f"lpc-v3:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
+    sheet_hash = hashlib.sha1(f"lpc-v4:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
     generated_path = await _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash, enchant_level=enchant)
     return {
         "path": generated_path or "",
-        "hash": f"lpc-v3:{sheet_hash}",
+        "hash": f"lpc-v4:{sheet_hash}",
     }
 
 
