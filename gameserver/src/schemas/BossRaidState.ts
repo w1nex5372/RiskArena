@@ -26,6 +26,13 @@ export class RaidPlayer extends Schema {
   @type("number")  defendReduction: number = 0; // pasyvi armor redukcija (0..1)
   @type("number")  reviveSeconds: number = 0;  // kiek sek liko iki revive (nokautavus; death overlay)
 
+  // Group A: GUARD-METER (block stamina) — veidrodis Arena guard sistemai.
+  // Parametrai (max/drain/regen/break) gyvena battle_classes.json (classGuard).
+  // Sinchronizuojama su klientais — kad UI rodytų guard bar'ą ir "GUARD BROKEN".
+  @type("number")  guard: number = 100;        // dabartinė block stamina
+  @type("number")  maxGuard: number = 100;     // maksimali guard (pagal klasę)
+  @type("boolean") guardBroken: boolean = false; // true kol atsigauna po guard break'o
+
   // Server-only — nesinchronizuojama su klientais
   lastAttackAt: number = 0;
   // Per-ability cooldown PAGAL KEY (klasės ir item ability turi atskirus cooldown'us).
@@ -35,6 +42,12 @@ export class RaidPlayer extends Schema {
   stateUntil: number = 0;
   // Paskutinio "move" žinutės laikas (server-side throttle, anti-spam)
   lastMoveAt: number = 0;
+
+  // Guard server-only laukai (veidrodis Arena Player guard laukams) — nesinchronizuojami.
+  // ATSKIRAS nuo stateUntil — guard stun gyvuoja nepriklausomai nuo transient būsenų.
+  guardBrokenUntil: number = 0;        // kada guardBroken nusiima (Date.now() ms)
+  guardRegenPausedUntil: number = 0;   // kada guard vėl gali regeneruotis (Date.now() ms)
+  stunUntil: number = 0;               // kada baigiasi guard-break stun (negali veikti)
 }
 
 // Pagrindinis raid'o state — vienas egzempliorius visam room'ui

@@ -43,6 +43,11 @@ const ATTACK_STATE_MS = 400; // kiek laiko žaidėjas lieka "attacking" po smūg
 const HIT_STATE_MS    = 500; // kiek laiko žaidėjas lieka "hit" kai bosas pataiko
 const SIM_TICK_MS     = 100; // kas kiek tikriname ar transient būsenos pasibaigė
 
+// Guard drain/regen reikšmės (battle_classes.json) yra PER-66ms-TICK (Arena tick).
+// BossRaid tick'as = 100ms, todėl per-tick reikšmes mastelio koeficientu suvienodiname
+// su Arena RATE (per sekundę vienodas drain/regen, nepriklausomai nuo tick dažnio).
+const GUARD_TICK_SCALE = SIM_TICK_MS / 66; // ≈1.515
+
 // Boso atakos dažnis [minMs, maxMs], max targets ir "hit" pozicija X gyvena
 // boss_definitions.json (žr. ../shared/bosses). Žaidėjai juda iki MOVE_MAX_X (470);
 // bosas dešinėj (~500). Melee (bash range 120, warrior basic 86) reikia prieiti arti;
@@ -175,6 +180,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
     // Group A: HP + greitis pagal klasę (iš battle_classes.json — vienas šaltinis su Arena)
     p.maxHp = classMaxHp(p.characterClass);
     p.hp    = p.maxHp;
+    // Group A: GUARD-METER pagal klasę (tas pats classGuard kaip Arena onJoin)
+    p.maxGuard = classGuard(p.characterClass).max;
+    p.guard    = p.maxGuard;
     p.defendReduction = Number(auth?.defend_reduction ?? 0) || 0;
     // move_speed json'e yra units/tick (Arena 66ms tick); px/s = units * (1000/66)
     p.moveSpeed = Math.round(classMoveSpeed(p.characterClass) * (1000 / 66));
@@ -219,6 +227,8 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
     // Server-side cooldown — klientas negali apgauti siųsdamas žinutes greičiau
     const now = Date.now();
+    // Guard-break stun — kol stunUntil nepraėjo, žaidėjas negali atakuoti (kaip Arena)
+    if (now < player.stunUntil) return;
     if (now - player.lastAttackAt < ATTACK_COOLDOWN_MS) return;
     player.lastAttackAt = now;
 
@@ -273,6 +283,8 @@ export class BossRaidRoom extends Room<BossRaidState> {
     if (!player) return;
     // Negali naudoti ability kai nokautuotas arba laikant block (kaip handleAttack)
     if (player.state === STATE.DOWNED || player.blocking) return;
+    // Guard-break stun — kol stunUntil nepraėjo, ability irgi užblokuotas (kaip Arena)
+    if (Date.now() < player.stunUntil) return;
 
     // Ability key — tuščias => klasės default. Validuojame priklausomybę klasei.
     let abilityKey = String(msg?.abilityKey || "");
@@ -368,7 +380,13 @@ export class BossRaidRoom extends Room<BossRaidState> {
   private handleBlock(client: Client, msg: any) {
     const p = this.state.players.get(client.sessionId);
     if (!p || p.state === STATE.DOWNED || p.state === STATE.DEAD) return;
-    p.blocking = !!msg?.down;
+    // Atleidimą (down:false) leidžiame visada; pakelti block galima tik kai guard'as
+    // turi staminos ir nesulaužytas (veidrodis Arena canBlock sąlygai).
+    if (msg?.down) {
+      p.blocking = p.guard > 0 && !p.guardBroken;
+    } else {
+      p.blocking = false;
+    }
   }
 
   // ── Simulation tick — transient būsenų gyvavimo laikas ───────────────────────
@@ -379,6 +397,8 @@ export class BossRaidRoom extends Room<BossRaidState> {
     const now = Date.now();
     this.state.players.forEach((p) => {
       if (p.state === STATE.DEAD) return; // dead yra terminalinė
+
+      // ── Transient būsenų gyvavimo laikas (be pakeitimų) ──────────────────
       if (p.stateUntil > 0 && now >= p.stateUntil && p.state !== STATE.IDLE) {
         if (p.state === STATE.DOWNED) {
           p.hp = p.maxHp;            // revive — atstatom HP
@@ -388,7 +408,50 @@ export class BossRaidRoom extends Room<BossRaidState> {
         p.state      = STATE.IDLE;
         p.stateUntil = 0;
       }
+
+      // ── GUARD-METER tikėjimas (veidrodis Arena updateGuard + hold drain) ──
+      this.updateGuard(p, now);
     });
+  }
+
+  // Per-tick guard logika — drain laikant block, regen kai neblokuoja.
+  // Veidrodis Arena tick'o guard daliai + updateGuard(); per-tick reikšmės
+  // mastelio koeficientu (GUARD_TICK_SCALE) suvienodintos su Arena RATE.
+  private updateGuard(p: RaidPlayer, now: number) {
+    const g = classGuard(p.characterClass);
+    p.maxGuard = g.max;
+    p.guard = Math.min(p.guard, p.maxGuard);
+
+    // Guard break atsigavimas — nuimame guardBroken kai laikas praėjo
+    if (p.guardBroken && now >= p.guardBrokenUntil) {
+      p.guardBroken = false;
+    }
+
+    const downed = p.state === STATE.DOWNED;
+
+    if (p.blocking && !p.guardBroken && !downed) {
+      // Drain laikant block (scaled į BossRaid tick'ą)
+      p.guard = Math.max(0, p.guard - g.hold_drain_per_tick * GUARD_TICK_SCALE);
+      p.guardRegenPausedUntil = now + g.regen_delay_ms;
+      if (p.guard <= 0) {
+        this.breakGuard(p, now); // guard'as išseko laikant — break + stun
+      }
+    } else if (!p.guardBroken && !downed && now >= p.guardRegenPausedUntil) {
+      // Regen kai neblokuoja, nesulaužytas ir regen pauzė praėjo
+      p.guard = Math.min(p.maxGuard, p.guard + g.regen_per_tick * GUARD_TICK_SCALE);
+    }
+  }
+
+  // Guard break — guard'as nukrito iki 0. Veidrodis Arena breakGuard():
+  // nuleidžia skydą, įjungia stun ir atsigavimo laikmačius (iš battle_classes.json).
+  private breakGuard(p: RaidPlayer, now: number) {
+    const g = classGuard(p.characterClass);
+    p.guard                 = 0;
+    p.blocking              = false;
+    p.guardBroken           = true;
+    p.guardBrokenUntil      = now + g.break_recover_ms;
+    p.guardRegenPausedUntil = now + g.break_recover_ms + g.regen_delay_ms;
+    p.stunUntil             = now + g.break_stun_ms;
   }
 
   // ── Boso atakos ciklas ───────────────────────────────────────────────────────
@@ -424,14 +487,28 @@ export class BossRaidRoom extends Room<BossRaidState> {
       picked.forEach((sid) => {
         const p = this.state.players.get(sid);
         if (!p || p.state === STATE.DOWNED || p.state === STATE.DEAD) return;
+        const g = classGuard(p.characterClass); // per-klasę iš battle_classes.json
         // Group A: bosas visada dešinėj, tad block (laikant) gina nepriklausomai nuo
         // krypties — vengia "skydas rodomas bet neblokuoja". Block mažina žalą per
         // shared resolveDamage (kaip Arena), bet pilnai neatremia.
-        const blocked = p.blocking;
+        let blocked = p.blocking;
+
+        // GUARD-METER: blokuotas smūgis nukerta guard'ą pagal RAW boso žalą
+        // (prieš block redukciją), kaip Arena dealDamageAt. Jei guard'as šitame
+        // smūgyje sulūžta — guard break + smūgis tampa NEBLOKUOTAS (pilna žala).
+        if (blocked) {
+          p.guard = Math.max(0, p.guard - Math.max(1, Math.round(rawDmg * g.hit_drain_mult)));
+          p.guardRegenPausedUntil = now + g.regen_delay_ms;
+          if (p.guard <= 0) {
+            this.breakGuard(p, now);
+            blocked = false; // guard'as palūžo — žaidėjas gauna pilną žalą
+          }
+        }
+
         const dmg = resolveDamage(rawDmg, {
           blocked,
           defendReduction: p.defendReduction,
-          blockReduction: classGuard(p.characterClass).block_reduction, // per-klasę iš battle_classes.json
+          blockReduction: g.block_reduction,
         });
         p.hp = Math.max(0, p.hp - dmg);
 

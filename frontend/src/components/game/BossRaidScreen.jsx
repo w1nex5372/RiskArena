@@ -222,6 +222,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             const pushMine = () => {
               sceneRef.current?.setMyVitals?.({
                 hp: player.hp, maxHp: player.maxHp, state: player.state, moveSpeed: player.moveSpeed,
+                guard: player.guard, maxGuard: player.maxGuard, guardBroken: player.guardBroken,
               });
               // Likęs revive laikas iš serverio (rejoin atveju < 60) — countdown'ui
               myReviveRef.current = player.reviveSeconds || RESPAWN_SECONDS;

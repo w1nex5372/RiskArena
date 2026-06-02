@@ -100,6 +100,9 @@ const PLAYER_SPEED   = MOVE_SPEED_PX_S; // px/sec — bendras su Arena (combatTu
 
 const ATTACKER_SLOTS_X = [140, 210, 290, 370, 450];
 
+// GUARD bar vertikalus poslinkis nuo HP bar'o (plona juosta tiesiai po HP)
+const GUARD_BAR_DY = 9;
+
 // Generuoti charakteriai saugomi backend'e (/generated/...). Grąžiname RELATYVŲ kelią —
 // dev'e jį per proxy (:3000 → :8001) persiunčia same-origin, prod'e jis same-origin pats.
 // (Taip daro ir Arena BattleScene. Pridėjus ${BACKEND_URL} būtų cross-origin → CORS fail → fallback.)
@@ -149,6 +152,7 @@ export default class BossRaidScene extends Phaser.Scene {
     this._myBlocking      = false; // ar laikomas block mygtukas (rodo skydą)
     this._myBlockFx       = null;  // skydo grafika
     this._myBlockTween    = null;  // skydo pulsavimo tween
+    this._myGuardBroken   = false; // Group A: ar mano guard'as sulaužytas (iš serverio)
     this._downed          = false; // Group A: ar nokautuotas (serverio hp<=0) — negali veikti
 
     // --- Kiti žaidėjai (5 slots ekrano centre) ---
@@ -403,8 +407,8 @@ export default class BossRaidScene extends Phaser.Scene {
     this._myBlocking = !!down;
   }
 
-  // Group A: mano HP + downed būsena iš serverio. Atnaujina HP bar'ą ir nokauto vizualą.
-  setMyVitals({ hp, maxHp, state, moveSpeed } = {}) {
+  // Group A: mano HP + GUARD + downed būsena iš serverio. Atnaujina HP/GUARD bar'us ir nokauto vizualą.
+  setMyVitals({ hp, maxHp, state, moveSpeed, guard, maxGuard, guardBroken } = {}) {
     if (!this._sceneReady || !this._myPlayer) return;
     const p = this._myPlayer;
 
@@ -417,6 +421,22 @@ export default class BossRaidScene extends Phaser.Scene {
       const pct = Math.max(0, Math.min(1, hp / maxHp));
       p.hpBar.displayWidth = 56 * pct;
       p.hpBar.setFillStyle(pct > 0.5 ? 0x22c55e : pct > 0.25 ? 0xf59e0b : 0xef4444);
+    }
+
+    // GUARD bar — block stamina (mėlyna). Sulaužytas guard'as → raudonas + "GUARD BROKEN".
+    if (p.guardBar?.active && typeof guard === 'number' && maxGuard > 0) {
+      const gpct = Math.max(0, Math.min(1, guard / maxGuard));
+      p.guardBar.displayWidth = 56 * gpct;
+      p.guardBar.setFillStyle(guardBroken ? 0xef4444 : 0x3b82f6);
+    }
+
+    // guardBroken flip → trumpas "GUARD BROKEN" pranešimas + priverstinai nuleidžiam skydą
+    if (typeof guardBroken === 'boolean') {
+      if (guardBroken && !this._myGuardBroken) {
+        this._myBlocking = false; // skydas dingsta (serveris jau ignoruoja block kai broken)
+        this._flashGuardBroken();
+      }
+      this._myGuardBroken = guardBroken;
     }
 
     const downed = state === 'downed';
@@ -452,7 +472,8 @@ export default class BossRaidScene extends Phaser.Scene {
   // Piešia/atnaujina mano žaidėjo skydą kas kadrą (portas iš Arena _syncBlockGuard)
   _syncMyBlockGuard() {
     const p = this._myPlayer;
-    const blocking = this._myBlocking && p?.body?.active && this._myPlayerState !== 'dead';
+    // Sulaužytas guard'as priverstinai nuleidžia skydą (serveris jau neblokuoja)
+    const blocking = this._myBlocking && !this._myGuardBroken && p?.body?.active && this._myPlayerState !== 'dead';
     if (!blocking) {
       if (this._myBlockFx?.active) this._myBlockFx.setVisible(false);
       return;
@@ -495,6 +516,23 @@ export default class BossRaidScene extends Phaser.Scene {
     g.lineTo(shieldX - xMul * 12, shieldY - 13);
     g.closePath();
     g.strokePath();
+  }
+
+  // Trumpas "GUARD BROKEN" pranešimas virš žaidėjo kai guard'as sulūžta (kosmetinis).
+  _flashGuardBroken() {
+    if (!this._sceneReady) return;
+    const x = this._myPlayerX;
+    const y = (FLOOR_Y + FOOT_OFFSET) - SPRITE_HEIGHT - 28;
+    const txt = this.add.text(x, y, 'GUARD BROKEN', {
+      fontSize: '12px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#ef4444', stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(21);
+    this.tweens.add({
+      targets: txt, y: y - 26, alpha: 0,
+      duration: 900, ease: 'Power1',
+      onComplete: () => { if (txt.active) txt.destroy(); },
+    });
+    if (this.cameras?.main) this.cameras.main.shake(140, 0.005);
   }
 
   triggerPlayerAttack() {
@@ -907,6 +945,9 @@ export default class BossRaidScene extends Phaser.Scene {
 
       const hpBg  = this.add.rectangle(this._myPlayerX, hpY, 56, 7, 0x1a1a1a).setStrokeStyle(1, 0x444444).setDepth(3);
       const hpBar = this.add.rectangle(this._myPlayerX - 28, hpY, 56, 7, 0x22c55e).setOrigin(0, 0.5).setDepth(3);
+      // GUARD bar — plona mėlyna juosta tiesiai po HP bar'u (block stamina)
+      const guardBg  = this.add.rectangle(this._myPlayerX, hpY + GUARD_BAR_DY, 56, 4, 0x10162a).setStrokeStyle(1, 0x1e3a5f).setDepth(3);
+      const guardBar = this.add.rectangle(this._myPlayerX - 28, hpY + GUARD_BAR_DY, 56, 4, 0x3b82f6).setOrigin(0, 0.5).setDepth(3);
 
       const nameLabel  = this.add.text(this._myPlayerX, nameY, username.slice(0, 12), {
         fontSize: '11px', fontFamily: 'monospace', color: '#facc15', fontStyle: 'bold',
@@ -919,7 +960,7 @@ export default class BossRaidScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(3);
 
       this._myPlayer = {
-        body, shadow, aura, weapon: null, hpBg, hpBar, nameLabel, classLabel, meTag,
+        body, shadow, aura, weapon: null, hpBg, hpBar, guardBg, guardBar, nameLabel, classLabel, meTag,
         enchantTrail: null, cls, animPrefix: texKey, usesGenerated: originY !== 1.0,
         deathPlayed: false, lastState: '', _weaponSwingTween: null,
       };
@@ -969,6 +1010,9 @@ export default class BossRaidScene extends Phaser.Scene {
 
       const hpBg  = this.add.rectangle(this._myPlayerX, hpY, 56, 7, 0x1a1a1a).setStrokeStyle(1, 0x444444).setDepth(3);
       const hpBar = this.add.rectangle(this._myPlayerX - 28, hpY, 56, 7, 0x22c55e).setOrigin(0, 0.5).setDepth(3);
+      // GUARD bar — plona mėlyna juosta tiesiai po HP bar'u (block stamina)
+      const guardBg  = this.add.rectangle(this._myPlayerX, hpY + GUARD_BAR_DY, 56, 4, 0x10162a).setStrokeStyle(1, 0x1e3a5f).setDepth(3);
+      const guardBar = this.add.rectangle(this._myPlayerX - 28, hpY + GUARD_BAR_DY, 56, 4, 0x3b82f6).setOrigin(0, 0.5).setDepth(3);
       const nameLabel  = this.add.text(this._myPlayerX, nameY, (username || 'You').slice(0, 12), {
         fontSize: '11px', fontFamily: 'monospace', color: '#facc15', fontStyle: 'bold',
       }).setOrigin(0.5, 1).setDepth(3);
@@ -980,7 +1024,7 @@ export default class BossRaidScene extends Phaser.Scene {
       }).setOrigin(0.5).setDepth(3);
 
       this._myPlayer = {
-        body, shadow, aura, weapon: null, hpBg, hpBar, nameLabel, classLabel, meTag,
+        body, shadow, aura, weapon: null, hpBg, hpBar, guardBg, guardBar, nameLabel, classLabel, meTag,
         enchantTrail: null, cls, animPrefix: texKey, usesGenerated: false,
         deathPlayed: false, lastState: '', _weaponSwingTween: null,
       };
@@ -998,7 +1042,7 @@ export default class BossRaidScene extends Phaser.Scene {
       const container = this.add.container(this._myPlayerX, visualY, [g, letter]).setDepth(2);
       this._myPlayer = {
         body: container, shadow: null, aura: null, weapon: null,
-        hpBg: null, hpBar: null, nameLabel: null, classLabel: null, meTag: null,
+        hpBg: null, hpBar: null, guardBg: null, guardBar: null, nameLabel: null, classLabel: null, meTag: null,
         enchantTrail: null, cls, animPrefix: null, usesGenerated: false,
         deathPlayed: false, lastState: '', _weaponSwingTween: null,
       };
@@ -1009,7 +1053,7 @@ export default class BossRaidScene extends Phaser.Scene {
     if (!this._myPlayer) return;
     const p = this._myPlayer;
     if (p.enchantTrail?.active) p.enchantTrail.destroy();
-    [p.body, p.shadow, p.aura, p.weapon, p.hpBg, p.hpBar, p.nameLabel, p.classLabel, p.meTag]
+    [p.body, p.shadow, p.aura, p.weapon, p.hpBg, p.hpBar, p.guardBg, p.guardBar, p.nameLabel, p.classLabel, p.meTag]
       .forEach((o) => o?.destroy?.());
     this._myPlayer = null;
   }
@@ -1099,6 +1143,8 @@ export default class BossRaidScene extends Phaser.Scene {
     const nameY = topY - 22;
     if (p.hpBg?.active)       p.hpBg.setPosition(this._myPlayerX, hpY);
     if (p.hpBar?.active)      p.hpBar.setPosition(this._myPlayerX - 28, hpY);
+    if (p.guardBg?.active)    p.guardBg.setPosition(this._myPlayerX, hpY + GUARD_BAR_DY);
+    if (p.guardBar?.active)   p.guardBar.setPosition(this._myPlayerX - 28, hpY + GUARD_BAR_DY);
     if (p.nameLabel?.active)  p.nameLabel.setPosition(this._myPlayerX, nameY);
     if (p.classLabel?.active) p.classLabel.setPosition(this._myPlayerX, nameY + 11);
     if (p.meTag?.active)      p.meTag.setPosition(this._myPlayerX, topY - 36);
