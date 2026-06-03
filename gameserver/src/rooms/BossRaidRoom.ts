@@ -10,9 +10,9 @@ import { classGuard, classMoveSpeed, classBasicAttack } from "../shared/classes"
 import { abilityMeta, abilityNumber, abilityCooldownMs, abilityAllowedForClass } from "../shared/abilities";
 // Shared boss metadata (boss_definitions.json) — BOSS REGISTRY: atakos/dažnis/range/targets per boss
 import {
-  DEFAULT_BOSS_KIND, bossAttackCadence, bossHitX,
+  DEFAULT_BOSS_KIND, bossAttackCadence, bossHitX, bossEnrage,
   pickBossAttack, attackDamage, attackTelegraphMs, attackMaxTargets, attackType, attackBlockable,
-  type BossAttack,
+  type BossAttack, type EnrageConfig,
 } from "../shared/bosses";
 
 const FASTAPI_URL       = process.env.FASTAPI_URL       || "http://localhost:8001";
@@ -99,6 +99,8 @@ export class BossRaidRoom extends Room<BossRaidState> {
   // Aktyvaus boso tipas — nustatomas iš FastAPI (d.kind), su atsarga į DEFAULT_BOSS_KIND.
   // Iš jo skaitomi boss combat parametrai per ../shared/bosses (BOSS REGISTRY).
   private bossKind: string = DEFAULT_BOSS_KIND;
+  // Enrage konfigūracija šiam bosui (null = neturi enrage). Cache'inama kai nustatom bossKind.
+  private enrageCfg: EnrageConfig | null = null;
 
   // ── Room kūrimas ────────────────────────────────────────────────────────────
   async onCreate(options: any) {
@@ -260,6 +262,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
     this.state.currentHp = newHp;
     this.state.phase     = newPhase;
     player.totalDamage  += damage;
+    this.maybeEnrage(); // įsiunta jei kirtome į enrage fazę
 
     // Veiksmo būsena → attacking. tick() grąžins į idle kai stateUntil pasibaigs.
     // Neperrašome "hit" jei žaidėjas šiuo metu gauna smūgį — hit svarbiau vizualiai.
@@ -326,6 +329,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
     this.state.currentHp = newHp;
     this.state.phase     = newPhase;
     player.totalDamage  += damage;
+    this.maybeEnrage(); // įsiunta jei kirtome į enrage fazę
 
     // Veiksmo būsena → attacking (kaip handleAttack). tick() grąžins į idle.
     if (player.state !== STATE.HIT) {
@@ -470,9 +474,25 @@ export class BossRaidRoom extends Room<BossRaidState> {
   private scheduleBossAttack() {
     if (this.bossAttackTimer) { this.bossAttackTimer.clear?.(); this.bossAttackTimer = null; }
     if (this.state.status !== "active") return;
-    const [minMs, maxMs] = bossAttackCadence(this.bossKind, this.state.phase);
-    const delay = minMs + Math.floor(Math.random() * (maxMs - minMs));
+    let [minMs, maxMs] = bossAttackCadence(this.bossKind, this.state.phase);
+    // Enrage — atakos paspartėja (cadence_mult < 1).
+    if (this.state.enraged && this.enrageCfg) {
+      minMs = Math.round(minMs * this.enrageCfg.cadence_mult);
+      maxMs = Math.round(maxMs * this.enrageCfg.cadence_mult);
+    }
+    const delay = minMs + Math.floor(Math.random() * Math.max(1, maxMs - minMs));
     this.bossAttackTimer = this.clock.setTimeout(() => this.doBossAttack(), delay);
+  }
+
+  // Enrage trigger — bosas įsiunta įėjęs į enrage fazę. Vienkartinis: nustato synced
+  // state.enraged (vėluojantys prisijungę irgi mato) + broadcast'ina boss_enrage (banneris/VFX).
+  private maybeEnrage() {
+    if (this.state.enraged) return;                    // jau įsiutęs
+    const cfg = this.enrageCfg;
+    if (!cfg) return;                                  // šis bosas neturi enrage
+    if (this.state.phase < cfg.from_phase) return;     // dar ne enrage fazė
+    this.state.enraged = true;
+    this.broadcast("boss_enrage", { phase: this.state.phase });
   }
 
   // Bosas atakuoja: pasirenka ataką (weighted-random per pickBossAttack), TELEGRAPH'ina
@@ -515,8 +535,13 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
     const now      = Date.now();
     const type     = attackType(attack);
-    const rawDmg   = attackDamage(attack, this.state.phase);
+    let   rawDmg   = attackDamage(attack, this.state.phase);
     const blockable = attackBlockable(attack);
+
+    // Enrage — žala padidėja (damage_mult > 1).
+    if (this.state.enraged && this.enrageCfg) {
+      rawDmg = Math.round(rawDmg * this.enrageCfg.damage_mult);
+    }
 
     const hits: Array<{ sid: string; dmg: number; blocked: boolean; hp: number; downed: boolean; dodged?: boolean }> = [];
 
@@ -610,10 +635,12 @@ export class BossRaidRoom extends Room<BossRaidState> {
       // Forward-compatible: backend dar nesiunčia `kind` — krenta į DEFAULT_BOSS_KIND.
       // Kai pridės, boss combat parametrai automatiškai persijungia (BOSS REGISTRY).
       this.bossKind        = String(d.kind || DEFAULT_BOSS_KIND);
+      this.enrageCfg       = bossEnrage(this.bossKind); // cache enrage cfg šiam bosui
       this.state.currentHp = Number(d.current_hp ?? 1000);
       this.state.maxHp     = Number(d.max_hp     ?? 1000);
       this.state.phase     = Number(d.phase      ?? 1);
       this.state.status    = String(d.status     ?? "active");
+      this.maybeEnrage(); // jei raid'as (re)kuriamas jau enrage fazėje — įsiunta iškart
       console.log(`[BossRaidRoom] Synced raid "${this.state.bossName}" HP ${this.state.currentHp}/${this.state.maxHp}`);
     } catch (err: any) {
       console.warn("[BossRaidRoom] Could not sync from FastAPI:", err?.message);

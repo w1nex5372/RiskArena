@@ -60,6 +60,7 @@ export class BossRaidState extends Schema {
   @type("number")  currentHp: number = 1000;
   @type("number")  maxHp: number = 1000;
   @type("number")  phase: number = 1;          // 1 | 2 | 3
+  @type("boolean") enraged: boolean = false;   // true kai bosas įsiuto (burn faze) — vėluojantys prisijungę irgi mato
   @type("string")  status: string = "active";  // active | defeated | expired
   @type("number")  playerCount: number = 0;    // kiek žaidėjų prisijungę dabar
 

@@ -135,6 +135,9 @@ export default class BossRaidScene extends Phaser.Scene {
     this._bossPulseTween  = null;  // pulsavimo animacija idle metu
     this._bossDeadPlayed  = false; // guard — mirties animacija leidžiama tik vieną kartą
     this._bossAttackTimer = null;
+    this._enrageOverlay   = null;  // raudonas ekrano wash kol enrage (burn faze)
+    this._enrageOverlayTween = null;
+    this._enrageBannerShown  = false; // banneris/roar rodomi tik vieną kartą
     this._bossIsAttacking = false;
 
     // --- Mano žaidėjo būsena (viskas čia, ne React state) ---
@@ -397,6 +400,7 @@ export default class BossRaidScene extends Phaser.Scene {
   onRaidFinished(data) {
     if (!this._sceneReady) return;
     this._bossStatus = data?.status || 'defeated';
+    this._clearEnrageScreen(); // raid baigėsi — nuimam enrage wash (jei dar buvo)
     if (this._bossStatus === 'defeated') this._bossDeath();
     this._attackerSlots.forEach((slot) => {
       if (slot.sprite?.active) this.tweens.add({ targets: slot.sprite, alpha: 0.3, duration: 800 });
@@ -1742,6 +1746,7 @@ export default class BossRaidScene extends Phaser.Scene {
   _bossDeath() {
     if (this._bossDeadPlayed) return;
     this._bossDeadPlayed = true;
+    this._clearEnrageScreen(); // enrage wash dingsta su boso mirtimi
     if (this._bossAttackTimer) { this._bossAttackTimer.remove(); this._bossAttackTimer = null; }
     if (this._bossPulseTween)  { this._bossPulseTween.stop(); this._bossPulseTween = null; }
     if (!this._bossSprite?.active) return;
@@ -1797,6 +1802,49 @@ export default class BossRaidScene extends Phaser.Scene {
       this._bossStartIdle();
     }
     this._startBossAttackLoop();
+  }
+
+  // Boss įsiuto (burn faze) — vienkartinis dramatiškas momentas. Kviečiamas iš
+  // 'boss_enrage' broadcast'o (trigger metu) IR iš state.enraged sync'o (vėluojantiems
+  // prisijungiantiems). Ekrano raudonas wash — idempotentas; banneris/roar — tik 1 kartą.
+  onBossEnrage() {
+    if (!this._sceneReady) return;
+    this._applyEnrageScreen();
+    if (this._enrageBannerShown) return;
+    this._enrageBannerShown = true;
+
+    const label = this._bossLabel?.text || 'BOSS';
+    const banner = this.add.text(W / 2, H / 2 - 24, `${label} ENRAGES!`, {
+      fontSize: '30px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#ff3030', stroke: '#000000', strokeThickness: 6,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(40).setScale(0.4).setAlpha(0);
+    this.tweens.add({
+      targets: banner, scale: 1, alpha: 1, duration: 280, ease: 'Back.easeOut',
+      onComplete: () => this.tweens.add({
+        targets: banner, alpha: 0, delay: 1100, duration: 500,
+        onComplete: () => { if (banner.active) banner.destroy(); },
+      }),
+    });
+    if (this.cameras?.main) this.cameras.main.shake(360, 0.012);
+    this._bossPhaseRoar();
+  }
+
+  // Persistentinis raudonas ekrano wash (pulsuoja) — danger feel kol enrage. Idempotentas.
+  _applyEnrageScreen() {
+    if (this._enrageOverlay?.active) return;
+    this._enrageOverlay = this.add.rectangle(0, 0, W, H, 0xff0000, 0.10)
+      .setOrigin(0).setScrollFactor(0).setDepth(15);
+    this._enrageOverlayTween = this.tweens.add({
+      targets: this._enrageOverlay, alpha: { from: 0.07, to: 0.17 },
+      yoyo: true, repeat: -1, duration: 700, ease: 'Sine.easeInOut',
+    });
+  }
+
+  // Nuima enrage wash (boso mirtis / raid pabaiga).
+  _clearEnrageScreen() {
+    if (this._enrageOverlayTween) { this._enrageOverlayTween.stop(); this._enrageOverlayTween = null; }
+    if (this._enrageOverlay?.active) this._enrageOverlay.destroy();
+    this._enrageOverlay = null;
   }
 
   _bossPhaseRoar() {

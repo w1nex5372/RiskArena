@@ -24,6 +24,15 @@ export type BossAttack = {
   damage_by_phase: Record<string, number>;       // žala pagal fazę (raktas "1"/"2"/"3")
 };
 
+// Enrage ("burn faze") konfigūracija — OPTIONAL. Bosas įsiunta įėjęs į `from_phase`:
+// atakos paspartėja (cadence_mult < 1) ir žala padidėja (damage_mult > 1). Praleidus
+// šį bloką boss_definitions.json'e — bosas neturi enrage (forward-compat kitam bosui).
+export type EnrageConfig = {
+  from_phase: number;     // nuo kurios fazės įsijungia (pvz. 3 = paskutiniai 25% HP)
+  cadence_mult: number;   // atakos kadencijos daugiklis (<1 = greičiau)
+  damage_mult: number;    // žalos daugiklis (>1 = skaudžiau)
+};
+
 export type BossDef = {
   label?: string;
   sprite?: string;
@@ -32,6 +41,7 @@ export type BossDef = {
   attacks: BossAttack[];
   // Boso atakos dažnis pagal fazę [minMs, maxMs] — bendras visoms atakoms
   cadence_by_phase: Record<string, [number, number]>;
+  enrage: EnrageConfig | null;   // null = bosas neturi enrage
 };
 
 // Numatytasis bosas — atsarga jei `kind` nežinomas/dar neperduotas backend'o.
@@ -57,8 +67,9 @@ const DEFAULT_HIT_X = 500;
 const DEFAULT_MAX_TARGETS = 3;
 
 // Raw entry forma JSON'e (prieš normalizavimą) — atskiri laukai gali trūkti.
-type RawBossDef = Partial<Omit<BossDef, "attacks">> & {
+type RawBossDef = Partial<Omit<BossDef, "attacks" | "enrage">> & {
   attacks?: Array<Partial<BossAttack>>;
+  enrage?: Partial<EnrageConfig>;
 };
 
 // Reikšmingas: kelias toks pat kaip classes.ts/abilities.ts — iš src/shared/ jis
@@ -109,6 +120,24 @@ export function bossDef(kind: string): BossDef {
       ...DEFAULT_CADENCE,
       ...(def.cadence_by_phase || {}),
     },
+    enrage: normalizeEnrage(def.enrage),
+  };
+}
+
+// Sumerge'ina enrage entry su saugiais default'ais. Trūkstamas blokas → null
+// (bosas be enrage). Netinkamos reikšmės → saugios atsargos (neutralūs daugikliai).
+function normalizeEnrage(raw: Partial<EnrageConfig> | undefined): EnrageConfig | null {
+  if (!raw || typeof raw !== "object") return null;
+  const fromPhase = Number(raw.from_phase);
+  if (!Number.isFinite(fromPhase) || fromPhase <= 0) return null;
+  const cadenceMult = Number(raw.cadence_mult);
+  const damageMult  = Number(raw.damage_mult);
+  return {
+    from_phase: fromPhase,
+    // cadence_mult: tik (0,1] prasminga (greičiau); netinkama → 1 (be pokyčio)
+    cadence_mult: Number.isFinite(cadenceMult) && cadenceMult > 0 && cadenceMult <= 1 ? cadenceMult : 1,
+    // damage_mult: tik >=1 prasminga (skaudžiau); netinkama → 1 (be pokyčio)
+    damage_mult: Number.isFinite(damageMult) && damageMult >= 1 ? damageMult : 1,
   };
 }
 
@@ -169,4 +198,9 @@ export function bossAttackCadence(kind: string, phase: number): [number, number]
 // Boso "hit" pozicija X — naudojama žaidėjo range patikrai.
 export function bossHitX(kind: string): number {
   return bossDef(kind).hit_x;
+}
+
+// Boso enrage konfigūracija (arba null jei bosas neturi enrage).
+export function bossEnrage(kind: string): EnrageConfig | null {
+  return bossDef(kind).enrage;
 }

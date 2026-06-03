@@ -10,7 +10,8 @@
         { "id": "swipe", "type": "melee", "weight": 3, "telegraph_ms": 450, "blockable": true,  "max_targets": 3, "damage_by_phase": { "1": 15, "2": 26, "3": 38 } },
         { "id": "slam",  "type": "aoe",   "weight": 1, "telegraph_ms": 900, "blockable": false,                  "damage_by_phase": { "1": 32, "2": 48, "3": 65 } }
       ],
-      "cadence_by_phase": { "1": [2800, 5000], "2": [2000, 3500], "3": [1200, 2400] }
+      "cadence_by_phase": { "1": [2800, 5000], "2": [2000, 3500], "3": [1200, 2400] },
+      "enrage": { "from_phase": 3, "cadence_mult": 0.8, "damage_mult": 1.15 }
     }
   }
 }

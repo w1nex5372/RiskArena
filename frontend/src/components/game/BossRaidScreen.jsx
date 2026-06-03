@@ -194,6 +194,9 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             max_hp:      s.maxHp,
             phase:       s.phase,
           });
+          // Enrage — vėluojantiems prisijungiantiems (praleido boss_enrage broadcast'ą).
+          // onBossEnrage idempotentas: ekrano wash 1×, banneris 1× (_enrageBannerShown).
+          if (s.enraged) sceneRef.current?.onBossEnrage();
 
           // Fallback: if raid_finished message never arrives, show "no loot" after 4s.
           // Covers both defeat and time-based expiry (Phase 6).
@@ -253,6 +256,12 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         // a warning for telegraphMs: AoE → red danger zone + "JUMP!"; melee → boss windup.
         room.onMessage('boss_telegraph', (data) => {
           sceneRef.current?.onBossTelegraph(data);
+        });
+
+        // boss_enrage — boss entered burn phase (one-time): banner + red screen wash.
+        // Late-joiners (who missed this broadcast) get the wash via state.enraged below.
+        room.onMessage('boss_enrage', () => {
+          sceneRef.current?.onBossEnrage();
         });
 
         // boss_attack — server decides who gets hit (after telegraph); play impact in sync.
