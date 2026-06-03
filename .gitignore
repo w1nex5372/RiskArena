@@ -5,8 +5,15 @@
 __pycache__/
 .venv/
 venv/
+.pytest_cache/
+pytest-cache-files-*/
 node_modules/
 dist/
 build/
 coverage/
 tools/Universal-LPC-Spritesheet-Character-Generator/
+
+# Local tool/editor artifacts
+.claude/settings.local.json
+.claude/pdf
+frontend/_rc.js
