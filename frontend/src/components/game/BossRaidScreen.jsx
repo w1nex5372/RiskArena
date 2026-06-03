@@ -141,6 +141,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       });
       // Phase 5: scena siunčia mano poziciją serveriui (room iš colyseusRoomRef)
       sceneRef.current?.setMoveCallback((d) => colyseusRoomRef.current?.send('move', d));
+      // AoE dodge: scena praneša serveriui kai esu ore (šuolio metu) — ore AoE manęs nepataiko
+      sceneRef.current?.setAirborneCallback((up) => colyseusRoomRef.current?.send('airborne', { up }));
     });
 
     return () => {
@@ -241,13 +243,20 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           sceneRef.current?.removeRaidPlayer(sessionId);
         });
 
-        // boss_attack — server decides who gets hit; play the swing in sync
+        // boss_telegraph — server signals an incoming attack (windup). Scene shows
+        // a warning for telegraphMs: AoE → red danger zone + "JUMP!"; melee → boss windup.
+        room.onMessage('boss_telegraph', (data) => {
+          sceneRef.current?.onBossTelegraph(data);
+        });
+
+        // boss_attack — server decides who gets hit (after telegraph); play impact in sync.
+        // data.type: 'melee' | 'aoe'. AoE is dodged by being airborne (jumping) when it lands.
         room.onMessage('boss_attack', (data) => {
           sceneRef.current?.onBossAttack(data);
-          // Knockback: stumiame TIK jei mane pataikė be block'o ir tai nenokautavo
-          // (block apsaugo nuo knockback; nokautas nedaro dvigubo postūmio).
+          // Knockback: stumiame TIK jei mane pataikė be block'o, tai nenokautavo
+          // ir aš neišvengiau (dodged). block/dodge apsaugo nuo knockback.
           const mine = (data.targets || []).find((t) => t.sid === room.sessionId);
-          if (mine && !mine.blocked && !mine.downed) sceneRef.current?.knockbackMyPlayer?.();
+          if (mine && !mine.blocked && !mine.downed && !mine.dodged) sceneRef.current?.knockbackMyPlayer?.();
         });
 
         // damage_dealt — sent only to the attacker by BossRaidRoom.ts

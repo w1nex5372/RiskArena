@@ -167,6 +167,7 @@ export default class BossRaidScene extends Phaser.Scene {
 
     // --- Phase 5: movement (mano poziciją siunčiu serveriui; kitus interpoliuoju) ---
     this._moveSendCb      = null;           // React callback: ({x, facingRight}) => room.send('move', ...)
+    this._airborneCb      = null;           // React callback: (up) => room.send('airborne', {up}) — AoE dodge sync
     this._lastSentX       = null;           // paskutinė serveriui nusiųsta x
     this._lastSentFacing  = null;           // paskutinė nusiųsta kryptis
     this._lastMoveSentAt  = 0;              // throttle laikas (ms)
@@ -343,6 +344,12 @@ export default class BossRaidScene extends Phaser.Scene {
   // Phase 5: React registruoja callback'ą kuriuo scena siunčia mano poziciją serveriui.
   setMoveCallback(cb) {
     this._moveSendCb = cb;
+  }
+
+  // React registruoja callback'ą kuriuo scena praneša serveriui ar žaidėjas ore (šuolyje).
+  // Serveris naudoja tai AoE atakai — ore esantis žaidėjas DODGE'ina neblokuojamą smūgį.
+  setAirborneCallback(cb) {
+    this._airborneCb = cb;
   }
 
   onBossUpdate(data) {
@@ -591,6 +598,8 @@ export default class BossRaidScene extends Phaser.Scene {
     const idleKey = `${p.animPrefix}_idle`;
 
     this._isJumping = true;
+    // Pranešam serveriui kad esu ore — kol airborne, AoE smūgis manęs nepataiko (dodge).
+    this._airborneCb?.(true);
     if (p.animPrefix && this.anims.exists(jumpKey) && p.body.play) p.body.play(jumpKey, true);
 
     // Tweeniname plain objektą (ne 'this') — Phaser garantuotai interpoliuoja bet kurį
@@ -604,6 +613,8 @@ export default class BossRaidScene extends Phaser.Scene {
       onComplete: () => {
         this._jumpOffsetY = 0;
         this._isJumping   = false;
+        // Nusileidau — serveris vėl gali mane pataikyti AoE smūgiu.
+        this._airborneCb?.(false);
         if (!p.body?.active) return;
         // NEnutraukiam attack/cast animacijos jei žaidėjas atakavo ore — kitaip jos
         // animationcomplete neįvyktų ir būsena užstrigtų 'attacking' (char užšaltų).
@@ -1387,9 +1398,10 @@ export default class BossRaidScene extends Phaser.Scene {
     this._attackerSlots.forEach((slot) => this._deactivateSlot(slot));
   }
 
-  // Serveris pranešė kad bosas atakuoja — rodome smūgį sinchroniškai visiems.
+  // Serveris pranešė kad bosas atakuoja (smūgis "nusileido") — rodome smūgį visiems.
   // Pataikytų žaidėjų "hit" animacija ateina atskirai per jų state pakitimą.
-  onBossAttack() {
+  // data.type: 'melee' | 'aoe' — AoE rodom didesnį ground-impact efektą vietoj įprasto swing'o.
+  onBossAttack(data) {
     if (!this._sceneReady) return;
     // Pirmas serverio signalas — nutraukiame autonominį (client-side) boso ciklą
     if (!this._serverDrivenBoss) {
@@ -1397,7 +1409,19 @@ export default class BossRaidScene extends Phaser.Scene {
       if (this._bossAttackTimer) { this._bossAttackTimer.remove(); this._bossAttackTimer = null; }
     }
     if (this._bossDeadPlayed || this._bossStatus === 'defeated') return;
-    this._doBossAttack();
+    if (data?.type === 'aoe') this._doBossAoeImpact();
+    else                      this._doBossAttack();
+  }
+
+  // Serveris pranešė atakos TELEGRAPH (windup) — rodome įspėjimą jo trukmei.
+  // aoe: raudona "danger zone" per visą grindų plotą + "DODGE!" cue (liepia šuolį).
+  // melee: subtilesnis boso windup (tint + crouch postūmis arčiau smūgio).
+  onBossTelegraph(data) {
+    if (!this._sceneReady) return;
+    if (this._bossDeadPlayed || this._bossStatus === 'defeated') return;
+    const telegraphMs = Math.max(200, Number(data?.telegraphMs) || 450);
+    if (data?.type === 'aoe') this._telegraphAoe(telegraphMs);
+    else                      this._telegraphMelee(telegraphMs);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1459,6 +1483,123 @@ export default class BossRaidScene extends Phaser.Scene {
       duration: 280, ease: 'Power2',
       onComplete: () => { if (g.active) g.destroy(); },
     });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TELEGRAPH (windup įspėjimai) + AoE impact
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // AoE telegraph — raudona "danger zone" per visą grindų plotą + pulsuojantis
+  // "JUMP!" / "DODGE!" cue. Trunka telegraphMs (kol smūgis nusileis). Liepia žaidėjui
+  // šokti — ore esantys (airborne) išvengia neblokuojamo AoE smūgio (serveris autoritetas).
+  _telegraphAoe(telegraphMs) {
+    const floorTop = FLOOR_Y - 60;
+    const floorH   = (H - floorTop) + 20;
+
+    // Pavojaus zona — raudonas plotas per visas grindis (pulsuoja ryškumu).
+    const zone = this.add.graphics().setDepth(11);
+    zone.fillStyle(0xff2200, 0.30);
+    zone.fillRect(0, floorTop, W, floorH);
+    zone.lineStyle(3, 0xff5533, 0.85);
+    zone.strokeRect(2, floorTop, W - 4, floorH);
+    const zoneTween = this.tweens.add({
+      targets: zone, alpha: { from: 0.45, to: 1 },
+      yoyo: true, repeat: -1, duration: 220, ease: 'Sine.easeInOut',
+    });
+
+    // "DODGE!" / "JUMP!" cue centre — didelis, pulsuojantis tekstas.
+    const cue = this.add.text(W / 2, FLOOR_Y - 150, 'JUMP!', {
+      fontSize: '34px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#ff3322', stroke: '#000000', strokeThickness: 6,
+    }).setOrigin(0.5).setDepth(31);
+    const cueTween = this.tweens.add({
+      targets: cue, scaleX: { from: 0.9, to: 1.15 }, scaleY: { from: 0.9, to: 1.15 },
+      yoyo: true, repeat: -1, duration: 240, ease: 'Sine.easeInOut',
+    });
+
+    if (this.cameras?.main) this.cameras.main.shake(Math.min(300, telegraphMs), 0.004);
+
+    // Po telegraph trukmės — viskas dingsta (smūgis nusileidžia per onBossAttack aoe).
+    this.time.delayedCall(telegraphMs, () => {
+      if (zoneTween) zoneTween.stop();
+      if (cueTween)  cueTween.stop();
+      if (zone.active) { this.tweens.add({ targets: zone, alpha: 0, duration: 120, onComplete: () => { if (zone.active) zone.destroy(); } }); }
+      if (cue.active)  { this.tweens.add({ targets: cue,  alpha: 0, duration: 120, onComplete: () => { if (cue.active)  cue.destroy();  } }); }
+    });
+  }
+
+  // Melee telegraph — subtilesnis boso windup: boso tint blyksnis + nedidelis
+  // postūmis atgal (užsimoja) kol smūgis nusileis. Be ekrano įspėjimo (mažiau triukšmo).
+  _telegraphMelee(telegraphMs) {
+    if (!this._bossSprite?.active) return;
+    const spr = this._bossSprite;
+    // Windup užsimojimas — bosas truputį atsitraukia (kaip prieš kirtį). Ne-yoyo, kad
+    // pozicija grįžtų natūraliai per onBossAttack swing'ą.
+    if (spr.setTint) spr.setTint(0xffcc66);
+    this.tweens.add({
+      targets: spr, x: BOSS_X + 18,
+      duration: Math.min(telegraphMs, 260), ease: 'Sine.easeInOut', yoyo: true, hold: 40,
+    });
+    this.time.delayedCall(telegraphMs, () => {
+      // tint nuimam tik jei nepakeitė fazės vizualas (P2/P3 laiko savo tint'ą).
+      if (spr.active && spr.clearTint && this._bossPhase < 2) spr.clearTint();
+      else if (spr.active && this._bossPhase >= 2) this._applyPhaseVisuals(this._bossPhase);
+    });
+  }
+
+  // AoE smūgio impact — didesnis ground-slam efektas (vietoj įprasto melee swing'o).
+  // Banga per grindis + stipresnis camera shake. Boso anim leidžia kaip įprasta.
+  _doBossAoeImpact() {
+    if (!this._bossSprite?.active || this._bossDeadPlayed || this._bossIsAttacking) {
+      // Net jei boso anim užimta — vis tiek parodom ground impact (svarbus vizualus signalas).
+      this._spawnAoeShockwave();
+      if (this.cameras?.main) this.cameras.main.shake(220, 0.012);
+      return;
+    }
+    this._bossIsAttacking = true;
+    if (this._bossPulseTween) { this._bossPulseTween.stop(); this._bossPulseTween = null; }
+
+    if (this._bossSprite.play) {
+      this._bossSprite.play('boss_attack', true);
+      this._bossSprite.once('animationcomplete', () => {
+        this._bossIsAttacking = false;
+        if (!this._bossDeadPlayed) this._bossStartIdle();
+      });
+    } else {
+      this.time.delayedCall(400, () => {
+        this._bossIsAttacking = false;
+        if (!this._bossDeadPlayed) this._bossStartIdle();
+      });
+    }
+
+    this._spawnAoeShockwave();
+    if (this.cameras?.main) this.cameras.main.shake(240, 0.014);
+  }
+
+  // Šokinė banga — du besiplečiantys grindų žiedai + dulkių blyksnis. Aiškiai skiriasi
+  // nuo melee swing'o (kuris yra lokalus slash ties bosu).
+  _spawnAoeShockwave() {
+    const y = FLOOR_Y + 6;
+    [0, 90].forEach((delay) => {
+      const ring = this.add.graphics().setDepth(12);
+      ring.lineStyle(5, 0xff4422, 0.9);
+      ring.strokeEllipse(0, 0, 60, 18);
+      ring.x = BOSS_X; ring.y = y;
+      this.tweens.add({
+        targets: ring, scaleX: 14, scaleY: 14, alpha: { from: 0.9, to: 0 },
+        duration: 500, ease: 'Power2', delay,
+        onComplete: () => { if (ring.active) ring.destroy(); },
+      });
+    });
+    // Pilna ekrano raudona blyksnė (trumpa) — pabrėžia "landed".
+    const flash = this.add.graphics().setDepth(30);
+    flash.fillStyle(0xff2200, 0.22);
+    flash.fillRect(0, 0, W, H);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 220, onComplete: () => { if (flash.active) flash.destroy(); } });
+    if (this.hitEmitter?.active) {
+      this.hitEmitter.explode(20, BOSS_X - 120, y);
+      this.hitEmitter.explode(20, W / 2, y);
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

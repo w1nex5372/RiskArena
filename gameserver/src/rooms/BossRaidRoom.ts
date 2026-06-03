@@ -8,8 +8,12 @@ import { classMaxHp, resolveDamage } from "../shared/combat";
 import { classGuard, classMoveSpeed, classBasicAttack } from "../shared/classes";
 // Shared ability metadata helpers — single source of truth (also used by ArenaRoom)
 import { abilityMeta, abilityNumber, abilityCooldownMs, abilityAllowedForClass } from "../shared/abilities";
-// Shared boss metadata (boss_definitions.json) — BOSS REGISTRY: žala/dažnis/range/targets per boss
-import { DEFAULT_BOSS_KIND, bossAttackDamage, bossAttackCadence, bossMaxTargets, bossHitX } from "../shared/bosses";
+// Shared boss metadata (boss_definitions.json) — BOSS REGISTRY: atakos/dažnis/range/targets per boss
+import {
+  DEFAULT_BOSS_KIND, bossAttackCadence, bossHitX,
+  pickBossAttack, attackDamage, attackTelegraphMs, attackMaxTargets, attackType, attackBlockable,
+  type BossAttack,
+} from "../shared/bosses";
 
 const FASTAPI_URL       = process.env.FASTAPI_URL       || "http://localhost:8001";
 const SKIP_AUTH         = process.env.SKIP_AUTH         === "true";
@@ -114,6 +118,13 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
     // "block" — klientas laiko/atleidžia block mygtuką (Group A gynyba)
     this.onMessage("block", (client, msg) => this.handleBlock(client, msg));
+
+    // "airborne" — klientas praneša ar žaidėjas šuolyje (jump start: up=true, landing: up=false).
+    // Naudojama AoE atakai: ore esantis žaidėjas DODGE'ina neblokuojamą AoE smūgį.
+    this.onMessage("airborne", (client, msg) => {
+      const p = this.state.players.get(client.sessionId);
+      if (p) p.airborne = !!msg?.up;
+    });
 
     // Simulation tick — grąžina pasibaigusias transient būsenas (attacking/hit) į idle.
     // Viena vieta valdo visų žaidėjų būsenų gyvavimo laiką (vietoj N atskirų setTimeout'ų).
@@ -464,74 +475,121 @@ export class BossRaidRoom extends Room<BossRaidState> {
     this.bossAttackTimer = this.clock.setTimeout(() => this.doBossAttack(), delay);
   }
 
-  // Bosas atakuoja: pasirenka iki bossMaxTargets() atsitiktinių prisijungusių žaidėjų,
-  // pažymi juos "hit" būsena (be HP — kol kas tik vizualinė reakcija), ir broadcast'ina
-  // "boss_attack" kad klientai sinchroniškai parodytų boso smūgį bei pataikytus žaidėjus.
+  // Bosas atakuoja: pasirenka ataką (weighted-random per pickBossAttack), TELEGRAPH'ina
+  // (windup broadcast su trukme), tada po telegraph_ms iškviečia applyBossAttack() kad
+  // smūgis "nusileistų". Telegraph leidžia žaidėjams reaguoti (block melee / jump aoe).
+  // Po smūgio persiplanuoja kitą ataką (scheduleBossAttack — cadence-based).
   private doBossAttack() {
     if (this.state.status !== "active") return;
 
-    const now        = Date.now();
-    const sessionIds = Array.from(this.state.players.keys());
+    // Pasirenkame ataką iš boso registry (weighted-random)
+    const attack      = pickBossAttack(this.bossKind);
+    const telegraphMs = attackTelegraphMs(attack);
 
-    const hits: Array<{ sid: string; dmg: number; blocked: boolean; hp: number; downed: boolean }> = [];
-    if (sessionIds.length > 0) {
-      // Fisher–Yates dalinis maišymas — paimame iki bossMaxTargets() pirmų
+    // WINDUP — iškart pranešam klientams kad rodytų įspėjimą (aoe → "DODGE!", melee → boss windup)
+    this.broadcast("boss_telegraph", {
+      type:        attackType(attack),
+      telegraphMs,
+      attackId:    attack.id,
+    });
+
+    // Smūgis "nusileidžia" po telegraph trukmės. Guard'inam status'ą — jei raid'as
+    // baigėsi (defeated/expired) per windup'ą, smūgio nebevykdom.
+    this.clock.setTimeout(() => {
+      if (this.state.status !== "active") return;
+      this.applyBossAttack(attack);
+    }, telegraphMs);
+
+    // Kitą ataką planuojam dabar (cadence skaičiuoja nuo windup pradžios, kaip ir anksčiau)
+    this.scheduleBossAttack();
+  }
+
+  // Pritaiko boso atakos žalą (iškviečiama po telegraph windup'o). Logika priklauso
+  // nuo atakos tipo:
+  //  - melee: pasirenka iki attackMaxTargets() atsitiktinių žaidėjų; blokuojama
+  //           (guard-meter + block redukcija per resolveDamage) — IDENTIŠKA buvusiai.
+  //  - aoe:   pataiko VISUS present žaidėjus, IŠSKYRUS ore esančius (airborne dodge);
+  //           NEBLOKUOJAMA — block/guard ignoruojami, žala pilna.
+  private applyBossAttack(attack: BossAttack) {
+    if (this.state.status !== "active") return;
+
+    const now      = Date.now();
+    const type     = attackType(attack);
+    const rawDmg   = attackDamage(attack, this.state.phase);
+    const blockable = attackBlockable(attack);
+
+    const hits: Array<{ sid: string; dmg: number; blocked: boolean; hp: number; downed: boolean; dodged?: boolean }> = [];
+
+    // Parenkam taikinius pagal atakos tipą.
+    let targets: string[];
+    if (type === "aoe") {
+      // AoE — visi present žaidėjai (downed/dead atfiltruojami per-target žemiau).
+      // Ore esantys (airborne) DODGE'ina — įtraukiam į broadcast su dodged:true, be žalos.
+      targets = Array.from(this.state.players.keys());
+    } else {
+      // Melee — paimame iki attackMaxTargets() atsitiktinių žaidėjų (kaip anksčiau).
+      // Boso melee NĖRA range-check'inama (bosas pasiekia bet kurį žaidėją) — paliekam.
+      const sessionIds = Array.from(this.state.players.keys());
       for (let i = sessionIds.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(Math.random() * (i + 1)); // Fisher–Yates dalinis maišymas
         [sessionIds[i], sessionIds[j]] = [sessionIds[j], sessionIds[i]];
       }
-      const count  = Math.min(bossMaxTargets(this.bossKind), sessionIds.length);
-      const picked = sessionIds.slice(0, count);
-      const rawDmg = bossAttackDamage(this.bossKind, this.state.phase);
-
-      picked.forEach((sid) => {
-        const p = this.state.players.get(sid);
-        if (!p || p.state === STATE.DOWNED || p.state === STATE.DEAD) return;
-        const g = classGuard(p.characterClass); // per-klasę iš battle_classes.json
-        // Group A: bosas visada dešinėj, tad block (laikant) gina nepriklausomai nuo
-        // krypties — vengia "skydas rodomas bet neblokuoja". Block mažina žalą per
-        // shared resolveDamage (kaip Arena), bet pilnai neatremia.
-        let blocked = p.blocking;
-
-        // GUARD-METER: blokuotas smūgis nukerta guard'ą pagal RAW boso žalą
-        // (prieš block redukciją), kaip Arena dealDamageAt. Jei guard'as šitame
-        // smūgyje sulūžta — guard break + smūgis tampa NEBLOKUOTAS (pilna žala).
-        if (blocked) {
-          p.guard = Math.max(0, p.guard - Math.max(1, Math.round(rawDmg * g.hit_drain_mult)));
-          p.guardRegenPausedUntil = now + g.regen_delay_ms;
-          if (p.guard <= 0) {
-            this.breakGuard(p, now);
-            blocked = false; // guard'as palūžo — žaidėjas gauna pilną žalą
-          }
-        }
-
-        const dmg = resolveDamage(rawDmg, {
-          blocked,
-          defendReduction: p.defendReduction,
-          blockReduction: g.block_reduction,
-        });
-        p.hp = Math.max(0, p.hp - dmg);
-
-        if (p.hp <= 0) {
-          // Nokautas — atsigauna po REVIVE_MS (tick() atstato HP).
-          // downedUntil saugo revive laiką pagal userId → persist'ina per leave/rejoin.
-          p.state         = STATE.DOWNED;
-          p.stateUntil    = now + REVIVE_MS;
-          p.reviveSeconds = Math.ceil(REVIVE_MS / 1000);
-          p.blocking      = false;
-          DOWNED_UNTIL.set(p.userId, p.stateUntil);
-        } else if (!blocked) {
-          p.state      = STATE.HIT;
-          p.stateUntil = now + HIT_STATE_MS;
-        }
-        hits.push({ sid, dmg, blocked, hp: p.hp, downed: p.hp <= 0 });
-      });
+      const count = Math.min(attackMaxTargets(attack), sessionIds.length);
+      targets = sessionIds.slice(0, count);
     }
 
-    // Visiems klientams — boso smūgio animacija + per-target rezultatai (žala/block/downed)
-    this.broadcast("boss_attack", { phase: this.state.phase, targets: hits });
+    targets.forEach((sid) => {
+      const p = this.state.players.get(sid);
+      if (!p || p.state === STATE.DOWNED || p.state === STATE.DEAD) return;
 
-    this.scheduleBossAttack();
+      // AoE dodge — ore esantis žaidėjas išvengia smūgio (jokios žalos, jokio guard drain).
+      if (type === "aoe" && p.airborne) {
+        hits.push({ sid, dmg: 0, blocked: false, hp: p.hp, downed: false, dodged: true });
+        return;
+      }
+
+      const g = classGuard(p.characterClass); // per-klasę iš battle_classes.json
+      // Block galimas tik blokuojamai atakai (melee). AoE neblokuojama → blocked visada false,
+      // guard/block branch praleidžiamas (guard nesimažina nuo neblokuojamo smūgio).
+      // Group A: bosas visada dešinėj, tad block (laikant) gina nepriklausomai nuo krypties.
+      let blocked = blockable && p.blocking;
+
+      // GUARD-METER: blokuotas smūgis nukerta guard'ą pagal RAW boso žalą (prieš block
+      // redukciją), kaip Arena dealDamageAt. Jei guard'as sulūžta — guard break + pilna žala.
+      // Vykdoma TIK blokuojamoms atakoms (AoE neblokuojama → guard nepaliesti).
+      if (blocked) {
+        p.guard = Math.max(0, p.guard - Math.max(1, Math.round(rawDmg * g.hit_drain_mult)));
+        p.guardRegenPausedUntil = now + g.regen_delay_ms;
+        if (p.guard <= 0) {
+          this.breakGuard(p, now);
+          blocked = false; // guard'as palūžo — žaidėjas gauna pilną žalą
+        }
+      }
+
+      const dmg = resolveDamage(rawDmg, {
+        blocked,
+        defendReduction: p.defendReduction,
+        blockReduction: g.block_reduction,
+      });
+      p.hp = Math.max(0, p.hp - dmg);
+
+      if (p.hp <= 0) {
+        // Nokautas — atsigauna po REVIVE_MS (tick() atstato HP).
+        // DOWNED_UNTIL saugo revive laiką pagal userId → persist'ina per leave/rejoin.
+        p.state         = STATE.DOWNED;
+        p.stateUntil    = now + REVIVE_MS;
+        p.reviveSeconds = Math.ceil(REVIVE_MS / 1000);
+        p.blocking      = false;
+        DOWNED_UNTIL.set(p.userId, p.stateUntil);
+      } else if (!blocked) {
+        p.state      = STATE.HIT;
+        p.stateUntil = now + HIT_STATE_MS;
+      }
+      hits.push({ sid, dmg, blocked, hp: p.hp, downed: p.hp <= 0 });
+    });
+
+    // Visiems klientams — boso smūgio animacija + per-target rezultatai (žala/block/downed/dodged)
+    this.broadcast("boss_attack", { phase: this.state.phase, type, targets: hits });
   }
 
   // ── Syncinam pradinį state iš FastAPI ───────────────────────────────────────

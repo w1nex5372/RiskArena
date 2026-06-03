@@ -2,6 +2,12 @@
 .claude
 archive_docs
 frontend
+!frontend
+frontend/*
+!frontend/public
+frontend/public/*
+!frontend/public/items
+!frontend/public/items/**
 gameserver
 tests
 test_reports
