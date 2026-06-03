@@ -74,6 +74,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [lootResult,      setLootResult]      = useState(null);
   const [raidEnded,       setRaidEnded]       = useState(false);
   const [damageFeed,      setDamageFeed]      = useState([]);
+  const [myRank,          setMyRank]          = useState(null);
   // Death overlay — local player nokautuotas (serveris yra autoritetas; countdown kosmetinis)
   const [myDowned,        setMyDowned]        = useState(false);
   const [respawnIn,       setRespawnIn]       = useState(0);
@@ -206,6 +207,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             max_hp:        s.maxHp,
             phase:         s.phase,
             player_count:  s.playerCount,
+            enraged:       s.enraged,
           } : prev);
           sceneRef.current?.onBossUpdate({
             current_hp: s.currentHp,
@@ -300,7 +302,13 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           );
           // totalDamage is authoritative in room.state (accumulated server-side)
           const me = room.state.players.get(room.sessionId);
-          if (me) setMyDamage(me.totalDamage);
+          if (me) {
+            setMyDamage(me.totalDamage);
+            // Live rank — kiek žaidėjų padarė daugiau žalos už mane
+            let ahead = 0;
+            room.state.players.forEach((pl) => { if ((pl.totalDamage || 0) > me.totalDamage) ahead += 1; });
+            setMyRank({ rank: ahead + 1, total: room.state.players.size });
+          }
         });
 
         // raid_finished — broadcast by BossRaidRoom.ts after FastAPI settles rewards
@@ -377,6 +385,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       setRaidEnded(false);
       setLootResult(null);
       setMyDamage(0);
+      setMyRank(null);
       setTopDealers([]);
       setDamageFeed([]);
       fetchBossState();
@@ -813,6 +822,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     }}>
       <style>{`
         @keyframes phasePulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes enragePulse { 0%,100%{opacity:1; box-shadow:0 0 8px rgba(239,68,68,0.55)} 50%{opacity:0.55; box-shadow:0 0 2px rgba(239,68,68,0.2)} }
         @keyframes feedFade {
           0%   { opacity: 1; transform: translateY(0); }
           80%  { opacity: 1; }
@@ -845,6 +855,13 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             border: `1px solid ${phaseColor}50`,
             animation: 'phasePulse 1.5s ease-in-out infinite',
           }}>P{phase}</span>
+          {bossState.enraged && (
+            <span style={{
+              marginLeft: 6, fontSize: 10, fontWeight: 900, padding: '1px 6px',
+              borderRadius: 10, background: 'rgba(239,68,68,0.22)', color: '#ef4444',
+              border: '1px solid rgba(239,68,68,0.55)', animation: 'enragePulse 0.8s ease-in-out infinite',
+            }}>⚡ ENRAGED</span>
+          )}
         </div>
 
         {/* HP bar */}
@@ -896,6 +913,12 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           }}>
             <span style={{ fontSize: 10, color: '#64748b' }}>MY DMG </span>
             <span style={{ fontSize: 13, fontWeight: 900, color: '#c9a84c' }}>🔥 {myDamage.toLocaleString()}</span>
+            {myRank && myRank.total > 1 && (
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', marginLeft: 6 }}>
+                {myRank.rank === 1 ? '🥇' : myRank.rank === 2 ? '🥈' : myRank.rank === 3 ? '🥉' : `#${myRank.rank}`}
+                <span style={{ color: '#475569' }}>/{myRank.total}</span>
+              </span>
+            )}
           </div>
         )}
 
