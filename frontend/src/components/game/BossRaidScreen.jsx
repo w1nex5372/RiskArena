@@ -43,6 +43,25 @@ const LOOT_TIERS = [
   { pct: 60.0, label: 'No drop',   color: '#334155' },
 ];
 
+const TIER_COLORS = { uncommon: '#22c55e', rare: '#3b82f6', epic: '#a855f7', legendary: '#f59e0b' };
+const tierColor = (tier) => TIER_COLORS[String(tier || '').toLowerCase()] || '#c9a84c';
+
+// Animuotas skaičiavimas 0 → value (~900ms, easeOutCubic) — rewards reveal momentui.
+function CountUp({ value = 0, duration = 900, style }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let raf; const start = performance.now(); const to = Number(value) || 0;
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / duration);
+      setN(Math.round(to * (1 - Math.pow(1 - p, 3)))); // easeOutCubic
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+  return <span style={style}>{n.toLocaleString()}</span>;
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [bossState,       setBossState]       = useState(null);
@@ -291,7 +310,12 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           if (Array.isArray(data.rewards) && user?.id) {
             const mine = data.rewards.find((r) => String(r.user_id) === String(user.id));
             if (mine) {
-              setLootResult({ coins: mine.coins, xp: mine.xp, item_drop: mine.item_drop ?? null });
+              setLootResult({
+                coins: mine.coins, xp: mine.xp,
+                item_drop: mine.item_drop ?? null,
+                item_drop_tier: mine.item_drop_tier ?? null,
+                leveled_up: !!mine.leveled_up, new_level: mine.new_level ?? null,
+              });
               if (mine.leveled_up) onLevelUp?.({ new_level: mine.new_level });
             }
           }
@@ -512,35 +536,74 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
   // ── Loot result panel ─────────────────────────────────────────────────────
   if (raidEnded && lootResult) {
+    const defeated  = (bossState?.current_hp ?? 1) <= 0;
+    const dropTier  = lootResult.item_drop_tier;
+    const dropColor = tierColor(dropTier);
     return (
       <div className="space-y-4" style={{ color: '#e8e0d0' }}>
-        <div className="rounded-[24px] p-5" style={{ background: 'rgba(26,26,46,0.95)', border: '1px solid rgba(201,168,76,0.35)', boxShadow: '0 0 30px rgba(201,168,76,0.12)' }}>
+        <style>{`
+          @keyframes victorySlam { 0% { transform: scale(2.2); opacity: 0; } 60% { transform: scale(0.92); opacity: 1; } 100% { transform: scale(1); } }
+          @keyframes victoryGlow { 0%,100% { text-shadow: 0 0 18px rgba(201,168,76,0.5); } 50% { text-shadow: 0 0 34px rgba(201,168,76,0.9), 0 0 60px rgba(201,168,76,0.3); } }
+          @keyframes lootCardIn { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+          @keyframes dropShine  { 0% { background-position: -120% 0; } 100% { background-position: 220% 0; } }
+          @keyframes lvlPop     { 0% { transform: scale(0); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+        `}</style>
+
+        {/* VICTORY / RAID OVER banner */}
+        <div style={{ textAlign: 'center', padding: '6px 0 2px' }}>
+          <div style={{
+            fontSize: 34, fontWeight: 900, letterSpacing: 4,
+            color: defeated ? '#c9a84c' : '#64748b',
+            animation: defeated
+              ? 'victorySlam 0.55s cubic-bezier(.2,1.2,.3,1) both, victoryGlow 2.2s ease-in-out 0.55s infinite'
+              : 'victorySlam 0.55s ease-out both',
+          }}>
+            {defeated ? 'VICTORY' : 'RAID OVER'}
+          </div>
+          <p style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+            {defeated ? `${bossState.name} defeated` : `${bossState.name} survived — time expired`}
+          </p>
+        </div>
+
+        <div className="rounded-[24px] p-5" style={{ background: 'rgba(26,26,46,0.95)', border: '1px solid rgba(201,168,76,0.35)', boxShadow: '0 0 30px rgba(201,168,76,0.12)', animation: 'lootCardIn 0.45s ease-out both' }}>
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(201,168,76,0.15)', border: '1px solid rgba(201,168,76,0.3)' }}>
               <Trophy className="w-6 h-6" style={{ color: '#c9a84c' }} />
             </div>
-            <div>
+            <div style={{ flex: 1 }}>
               <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#c9a84c' }}>Raid Complete</p>
-              <h2 className="text-xl font-extrabold" style={{ color: '#e8e0d0' }}>{bossState.name} Defeated</h2>
+              <h2 className="text-xl font-extrabold" style={{ color: '#e8e0d0' }}>Your Rewards</h2>
             </div>
+            {lootResult.leveled_up && (
+              <div style={{ fontSize: 11, fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: 'rgba(74,144,217,0.18)', color: '#4a90d9', border: '1px solid rgba(74,144,217,0.4)', animation: 'lvlPop 0.5s ease-out 0.7s both', whiteSpace: 'nowrap' }}>
+                ⬆ LEVEL {lootResult.new_level}
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-3 mb-4">
-            {[
-              { icon: <Coins className="w-5 h-5 mx-auto mb-1" style={{ color: '#c9a84c' }} />, val: (lootResult.coins||0).toLocaleString(), label: 'coins', bg: 'rgba(201,168,76,0.08)', border: 'rgba(201,168,76,0.2)' },
-              { icon: <Zap   className="w-5 h-5 mx-auto mb-1" style={{ color: '#4a90d9' }} />, val: (lootResult.xp||0).toLocaleString(),   label: 'XP',    bg: 'rgba(74,144,217,0.08)',  border: 'rgba(74,144,217,0.2)' },
-              { icon: <Gem   className="w-5 h-5 mx-auto mb-1" style={{ color: '#c0392b' }} />, val: lootResult.item_drop ? '1' : '—',        label: 'drop',  bg: 'rgba(139,0,0,0.08)',     border: 'rgba(139,0,0,0.2)' },
-            ].map(({ icon, val, label, bg, border }) => (
-              <div key={label} className="rounded-2xl p-3 text-center" style={{ background: bg, border: `1px solid ${border}` }}>
-                {icon}
-                <p className="text-lg font-extrabold" style={{ color: '#e8e0d0' }}>{val}</p>
-                <p className="text-[11px]" style={{ color: '#64748b' }}>{label}</p>
-              </div>
-            ))}
+            <div className="rounded-2xl p-3 text-center" style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)' }}>
+              <Coins className="w-5 h-5 mx-auto mb-1" style={{ color: '#c9a84c' }} />
+              <p className="text-lg font-extrabold" style={{ color: '#e8e0d0' }}><CountUp value={lootResult.coins || 0} /></p>
+              <p className="text-[11px]" style={{ color: '#64748b' }}>coins</p>
+            </div>
+            <div className="rounded-2xl p-3 text-center" style={{ background: 'rgba(74,144,217,0.08)', border: '1px solid rgba(74,144,217,0.2)' }}>
+              <Zap className="w-5 h-5 mx-auto mb-1" style={{ color: '#4a90d9' }} />
+              <p className="text-lg font-extrabold" style={{ color: '#e8e0d0' }}><CountUp value={lootResult.xp || 0} /></p>
+              <p className="text-[11px]" style={{ color: '#64748b' }}>XP</p>
+            </div>
+            <div className="rounded-2xl p-3 text-center" style={{ background: `${dropColor}14`, border: `1px solid ${dropColor}33` }}>
+              <Gem className="w-5 h-5 mx-auto mb-1" style={{ color: lootResult.item_drop ? dropColor : '#c0392b' }} />
+              <p className="text-lg font-extrabold" style={{ color: '#e8e0d0' }}>{lootResult.item_drop ? '1' : '—'}</p>
+              <p className="text-[11px]" style={{ color: '#64748b' }}>drop</p>
+            </div>
           </div>
           {lootResult.item_drop && (
-            <div className="rounded-2xl px-4 py-3 mb-3" style={{ background: 'rgba(139,0,0,0.1)', border: '1px solid rgba(139,0,0,0.25)' }}>
-              <p className="text-xs font-extrabold" style={{ color: '#c0392b' }}>Item Drop</p>
-              <p className="text-sm font-bold" style={{ color: '#e8e0d0' }}>{lootResult.item_drop}</p>
+            <div className="rounded-2xl px-4 py-3 mb-3" style={{ position: 'relative', overflow: 'hidden', background: `${dropColor}1a`, border: `1px solid ${dropColor}55` }}>
+              <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(105deg, transparent 35%, ${dropColor}55 50%, transparent 65%)`, backgroundSize: '220% 100%', animation: 'dropShine 2.4s ease-in-out infinite' }} />
+              <div style={{ position: 'relative' }}>
+                <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: dropColor }}>{dropTier || 'Item'} Drop</p>
+                <p className="text-sm font-bold" style={{ color: '#e8e0d0' }}>{lootResult.item_drop}</p>
+              </div>
             </div>
           )}
           <div className="rounded-2xl px-4 py-2" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
