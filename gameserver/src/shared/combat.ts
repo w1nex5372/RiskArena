@@ -23,3 +23,14 @@ export function resolveDamage(
   const block   = opts.blocked ? 1 - blockReduction : 1;
   return Math.max(1, Math.round(rawDmg * passive * block));
 }
+
+export function resolveAbilityDamage(
+  baseDamage: number,
+  abilityBonus: number,
+  abilityPowerScale = 1,
+): number {
+  const base = Number(baseDamage || 0);
+  const bonus = Number(abilityBonus || 0);
+  const scale = Number.isFinite(Number(abilityPowerScale)) ? Number(abilityPowerScale) : 1;
+  return Math.max(0, Math.round(base + bonus * Math.max(0, scale)));
+}

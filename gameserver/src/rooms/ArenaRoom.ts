@@ -3,7 +3,7 @@ import { Room, Client } from "colyseus";
 import axios from "axios";
 import { ArenaState, Player } from "../schemas/ArenaState";
 // Shared combat rules — single source of truth (also used by BossRaidRoom)
-import { classMaxHp, resolveDamage } from "../shared/combat";
+import { classMaxHp, resolveAbilityDamage, resolveDamage } from "../shared/combat";
 import {
   classBasicAttack,
   classDefaultAbilityKey,
@@ -277,6 +277,7 @@ export class ArenaRoom extends Room<ArenaState> {
       if (player.isStunned && now >= player.stunUntil) {
         player.isStunned = false;
         if (player.state !== "jumping") player.state = "idle";
+        this.broadcastCombatFeedback("stun_ended", player, sessionId, "READY");
       }
       if (player.abilityCharges === 0 && now >= player.abilityCooldownUntil) {
         player.abilityCharges = 1;
@@ -301,6 +302,7 @@ export class ArenaRoom extends Room<ArenaState> {
         if (player.state === "attacking" && now >= player.attackUntil) player.state = "idle";
 
         const actionLocked = player.state === "hurt" || player.state === "attacking";
+        const wasBlocking = player.isBlocking;
         const canBlock =
           input.block &&
           player.isGrounded &&
@@ -320,6 +322,14 @@ export class ArenaRoom extends Room<ArenaState> {
           }
         } else if (player.state === "blocking") {
           player.state = "idle";
+        }
+        if (player.isBlocking !== wasBlocking) {
+          this.broadcastCombatFeedback(
+            player.isBlocking ? "block_start" : "block_end",
+            player,
+            sessionId,
+            player.isBlocking ? "BLOCK" : "",
+          );
         }
 
         // Movement
@@ -358,17 +368,41 @@ export class ArenaRoom extends Room<ArenaState> {
           player.attackUntil = now + ATTACK_ANIM_MS;
           this.broadcast("weapon_swing", { sessionId, cls: player.characterClass });
 
+          let hit = false;
+          let missReason = "MISS";
+          let feedbackX = player.x + (player.facingRight ? 64 : -64);
+          let feedbackY = player.y;
           this.state.players.forEach((opp, oppSid) => {
             if (oppSid === sessionId || opp.state === "dead") return;
             const dist  = Math.abs(player.x - opp.x);
             const yDist = Math.abs(player.y - opp.y);
+            feedbackX = opp.x;
+            feedbackY = opp.y;
+            if (dist > basicAttack.range) {
+              missReason = "OUT";
+            } else if (!this.isTargetInFront(player, opp)) {
+              missReason = "MISS";
+            } else if (opp.isGrounded === false && yDist > 40) {
+              missReason = "DODGE";
+            }
             if (dist <= basicAttack.range && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
+              hit = true;
               const min = Math.round(basicAttack.damage_min);
               const max = Math.round(basicAttack.damage_max);
               const dmg = min + Math.floor(Math.random() * (max - min + 1)) + player.attackBonus;
               this.dealDamage(sessionId, opp, oppSid, dmg, now, { source: "basic" });
             }
           });
+          if (!hit) {
+            this.broadcastCombatFeedback(
+              missReason === "DODGE" ? "dodge" : "miss",
+              player,
+              sessionId,
+              missReason,
+              feedbackX,
+              feedbackY,
+            );
+          }
         }
 
         // ── Class ability ───────────────────────────────────────────────
@@ -423,6 +457,8 @@ export class ArenaRoom extends Room<ArenaState> {
     const meta = abilityMeta(abilityKey);
     const abilityType = String(meta?.type || "");
     if (!meta || !abilityType || !abilityAllowedForClass(player.characterClass, abilityKey)) return false;
+    const abilityDamage = (baseDamage: number) =>
+      resolveAbilityDamage(baseDamage, player.abilityBonus, abilityNumber(meta, "ability_power_scale", 1));
 
     const cls = String(meta.class || player.characterClass);
     const defaultCooldown = abilityCooldownMs(abilityKey, 0);
@@ -442,6 +478,7 @@ export class ArenaRoom extends Room<ArenaState> {
     if (abilityType === "guardbreak") {
       const range = abilityNumber(meta, "range", GUARDBREAK_RANGE);
       const damage = abilityNumber(meta, "damage", GUARDBREAK_DMG);
+      const effectiveDamage = abilityDamage(damage);
       const stunMs = abilityNumber(meta, "stun_ms", GUARDBREAK_STUN_MS);
       let hit = false;
       let brokeBlock = false;
@@ -461,7 +498,7 @@ export class ArenaRoom extends Room<ArenaState> {
           }
           opp.stunUntil = now + stunMs;
           opp.isStunned = true;
-          this.dealDamage(sessionId, opp, oppSid, damage + player.abilityBonus, now, {
+          this.dealDamage(sessionId, opp, oppSid, effectiveDamage, now, {
             ignoreBlock: !!meta.ignore_block,
             source: slot === "class" ? "classAbility" : "itemAbility",
           });
@@ -470,7 +507,7 @@ export class ArenaRoom extends Room<ArenaState> {
       this.broadcast("ability_used", {
         sessionId, cls, abilityKey, slot,
         fromX: player.x, fromY: player.y, toX: targetX, toY: targetY,
-        hit, brokeBlock, damage, stunMs, range, cooldownMs,
+        hit, brokeBlock, damage, effectiveDamage, stunMs, range, cooldownMs,
       });
       return true;
     }
@@ -478,6 +515,7 @@ export class ArenaRoom extends Room<ArenaState> {
     if (abilityType === "bash") {
       const range = abilityNumber(meta, "range", BASH_RANGE);
       const damage = abilityNumber(meta, "damage", BASH_DMG);
+      const effectiveDamage = abilityDamage(damage);
       const stunMs = abilityNumber(meta, "stun_ms", BASH_STUN_MS);
       let hit = false;
       let targetX = player.x;
@@ -492,7 +530,7 @@ export class ArenaRoom extends Room<ArenaState> {
           targetY = opp.y;
           opp.stunUntil  = now + stunMs;
           opp.isStunned  = true;
-          this.dealDamage(sessionId, opp, oppSid, damage + player.abilityBonus, now, {
+          this.dealDamage(sessionId, opp, oppSid, effectiveDamage, now, {
             source: slot === "class" ? "classAbility" : "itemAbility",
           });
         }
@@ -500,13 +538,14 @@ export class ArenaRoom extends Room<ArenaState> {
       this.broadcast("ability_used", {
         sessionId, cls, abilityKey, slot,
         fromX: player.x, fromY: player.y, toX: targetX, toY: targetY,
-        hit, damage, stunMs, range, cooldownMs,
+        hit, damage, effectiveDamage, stunMs, range, cooldownMs,
       });
       return true;
     }
 
     if (abilityType === "projectile") {
       const damage = abilityNumber(meta, "damage", FIREBALL_DMG);
+      const effectiveDamage = abilityDamage(damage);
       const knockback = abilityNumber(meta, "knockback", FIREBALL_KNOCKBACK);
       this.state.players.forEach((opp, oppSid) => {
         if (oppSid === sessionId || opp.state === "dead") return;
@@ -516,12 +555,12 @@ export class ArenaRoom extends Room<ArenaState> {
           sessionId, cls, abilityKey, slot,
           fromX: player.x, fromY: player.y,
           toX: opp.x, toY: opp.y, hit: !dodged,
-          damage, knockback, range: abilityNumber(meta, "range", ARENA_WIDTH), cooldownMs,
+          damage, effectiveDamage, knockback, range: abilityNumber(meta, "range", ARENA_WIDTH), cooldownMs,
         });
         if (!dodged) {
           const origX = opp.x;
           const dir   = opp.x > player.x ? 1 : -1;
-          this.dealDamageAt(sessionId, opp, oppSid, damage + player.abilityBonus, origX, opp.y, now, {
+          this.dealDamageAt(sessionId, opp, oppSid, effectiveDamage, origX, opp.y, now, {
             source: slot === "class" ? "classAbility" : "itemAbility",
           });
           if (opp.state !== "dead") {
@@ -629,6 +668,11 @@ export class ArenaRoom extends Room<ArenaState> {
       attackerSid,
       targetSid,
     });
+    if (blocked && !guardBroken) {
+      this.broadcastCombatFeedback("blocked", target, targetSid, "BLOCK", nx, ny);
+    } else if (!blocked && target.hp > 0 && (target.isStunned || target.stunUntil > now)) {
+      this.broadcastCombatFeedback("stun", target, targetSid, "STUN", nx, ny);
+    }
     if (target.hp <= 0) {
       target.state = "dead";
       this.endMatch(attackerSid, targetSid, false);
@@ -678,7 +722,30 @@ export class ArenaRoom extends Room<ArenaState> {
     player.stunUntil = Math.max(player.stunUntil, now + (stunMs ?? guard.break_stun_ms));
     player.isStunned = true;
     player.state = "hurt";
+    if (!wasBroken) {
+      this.broadcastCombatFeedback("guard_broken", player, player.sessionId, "BREAK", player.x, player.y);
+    }
     return !wasBroken;
+  }
+
+  private broadcastCombatFeedback(
+    type: string,
+    player: Player,
+    sessionId: string,
+    label: string,
+    x?: number,
+    y?: number,
+  ) {
+    if (!label && type !== "block_end" && type !== "stun_ended") return;
+    const px = Number(x);
+    const py = Number(y);
+    this.broadcast("combat_feedback", {
+      type,
+      sessionId,
+      x: Number.isFinite(px) ? px : player.x,
+      y: Number.isFinite(py) ? py - 52 : player.y - 52,
+      label,
+    });
   }
 
   private isTargetInFront(attacker: Player, target: Player) {

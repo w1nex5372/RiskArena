@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import battleAbilities from '../../generated/battle_abilities.json';
 import battleClasses from '../../generated/battle_classes.json';
+import { resolveAbilityDamage } from '../../utils/itemPresentation';
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 const ABILITY_DATA = battleAbilities?.abilities || {};
@@ -29,6 +30,19 @@ export const CLASS_ABILITY_ICONS = {
   mage:    '/items/skills/class_fireball.png',
   rogue:   '/items/skills/class_blink.png',
 };
+
+function abilityTooltip(name, cooldownMs, stats, abilityBonus = 0) {
+  const parts = [`${name} - ${Math.round(cooldownMs / 1000)}s cooldown`];
+  const damage = Number(stats?.damage || 0);
+  if (damage) {
+    parts.push(`${resolveAbilityDamage(damage, abilityBonus, Number(stats?.ability_power_scale ?? 1))} DMG`);
+  }
+  if (stats?.stun_ms) parts.push(`${String(Number(stats.stun_ms) / 1000).replace(/\.0$/, '')}s stun`);
+  if (stats?.range) parts.push(`${Math.round(Number(stats.range))} range`);
+  if (stats?.knockback) parts.push(`${Math.round(Number(stats.knockback))} knockback`);
+  if (stats?.offset) parts.push(`${Math.round(Number(stats.offset))} reposition`);
+  return parts.join(' | ');
+}
 
 // ── Joystick — left / right / up ─────────────────────────────────────────────
 export function JoystickControl({ onChange }) {
@@ -151,6 +165,7 @@ export function AbilityButton({
   playerClass,
   equippedAbility,
   onActivate,
+  cooldownUntil = 0,
   size = 64,
   style = {},
 }) {
@@ -160,7 +175,10 @@ export function AbilityButton({
 
   const abilityName = equippedAbility?.name || ABILITY_NAMES[playerClass] || 'Ability';
   const imagePath   = equippedAbility?.image_path || '';
-  const hasAbility  = Boolean(equippedAbility?.ability_key || equippedAbility?.name);
+  const abilityKey  = equippedAbility?.ability_key || CLASS_DEFAULT_ABILITY_KEYS[playerClass] || '';
+  const abilityStats = equippedAbility?.battle_stats || equippedAbility?.active_ability_stats || ABILITY_DATA[abilityKey] || null;
+  const abilityBonus = Number(equippedAbility?.ability_bonus || equippedAbility?.effective_stats?.ability_bonus || 0);
+  const hasAbility  = Boolean(abilityKey || equippedAbility?.name);
   const canActivate = hasAbility && abilityReady;
   const cooldownMs  = Number(
     equippedAbility?.ability_cooldown_ms ||
@@ -169,7 +187,7 @@ export function AbilityButton({
     6000
   );
   const cooldownText = hasAbility
-    ? `${abilityName} — ${Math.round(cooldownMs / 1000)}s cooldown`
+    ? abilityTooltip(abilityName, cooldownMs, abilityStats, abilityBonus)
     : 'Equip an ability item';
 
   React.useEffect(() => {
@@ -177,7 +195,11 @@ export function AbilityButton({
       startRef.current = Date.now();
       setProgress(0);
       const tick = () => {
-        const p = Math.min((Date.now() - startRef.current) / cooldownMs, 1);
+        const now = Date.now();
+        const serverUntil = Number(cooldownUntil || 0);
+        const p = serverUntil > now
+          ? Math.min(Math.max(1 - ((serverUntil - now) / cooldownMs), 0), 1)
+          : Math.min((now - startRef.current) / cooldownMs, 1);
         setProgress(p);
         if (p < 1) rafRef.current = requestAnimationFrame(tick);
       };
@@ -187,7 +209,7 @@ export function AbilityButton({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       setProgress(0);
     }
-  }, [abilityReady, cooldownMs]);
+  }, [abilityReady, cooldownMs, cooldownUntil]);
 
   const r                = 27;
   const circ             = 2 * Math.PI * r;
@@ -287,6 +309,8 @@ export function BattleControlsOverlay({
   playerClass      = 'warrior',
   abilityReady     = true,
   itemAbilityReady = true,
+  abilityCooldownUntil = 0,
+  itemAbilityCooldownUntil = 0,
   equippedAbility  = null,
   canAttack        = true,
   showBlock        = true,
@@ -297,6 +321,11 @@ export function BattleControlsOverlay({
   onBlockDown,
   onBlockUp,
 }) {
+  React.useEffect(() => () => {
+    onJoystick?.({ left: false, right: false, up: false });
+    onBlockUp?.();
+  }, [onJoystick, onBlockUp]);
+
   return (
     <div style={{ position:'absolute', inset:0, zIndex:20, pointerEvents:'none' }}>
 
@@ -355,9 +384,14 @@ export function BattleControlsOverlay({
         <AbilityButton
           abilityReady={abilityReady}
           playerClass={playerClass}
+          cooldownUntil={abilityCooldownUntil}
           size={66}
           style={{ position:'absolute', right:24, bottom:98, pointerEvents:'auto' }}
-          equippedAbility={{ name: ABILITY_NAMES[playerClass] || 'Ability', image_path: CLASS_ABILITY_ICONS[playerClass] }}
+          equippedAbility={{
+            name: ABILITY_NAMES[playerClass] || 'Ability',
+            image_path: CLASS_ABILITY_ICONS[playerClass],
+            ability_key: CLASS_DEFAULT_ABILITY_KEYS[playerClass],
+          }}
           onActivate={onAbility}
         />
 
@@ -366,6 +400,7 @@ export function BattleControlsOverlay({
           <AbilityButton
             abilityReady={itemAbilityReady}
             playerClass={playerClass}
+            cooldownUntil={itemAbilityCooldownUntil}
             size={62}
             style={{ position:'absolute', right:100, bottom:94, pointerEvents:'auto' }}
             equippedAbility={equippedAbility}

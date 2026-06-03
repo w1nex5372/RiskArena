@@ -253,19 +253,27 @@ function formatSeconds(ms) {
   return Number.isInteger(seconds) ? `${seconds}s` : `${seconds.toFixed(1)}s`;
 }
 
+export function resolveAbilityDamage(baseDamage, abilityBonus = 0, abilityPowerScale = 1) {
+  const base = Number(baseDamage || 0);
+  const bonus = Number(abilityBonus || 0);
+  const scale = Number.isFinite(Number(abilityPowerScale)) ? Number(abilityPowerScale) : 1;
+  return Math.max(0, Math.round(base + bonus * Math.max(0, scale)));
+}
+
 export function getAbilityBattleRows(item, { abilityBonus = 0 } = {}) {
   const stats = item?.battle_stats || item?.active_ability_stats || null;
   if (!stats || typeof stats !== 'object') return [];
 
   const rows = [];
   const damage = Number(stats.damage || 0);
+  const abilityPowerScale = Number(stats.ability_power_scale ?? 1);
   const stunMs = Number(stats.stun_ms || 0);
   const knockback = Number(stats.knockback || 0);
   const range = Number(stats.range || 0);
   const offset = Number(stats.offset || 0);
   const cooldownMs = Number(stats.cooldown_ms || item?.ability_cooldown_ms || 0);
 
-  if (damage) rows.push({ key: 'damage', label: `${Math.round(damage + Number(abilityBonus || 0))} DMG` });
+  if (damage) rows.push({ key: 'damage', label: `${resolveAbilityDamage(damage, abilityBonus, abilityPowerScale)} DMG` });
   if (stunMs) rows.push({ key: 'stun', label: `Stun ${formatSeconds(stunMs)}` });
   if (knockback) rows.push({ key: 'knockback', label: `Knockback ${Math.round(knockback)}` });
   if (range) rows.push({ key: 'range', label: `Range ${Math.round(range)}` });

@@ -3821,11 +3821,11 @@ async def _battle_spritesheet_for_loadout(
         "weapon": weapon.get("lpc_visual"),
         "armor": armor.get("lpc_visual"),
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:10]
-    sheet_hash = hashlib.sha1(f"lpc-v4:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
+    sheet_hash = hashlib.sha1(f"lpc-v5:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
     generated_path = await _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash, enchant_level=enchant)
     return {
         "path": generated_path or "",
-        "hash": f"lpc-v4:{sheet_hash}",
+        "hash": f"lpc-v5:{sheet_hash}",
     }
 
 
@@ -5416,12 +5416,16 @@ async def get_user_loadout_internal(user_id: str, request: Request):
     # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slot→item
     item_list = [v for v in equipped_rows.values() if v is not None]
     stats = modifiers_to_dict(aggregate_item_modifiers(item_list))
+    attack_bonus = float(stats.get("attack_bonus", 0) or 0)
+    ability_bonus = float(stats.get("ability_bonus", 0) or 0)
+    attack_bonus *= 1 + float(stats.get("bonus_attack_percent", 0) or 0)
+    ability_bonus *= 1 + float(stats.get("bonus_ability_percent", 0) or 0)
     ability_item = equipped_rows.get("ability") or {}
     ability_payload = _battle_ability_payload(class_name, ability_item)
     return {
         "user_id": user_id,
-        "attack_bonus": int(_clamp_number(stats.get("attack_bonus", 0), 0, 500, 0)),
-        "ability_bonus": int(_clamp_number(stats.get("ability_bonus", 0), 0, 500, 0)),
+        "attack_bonus": int(_clamp_number(round(attack_bonus), 0, 500, 0)),
+        "ability_bonus": int(_clamp_number(round(ability_bonus), 0, 500, 0)),
         "defend_reduction": _clamp_number(
             float(stats.get("defend_reduction", 0) or 0) + float(stats.get("damage_reduction_percent", 0) or 0),
             0,

@@ -135,6 +135,7 @@ export default class BattleScene extends Phaser.Scene {
     this.hud             = null;
     this.weaponDebug     = null;
     this.dynamicSheetLoads = new Set();
+    this._roomDisposers  = [];
   }
 
   // ── 1. Preload ─────────────────────────────────────────────────────────
@@ -176,6 +177,7 @@ export default class BattleScene extends Phaser.Scene {
     this._buildOverlays();
     this._buildTopHud();
     this._setupWeaponDebug();
+    this.events.once('shutdown', () => this._disposeRoomListeners());
 
     // Mark ready — textures guaranteed loaded by this point
     this.sceneReady = true;
@@ -1076,27 +1078,28 @@ export default class BattleScene extends Phaser.Scene {
 
   _wireRoom(room, mySessionId) {
     if (this.room === room && this.mySessionId === mySessionId) return;
+    this._disposeRoomListeners();
     if (this.room && this.room !== room) {
       Array.from(this.sprites.keys()).forEach((sessionId) => this.removePlayerSprite(sessionId));
     }
     this.room = room;
     this.mySessionId = mySessionId;
 
-    room.state.players.onAdd((player, sessionId) => {
+    this._trackRoomDisposer(room.state.players.onAdd((player, sessionId) => {
       if (this.room !== room) return;
       if (this.sprites.has(sessionId)) this.removePlayerSprite(sessionId);
       this.createPlayerSprite(sessionId, player);
-      player.onChange(() => {
+      this._trackRoomDisposer(player.onChange(() => {
         if (this.room === room) this.syncPlayer(sessionId, player);
-      });
-    });
-    room.state.players.onRemove((_p, sessionId) => {
+      }));
+    }));
+    this._trackRoomDisposer(room.state.players.onRemove((_p, sessionId) => {
       if (this.room === room) this.removePlayerSprite(sessionId);
-    });
-    room.state.onChange(() => {
+    }));
+    this._trackRoomDisposer(room.state.onChange(() => {
       if (this.room === room) this.handlePhaseChange(room.state);
-    });
-    room.onMessage('damage_number', (d) => {
+    }));
+    this._trackRoomDisposer(room.onMessage('damage_number', (d) => {
       if (this.room === room) {
         this.showDamageNumber(d.x, d.y, d.damage, {
           blocked: Boolean(d.blocked),
@@ -1108,13 +1111,27 @@ export default class BattleScene extends Phaser.Scene {
           targetSid: d.targetSid,
         });
       }
-    });
-    room.onMessage('ability_used',  (d) => {
+    }));
+    this._trackRoomDisposer(room.onMessage('ability_used',  (d) => {
       if (this.room === room) this.showAbilityEffect(d);
-    });
-    room.onMessage('weapon_swing',  (d) => {
+    }));
+    this._trackRoomDisposer(room.onMessage('combat_feedback',  (d) => {
+      if (this.room === room) this.showCombatFeedback(d);
+    }));
+    this._trackRoomDisposer(room.onMessage('weapon_swing',  (d) => {
       if (this.room === room) this.playWeaponSwing(d.sessionId);
+    }));
+  }
+
+  _trackRoomDisposer(disposer) {
+    if (typeof disposer === 'function') this._roomDisposers.push(disposer);
+  }
+
+  _disposeRoomListeners() {
+    this._roomDisposers.forEach((dispose) => {
+      try { dispose(); } catch {}
     });
+    this._roomDisposers = [];
   }
 
   // ── 4. Create player visuals ────────────────────────────────────────────
@@ -1337,8 +1354,8 @@ export default class BattleScene extends Phaser.Scene {
 
     // Stun indicator ★★★
     if (player.isStunned && !s.stunLabel) {
-      s.stunLabel = this.add.text(x, topY - 12, '★★★', {
-        fontSize: '13px', color: '#ffff00', fontFamily: 'monospace', fontStyle: 'bold',
+      s.stunLabel = this.add.text(x, topY - 12, 'STUN', {
+        fontSize: '11px', color: '#facc15', fontFamily: 'monospace', fontStyle: 'bold',
         stroke: '#000000', strokeThickness: 3,
       }).setOrigin(0.5).setDepth(4);
       this.tweens.add({ targets: s.stunLabel, alpha: { from: 1, to: 0.3 }, yoyo: true, repeat: -1, duration: 300 });
@@ -1585,6 +1602,7 @@ export default class BattleScene extends Phaser.Scene {
     if (s.guardBreakLabel) this.tweens.killTweensOf(s.guardBreakLabel);
     if (s.hpPulseTween) this.tweens.killTweensOf(s.hpBar);
     if (s.blockFxTween) this.tweens.killTweensOf(s.blockFx);
+    if (s.hitReactionTween) s.hitReactionTween.stop();
     if (s.enchantTrail) { s.enchantTrail.destroy(); }
     [s.body, s.weapon, s.shadow, s.aura, s.nameLabel, s.classLabel, s.hpBg, s.hpChip, s.hpBar, s.guardBg, s.guardBar, s.meTag, s.dcLabel, s.stunLabel, s.guardBreakLabel, s.blockFx]
       .forEach((o) => o?.destroy());
@@ -1832,11 +1850,18 @@ export default class BattleScene extends Phaser.Scene {
       return;
     }
 
+    const isBackstab = Boolean(opts.backstab);
+
     // Particle burst
     if (this.hitEmitter) {
       const count = this._isMobile ? (damage >= 20 ? 5 : 3) : (damage >= 20 ? 14 : 8);
       this.hitEmitter.explode(count, gameX, gameY);
     }
+    this._playHitReaction(opts.targetSid, {
+      attackerSid: opts.attackerSid,
+      damage,
+      backstab: isBackstab,
+    });
 
     // Screen shake on heavy hits
     if (damage >= 20) {
@@ -1844,7 +1869,6 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     // Floating number
-    const isBackstab = Boolean(opts.backstab);
     const isBig  = isBackstab || damage >= 20;
     const color  = isBackstab ? '#f472b6' : isBig ? '#ff2200' : '#ef4444';
     const size   = isBackstab ? '24px' : isBig ? '28px' : '20px';
@@ -1886,6 +1910,54 @@ export default class BattleScene extends Phaser.Scene {
       duration: 850,
       ease: 'Power1',
       onComplete: () => txt.destroy(),
+    });
+  }
+
+  _playHitReaction(targetSid, { attackerSid = '', damage = 0, backstab = false } = {}) {
+    const target = targetSid ? this.sprites.get(targetSid) : null;
+    if (!target?.body?.active) return;
+
+    const attacker = attackerSid ? this.sprites.get(attackerSid) : null;
+    const impactX = target.body.x;
+    const impactY = target.body.y - SPRITE_HEIGHT / 2;
+    const tint = backstab ? 0xf472b6 : damage >= 20 ? 0xfff7ed : 0xffffff;
+    const scaleBoost = damage >= 20 || backstab ? 1.08 : 1.04;
+    const baseScaleX = target.body.scaleX || SPRITE_SCALE;
+    const baseScaleY = target.body.scaleY || SPRITE_SCALE;
+
+    if (target.hitReactionTween?.isPlaying()) {
+      target.hitReactionTween.stop();
+    }
+    target.body.setTint(tint);
+    target.hitReactionTween = this.tweens.add({
+      targets: target.body,
+      scaleX: baseScaleX * scaleBoost,
+      scaleY: baseScaleY * 0.96,
+      duration: 70,
+      yoyo: true,
+      ease: 'Power2',
+      onComplete: () => {
+        if (!target.body?.active) return;
+        target.body.clearTint();
+        target.body.setScale(baseScaleX, baseScaleY);
+        target.hitReactionTween = null;
+      },
+    });
+
+    const dir = attacker?.body?.active && attacker.body.x > impactX ? -1 : 1;
+    const slash = this.add.graphics().setDepth(7);
+    slash.lineStyle(backstab ? 4 : 3, backstab ? 0xf472b6 : 0xf8fafc, 0.9);
+    slash.beginPath();
+    slash.moveTo(impactX - dir * 18, impactY - 18);
+    slash.lineTo(impactX + dir * 18, impactY + 18);
+    slash.strokePath();
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      x: dir * 10,
+      duration: 160,
+      ease: 'Power2',
+      onComplete: () => { if (slash.active) slash.destroy(); },
     });
   }
 
@@ -1942,6 +2014,44 @@ export default class BattleScene extends Phaser.Scene {
       ease: 'Power2',
       onComplete: () => { if (flash.active) flash.destroy(); },
     });
+  }
+
+  showCombatFeedback(d = {}) {
+    const type = String(d.type || '');
+    const label = String(d.label || '').trim();
+    if (!label) return;
+
+    const sprite = d.sessionId ? this.sprites.get(d.sessionId) : null;
+    const x = Number.isFinite(Number(d.x)) ? Number(d.x) : sprite?.body?.x ?? W / 2;
+    const y = Number.isFinite(Number(d.y)) ? Number(d.y) : (sprite?.body?.y ?? FLOOR_Y) - 72;
+    const palette = {
+      miss: ['#94a3b8', '14px'],
+      dodge: ['#93c5fd', '16px'],
+      blocked: ['#60a5fa', '14px'],
+      block_start: ['#bfdbfe', '13px'],
+      guard_broken: ['#facc15', '18px'],
+      stun: ['#facc15', '15px'],
+      stun_ended: ['#22c55e', '12px'],
+    }[type] || ['#f8fafc', '14px'];
+
+    this._showCombatText(x, y, label, palette[0], palette[1]);
+    if (type === 'guard_broken') {
+      this.cameras.main.shake(140, 0.008);
+    }
+    if (type === 'dodge') {
+      const ring = this.add.graphics().setDepth(6);
+      ring.lineStyle(2, 0x93c5fd, 0.75);
+      ring.strokeCircle(x, y + 34, 24);
+      this.tweens.add({
+        targets: ring,
+        alpha: 0,
+        scaleX: 1.7,
+        scaleY: 1.7,
+        duration: 260,
+        ease: 'Power2',
+        onComplete: () => { if (ring.active) ring.destroy(); },
+      });
+    }
   }
 
   // ── 9. Ability visual effects ─────────────────────────────────────────────

@@ -32,6 +32,7 @@ function formatConnectionError(err) {
 // Game world dimensions
 const GAME_W = 800;
 const GAME_H = 420;
+const EMPTY_INPUT = { left: false, right: false, attack: false, ability: false, itemAbility: false, up: false, block: false };
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const gameRef = useRef(null);        // Phaser.Game instance
   const sceneRef = useRef(null);       // BattleScene instance
   const roomRef = useRef(null);        // Colyseus room
-  const inputRef = useRef({ left: false, right: false, attack: false, ability: false, itemAbility: false, up: false, block: false });
+  const inputRef = useRef({ ...EMPTY_INPUT });
   const inputIntervalRef = useRef(null);
   const actionTimersRef = useRef([]);
   const lastInputRef = useRef('');
@@ -53,6 +54,8 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const [dotCount, setDotCount] = useState(1);
   const [abilityReady, setAbilityReady] = useState(true);
   const [itemAbilityReady, setItemAbilityReady] = useState(true);
+  const [abilityCooldownUntil, setAbilityCooldownUntil] = useState(0);
+  const [itemAbilityCooldownUntil, setItemAbilityCooldownUntil] = useState(0);
   const [playerClass, setPlayerClass] = useState('warrior');
   const [activeAbilityKey, setActiveAbilityKey] = useState('');
   const [isPortrait, setIsPortrait] = useState(() => window.innerHeight > window.innerWidth);
@@ -62,6 +65,20 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const updatePhase = useCallback((p) => {
     phaseRef.current = p;
     setPhase(p);
+  }, []);
+
+  const resetInput = useCallback((flush = false) => {
+    actionTimersRef.current.forEach(clearTimeout);
+    actionTimersRef.current = [];
+    inputRef.current = { ...EMPTY_INPUT };
+    lastInputRef.current = '';
+    if (flush && roomActiveRef.current && roomRef.current?.state?.phase === 'battle') {
+      try {
+        roomRef.current.send('input', inputRef.current);
+      } catch {
+        // Connection may already be closing.
+      }
+    }
   }, []);
 
   // ── Fetch equipped item bonuses ───────────────────────────────────────────
@@ -192,11 +209,15 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         if (myPlayer) {
           setAbilityReady(myPlayer.abilityCharges > 0);
           setItemAbilityReady((myPlayer.itemAbilityCharges ?? 1) > 0);
+          setAbilityCooldownUntil(Number(myPlayer.abilityCooldownUntil || 0));
+          setItemAbilityCooldownUntil(Number(myPlayer.itemAbilityCooldownUntil || 0));
           setPlayerClass(myPlayer.characterClass || 'warrior');
           setActiveAbilityKey(String(myPlayer.activeAbilityKey || ''));
           myPlayer.onChange(() => {
             setAbilityReady(myPlayer.abilityCharges > 0);
             setItemAbilityReady((myPlayer.itemAbilityCharges ?? 1) > 0);
+            setAbilityCooldownUntil(Number(myPlayer.abilityCooldownUntil || 0));
+            setItemAbilityCooldownUntil(Number(myPlayer.itemAbilityCooldownUntil || 0));
             setActiveAbilityKey(String(myPlayer.activeAbilityKey || ''));
           });
         }
@@ -256,11 +277,17 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         // Track ability cooldown for button state
         room.state.players.onAdd((player, sid) => {
           if (sid === room.sessionId) {
+            setAbilityReady(player.abilityCharges > 0);
+            setItemAbilityReady((player.itemAbilityCharges ?? 1) > 0);
+            setAbilityCooldownUntil(Number(player.abilityCooldownUntil || 0));
+            setItemAbilityCooldownUntil(Number(player.itemAbilityCooldownUntil || 0));
             setPlayerClass(player.characterClass || 'warrior');
             setActiveAbilityKey(String(player.activeAbilityKey || ''));
             player.onChange(() => {
               setAbilityReady(player.abilityCharges > 0);
               setItemAbilityReady((player.itemAbilityCharges ?? 1) > 0);
+              setAbilityCooldownUntil(Number(player.abilityCooldownUntil || 0));
+              setItemAbilityCooldownUntil(Number(player.itemAbilityCooldownUntil || 0));
               setActiveAbilityKey(String(player.activeAbilityKey || ''));
             });
           }
@@ -337,6 +364,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       cancelled = true;
       clearTimeout(connectTimer);
       clearInterval(inputIntervalRef.current);
+      resetInput(true);
       if (roomRef.current) {
         roomRef.current.leave();
         roomRef.current = null;
@@ -351,12 +379,18 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
     return () => clearInterval(id);
   }, [phase]);
 
+  useEffect(() => {
+    if (phase !== 'battle') resetInput(true);
+  }, [phase, resetInput]);
+
   // ── Input helpers ─────────────────────────────────────────────────────────
   const setKey = useCallback((key, value) => {
+    if (value && phaseRef.current !== 'battle') return;
     inputRef.current = { ...inputRef.current, [key]: value };
   }, []);
 
   const pulseKey = useCallback((key, ms = 150) => {
+    if (phaseRef.current !== 'battle') return;
     setKey(key, true);
     const timer = setTimeout(() => {
       setKey(key, false);
@@ -371,6 +405,15 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   }, []);
 
   const setDirectionalInput = useCallback((next) => {
+    if (phaseRef.current !== 'battle') {
+      inputRef.current = {
+        ...inputRef.current,
+        left: false,
+        right: false,
+        up: false,
+      };
+      return;
+    }
     inputRef.current = {
       ...inputRef.current,
       left: Boolean(next.left),
@@ -382,6 +425,8 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   // ── Keyboard support (desktop dev) ────────────────────────────────────────
   useEffect(() => {
     const down = (e) => {
+      if (phaseRef.current !== 'battle') return;
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' ', 'Shift'].includes(e.key)) e.preventDefault();
       if (e.key === 'ArrowLeft' || e.key === 'a') setKey('left', true);
       if (e.key === 'ArrowRight' || e.key === 'd') setKey('right', true);
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', true);
@@ -391,6 +436,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'Shift' || e.key === 'c') setKey('block', true);
     };
     const up = (e) => {
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' ', 'Shift'].includes(e.key)) e.preventDefault();
       if (e.key === 'ArrowLeft' || e.key === 'a') setKey('left', false);
       if (e.key === 'ArrowRight' || e.key === 'd') setKey('right', false);
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', false);
@@ -500,31 +546,33 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         </div>
       )}
 
-      {phase === 'finished' && result && (
+      {phase === 'finished' && (
         <div style={{
           position: 'absolute', inset: 0, zIndex: 20,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(13,13,26,0.93)',
         }}>
           {/* Result header */}
-          <div style={{ fontSize: 52, marginBottom: 6 }}>{result.won ? '🏆' : '💀'}</div>
+          <div style={{ fontSize: 52, marginBottom: 6 }}>{result?.won ? '🏆' : result ? '💀' : '🏁'}</div>
           <div style={{
             fontSize: 32, fontWeight: 900, letterSpacing: '0.1em', marginBottom: 4,
-            color: result.won ? '#22c55e' : '#ef4444',
+            color: result?.won ? '#22c55e' : result ? '#ef4444' : '#c9a84c',
           }}>
-            {result.won ? 'VICTORY' : 'DEFEAT'}
+            {result?.won ? 'VICTORY' : result ? 'DEFEAT' : 'MATCH OVER'}
           </div>
           <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>
-            {result.won
+            {result
+              ? result.won
               ? `You defeated ${result.opponentName}`
-              : `Defeated by ${result.opponentName}`}
+                : `Defeated by ${result.opponentName}`
+              : 'Battle ended'}
           </div>
 
           {/* Rewards */}
           <div style={{
             display: 'flex', gap: 12, marginBottom: 28,
           }}>
-            {result.won && (
+            {result?.won && (
               <div style={{
                 background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)',
                 borderRadius: 10, padding: '10px 18px', textAlign: 'center', minWidth: 80,
@@ -697,6 +745,8 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
           playerClass={playerClass}
           abilityReady={abilityReady}
           itemAbilityReady={itemAbilityReady}
+          abilityCooldownUntil={abilityCooldownUntil}
+          itemAbilityCooldownUntil={itemAbilityCooldownUntil}
           equippedAbility={hasEquippedAbility ? equippedAbility : null}
           canAttack={true}
           onJoystick={setDirectionalInput}

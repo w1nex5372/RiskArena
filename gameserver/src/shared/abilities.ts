@@ -9,6 +9,7 @@ export type AbilityMeta = {
   class?: string;
   type?: string;
   damage?: number;
+  ability_power_scale?: number;
   stun_ms?: number;
   knockback?: number;
   range?: number;

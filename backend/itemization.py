@@ -158,6 +158,7 @@ def battle_ability_stats(ability_key: Optional[str]) -> Optional[Dict[str, Any]]
         "role",
         "type",
         "damage",
+        "ability_power_scale",
         "stun_ms",
         "knockback",
         "range",

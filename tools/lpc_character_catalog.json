@@ -292,15 +292,15 @@
           "bodyRow": 11,
           "weaponRow": 11,
           "frames": 9,
-          "xOff": 0,
-          "yOff": 0
+          "xOff": 32,
+          "yOff": 32
         },
         "attack": {
           "bodyRow": 15,
           "weaponRow": 64,
           "weaponCols": [1, 1, 4, 4, 7, 7],
-          "xOff": 0,
-          "yOff": 0
+          "xOff": 32,
+          "yOff": 32
         }
       }
     }

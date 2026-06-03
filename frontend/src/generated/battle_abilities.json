@@ -7,6 +7,7 @@
       "type": "bash",
       "label": "Bash",
       "damage": 20,
+      "ability_power_scale": 0.7,
       "stun_ms": 1500,
       "range": 120,
       "cooldown_ms": 8000
@@ -17,6 +18,7 @@
       "type": "bash",
       "label": "Bash",
       "damage": 20,
+      "ability_power_scale": 0.7,
       "stun_ms": 1500,
       "range": 120,
       "cooldown_ms": 8000
@@ -27,6 +29,7 @@
       "type": "guardbreak",
       "label": "Guardbreak",
       "damage": 18,
+      "ability_power_scale": 0.65,
       "stun_ms": 650,
       "range": 105,
       "cooldown_ms": 7000,
@@ -37,7 +40,8 @@
       "role": "control",
       "type": "bash",
       "label": "Titan Bash",
-      "damage": 28,
+      "damage": 27,
+      "ability_power_scale": 0.7,
       "stun_ms": 1900,
       "range": 130,
       "cooldown_ms": 9000
@@ -47,40 +51,44 @@
       "role": "ranged_burst",
       "type": "projectile",
       "label": "Fireball",
-      "damage": 25,
+      "damage": 22,
+      "ability_power_scale": 0.45,
       "knockback": 100,
       "range": 800,
-      "cooldown_ms": 6000
+      "cooldown_ms": 6500
     },
     "mage_fireball": {
       "class": "mage",
       "role": "ranged_burst",
       "type": "projectile",
       "label": "Fireball",
-      "damage": 25,
+      "damage": 22,
+      "ability_power_scale": 0.45,
       "knockback": 100,
       "range": 800,
-      "cooldown_ms": 6000
+      "cooldown_ms": 6500
     },
     "mage_ember_bolt": {
       "class": "mage",
       "role": "ranged_burst",
       "type": "projectile",
       "label": "Ember Bolt",
-      "damage": 22,
-      "knockback": 80,
+      "damage": 20,
+      "ability_power_scale": 0.45,
+      "knockback": 75,
       "range": 800,
-      "cooldown_ms": 5500
+      "cooldown_ms": 6000
     },
     "mage_inferno_blast": {
       "class": "mage",
       "role": "ranged_burst",
       "type": "projectile",
       "label": "Inferno Blast",
-      "damage": 34,
-      "knockback": 130,
+      "damage": 30,
+      "ability_power_scale": 0.45,
+      "knockback": 120,
       "range": 800,
-      "cooldown_ms": 7500
+      "cooldown_ms": 8500
     },
     "rogue_default": {
       "class": "rogue",
