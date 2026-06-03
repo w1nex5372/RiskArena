@@ -298,8 +298,12 @@ export default class BossRaidScene extends Phaser.Scene {
   _updateLivePlayers(dt) {
     if (!this._liveMode) return;
     const lerp = Math.min(1, dt * 10); // glotninimo koeficientas
+    const now  = Date.now();
     this._attackerSlots.forEach((slot) => {
-      if (!slot.active || slot.sessionId == null || !slot.sprite?.active) return;
+      if (!slot.active || slot.sessionId == null) return;
+      // HUD (HP/skydas/nokauto countdown) seka žaidėją — net jei sprite dar kraunasi/fallback
+      this._tickAttackerHud(slot, now);
+      if (!slot.sprite?.active) return;
       if (slot.targetX == null) return;
       // Tik tikri sprite'ai juda/animuojasi — rect fallback (container) lieka slot.x
       const isSprite = typeof slot.sprite.setFlipX === 'function' && typeof slot.sprite.play === 'function';
@@ -902,6 +906,9 @@ export default class BossRaidScene extends Phaser.Scene {
       x, y: FLOOR_Y + FOOT_OFFSET, sprite: null, nameText: null, cls: null, sheetKey: null, active: false,
       bounceTween: null, idx, sessionId: null, lpcState: 'idle', desiredState: null,
       curX: null, targetX: null, facingRight: true, moveAnim: null,
+      // Group A: kitų žaidėjų vitalai + HUD (HP baras / skydas / nokauto countdown)
+      hpBg: null, hpBar: null, shieldIcon: null, downedText: null,
+      hp: null, maxHp: null, blocking: false, guardBroken: false, downed: false, downedUntil: 0,
     }));
   }
 
@@ -1244,6 +1251,8 @@ export default class BossRaidScene extends Phaser.Scene {
     // BE "bounce" tween — žaidėjas stovi ant žemės kaip my player (anksčiau plūduriavo)
     // Phase 4: jei serveris jau pranešė šio žaidėjo veiksmo būseną, pritaikome ją dabar
     if (slot.desiredState != null) { slot.lpcState = null; this._applyLivePlayerState(slot, slot.desiredState); }
+    // Jei sprite atsirado vėliau (async load), o žaidėjas jau nokautuotas — pilkas tint
+    if (slot.downed && slot.sprite?.setTint) slot.sprite.setTint(0x555555);
   }
 
   _spawnAttackerRect(slot, cls) {
@@ -1332,9 +1341,96 @@ export default class BossRaidScene extends Phaser.Scene {
       slot.moveAnim = null; // priverčia _updateLivePlayers iš naujo parinkti walk/idle
     }
 
+    // Group A: vitalai (HP/skydas/nokautas) iš serverio → HUD virš žaidėjo
+    if (typeof data.hp === 'number')    slot.hp    = data.hp;
+    if (typeof data.maxHp === 'number') slot.maxHp = data.maxHp;
+    slot.blocking    = !!data.blocking;
+    slot.guardBroken = !!data.guardBroken;
+    const nowDowned = state === 'downed';
+    if (nowDowned && !slot.downed) {
+      // Pirmas perėjimas į nokautą — fiksuojam lokalų countdown pradžios tašką.
+      // Serveris reviveSeconds siunčia tik pakeitus (ne kas sek.), tad countdown'ą
+      // sukam lokaliai iš šios pradinės reikšmės (rejoin atveju < 60).
+      const secs = (typeof data.reviveSeconds === 'number' && data.reviveSeconds > 0) ? data.reviveSeconds : 60;
+      slot.downedUntil = Date.now() + secs * 1000;
+    }
+    slot.downed = nowDowned;
+    this._updateAttackerHud(slot);
+
     // Jei sprite jau yra (cache'uotas/fallback) — pritaikome iškart; jei dar kraunasi,
     // _spawnAttackerLpc pritaikys desiredState kai sprite atsiras.
     this._applyLivePlayerState(slot, state);
+  }
+
+  // ── Kitų žaidėjų HUD: HP baras + skydas + nokauto countdown ──────────────────
+  // Lazily sukuriami elementai virš slot'o (po vardo). Poziciją kas kadrą atnaujina
+  // _tickAttackerHud() (seka slot.curX). Reikšmes nustato _updateAttackerHud().
+  _ensureAttackerHud(slot) {
+    if (slot.hpBg) return;
+    const x = slot.curX ?? slot.x;
+    const hpY = slot.y - 122; // po vardu (vardas slot.y-130)
+    slot.hpBg  = this.add.rectangle(x - 20, hpY, 40, 5, 0x111827).setOrigin(0, 0.5).setDepth(7).setVisible(false);
+    slot.hpBar = this.add.rectangle(x - 20, hpY, 40, 5, 0x22c55e).setOrigin(0, 0.5).setDepth(8).setVisible(false);
+    slot.shieldIcon = this.add.text(x, slot.y - 68, '🛡', { fontSize: '14px', fontFamily: 'monospace' })
+      .setOrigin(0.5).setDepth(8).setVisible(false);
+    slot.downedText = this.add.text(x, slot.y - 96, '', {
+      fontSize: '11px', fontFamily: 'monospace', fontStyle: 'bold',
+      color: '#fca5a5', stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(9).setVisible(false);
+  }
+
+  // Atnaujina HP baro plotį/spalvą, skydo matomumą ir nokauto vizualą (pilkas sprite).
+  _updateAttackerHud(slot) {
+    if (!slot.active) return;
+    this._ensureAttackerHud(slot);
+    if (typeof slot.hp === 'number' && slot.maxHp > 0) {
+      const pct = Math.max(0, Math.min(1, slot.hp / slot.maxHp));
+      slot.hpBg.setVisible(true);
+      slot.hpBar.setVisible(true);
+      slot.hpBar.displayWidth = 40 * pct;
+      slot.hpBar.setFillStyle(pct > 0.5 ? 0x22c55e : pct > 0.25 ? 0xf59e0b : 0xef4444);
+    }
+    // Skydas — tik kai blokuoja, guard'as nesulaužytas ir gyvas
+    if (slot.shieldIcon?.active) slot.shieldIcon.setVisible(!!slot.blocking && !slot.guardBroken && !slot.downed);
+    // Nokautas — pilkas sprite (tik tikram sprite'ui; container fallback neturi setTint)
+    if (slot.downed) {
+      if (slot.sprite?.setTint) slot.sprite.setTint(0x555555);
+    } else {
+      if (slot.sprite?.clearTint) slot.sprite.clearTint();
+      if (slot.downedText?.active) slot.downedText.setVisible(false);
+    }
+  }
+
+  // Kas kadrą — HUD seka žaidėją + sukam lokalų nokauto countdown'ą.
+  _tickAttackerHud(slot, now) {
+    if (!slot.hpBg) return;
+    const x = slot.curX ?? slot.x;
+    if (slot.hpBg?.active)       slot.hpBg.x       = x - 20;
+    if (slot.hpBar?.active)      slot.hpBar.x      = x - 20;
+    if (slot.shieldIcon?.active) slot.shieldIcon.x = x;
+    if (slot.downedText?.active) slot.downedText.x = x;
+    if (slot.downed && slot.downedText?.active) {
+      const rem = Math.max(0, Math.ceil((slot.downedUntil - now) / 1000));
+      slot.downedText.setText(`💀 ${rem}s`).setVisible(true);
+    }
+  }
+
+  // Floating damage number virš pataikyto kito žaidėjo (block → melsva, dodge → "DODGE").
+  _showSlotDamage(slot, t) {
+    const x = (slot.curX ?? slot.x) + Phaser.Math.Between(-8, 8);
+    const y = slot.y - 72;
+    let label, color;
+    if (t.dodged)       { label = 'DODGE';     color = '#38bdf8'; }
+    else if (t.blocked) { label = `-${t.dmg}`; color = '#93c5fd'; }
+    else                { label = `-${t.dmg}`; color = '#ef4444'; }
+    const txt = this.add.text(x, y, label, {
+      fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold',
+      color, stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(20);
+    this.tweens.add({
+      targets: txt, y: y - 42, alpha: 0, duration: 750, ease: 'Power1',
+      onComplete: () => { if (txt.active) txt.destroy(); },
+    });
   }
 
   removeRaidPlayer(sessionId) {
@@ -1392,6 +1488,11 @@ export default class BossRaidScene extends Phaser.Scene {
     slot.facingRight = true;
     slot.moveAnim = null;
     if (slot.nameText?.active) slot.nameText.setVisible(false);
+    // HUD elementai — sunaikinam (perkuriami lazily kai slot'as vėl užimamas)
+    [slot.hpBg, slot.hpBar, slot.shieldIcon, slot.downedText].forEach((o) => { if (o?.active) o.destroy(); });
+    slot.hpBg = slot.hpBar = slot.shieldIcon = slot.downedText = null;
+    slot.hp = null; slot.maxHp = null; slot.blocking = false; slot.guardBroken = false;
+    slot.downed = false; slot.downedUntil = 0;
   }
 
   _clearAllAttackerSlots() {
@@ -1411,6 +1512,17 @@ export default class BossRaidScene extends Phaser.Scene {
     if (this._bossDeadPlayed || this._bossStatus === 'defeated') return;
     if (data?.type === 'aoe') this._doBossAoeImpact();
     else                      this._doBossAttack();
+
+    // Floating damage numbers virš pataikytų KITŲ žaidėjų (mano žala/knockback — atskirai).
+    // Mano sid nėra _sessionSlots (renderinuosi atskirai) → idx==null → praleidžiama.
+    if (Array.isArray(data?.targets)) {
+      data.targets.forEach((t) => {
+        const idx = this._sessionSlots.get(t.sid);
+        if (idx == null) return;
+        const slot = this._attackerSlots[idx];
+        if (slot?.active) this._showSlotDamage(slot, t);
+      });
+    }
   }
 
   // Serveris pranešė atakos TELEGRAPH (windup) — rodome įspėjimą jo trukmei.

@@ -216,6 +216,12 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             state:           player.state,
             x:               player.x,
             facingRight:     player.facingRight,
+            // Group A: kitų žaidėjų vitalai → scena renderina jų HP barą / skydą / nokautą
+            hp:              player.hp,
+            maxHp:           player.maxHp,
+            blocking:        player.blocking,
+            guardBroken:     player.guardBroken,
+            reviveSeconds:   player.reviveSeconds,
           });
         };
         room.state.players.onAdd((player, sessionId) => {
