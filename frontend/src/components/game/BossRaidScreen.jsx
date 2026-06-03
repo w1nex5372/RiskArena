@@ -9,6 +9,7 @@ import WeaponIcon from '../WeaponIcon';
 import ArmorIcon from '../ArmorIcon';
 import { BattleControlsOverlay, CLASS_COOLDOWNS } from '../arena/BattleControls';
 import { getStoredSessionToken } from '../../utils/storage';
+import { toast } from 'sonner';
 
 const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
   const override = new URLSearchParams(window.location.search).get('gameServerUrl');
@@ -167,17 +168,15 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
     let cancelled = false;
 
-    async function connectBossRoom() {
-      try {
-        const token  = user?.session_token || getStoredSessionToken();
-        const client = new Colyseus.Client(GAME_SERVER_URL);
-        const room   = await client.joinOrCreate('boss_raid_room', {
-          sessionToken: token,
-          devUsername:  user?.first_name || 'Raider',
-        });
+    const token  = user?.session_token || getStoredSessionToken();
+    const client = new Colyseus.Client(GAME_SERVER_URL);
+    let reconnectToken = null;
 
-        if (cancelled) { room.leave(); return; }
-        colyseusRoomRef.current = room;
+    // Attaches all live handlers to a room — reused for the initial join AND after a
+    // reconnect, so a network drop transparently resumes the SAME raid session (the
+    // server holds the seat ~20s: HP/damage/downed preserved, no "disconnect = heal").
+    function wireRoom(room) {
+      reconnectToken = room.reconnectionToken;
 
         // HP / phase / playerCount — live from Colyseus delta-sync
         room.state.onChange(() => {
@@ -299,7 +298,38 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           sceneRef.current?.onRaidFinished(data);
         });
 
-        room.onLeave(() => { colyseusRoomRef.current = null; });
+      // Disconnect: code 1000 = consented (navigation/unmount) → done. Anything else =
+      // a network drop → try to reconnect within the server's hold window.
+      room.onLeave((code) => {
+        colyseusRoomRef.current = null;
+        if (cancelled || code === 1000) return;
+        attemptReconnect();
+      });
+    }
+
+    async function attemptReconnect() {
+      if (!reconnectToken) return;
+      try {
+        const room = await client.reconnect(reconnectToken);
+        if (cancelled) { room.leave(); return; }
+        colyseusRoomRef.current = room;
+        wireRoom(room);
+        toast.success('Reconnected to the raid', { id: 'raid-reconnect', duration: 2000 });
+      } catch (err) {
+        console.warn('[BossRaid] reconnect failed:', err?.message);
+        toast.error('Lost connection to the raid', { id: 'raid-reconnect-fail', duration: 3000 });
+      }
+    }
+
+    async function connectBossRoom() {
+      try {
+        const room = await client.joinOrCreate('boss_raid_room', {
+          sessionToken: token,
+          devUsername:  user?.first_name || 'Raider',
+        });
+        if (cancelled) { room.leave(); return; }
+        colyseusRoomRef.current = room;
+        wireRoom(room);
       } catch (err) {
         console.warn('[BossRaid] Colyseus connect failed:', err?.message);
       }

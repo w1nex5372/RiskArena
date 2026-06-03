@@ -38,6 +38,10 @@ const STATE = {
 // Group A: boso atakos žala pagal fazę gyvena boss_definitions.json (žr. ../shared/bosses).
 const REVIVE_MS = 60000; // 1 min — kiek laiko nokautuotas žaidėjas atsigauna
 
+// Network drop atveju laikom žaidėjo vietą tiek sekundžių (Colyseus allowReconnection).
+// Per šį langą HP/žala/nokauto būsena išlieka; bosas atsijungusio nepataiko.
+const BOSS_RECONNECT_SECONDS = 20;
+
 // Nokautuotų žaidėjų revive laikas PAGAL userId — MODULE-level (gyvena per visus room'us
 // šiame gameserver procese), kad išėjus/grįžus (net solo, kai room'as disposinasi)
 // death timer'is nepasiresetintų (anti-exploit). { userId: reviveAt ms }
@@ -219,12 +223,29 @@ export class BossRaidRoom extends Room<BossRaidState> {
   }
 
   // ── Žaidėjas išeina ──────────────────────────────────────────────────────────
-  onLeave(client: Client) {
-    // Skaitome vardą PRIEŠ delete — kitaip get() grąžintų undefined
-    const username = this.state.players.get(client.sessionId)?.username ?? client.sessionId;
+  async onLeave(client: Client, consented: boolean) {
+    const p = this.state.players.get(client.sessionId);
+    const username = p?.username ?? client.sessionId;
+
+    // Network drop (NE consented) aktyvaus raid'o metu — laikom vietą reconnect'ui.
+    // Žaidėjo HP/žala/nokauto būsena IŠLIEKA (jokio "disconnect = heal"); kol atsijungęs —
+    // bosas jo nepataiko (negali block/dodge). Grįžęs tęsia ten, kur buvo, su ta pačia būsena.
+    if (!consented && p && this.state.status === "active") {
+      p.disconnected = true;
+      p.blocking = false; // nelaikom block kol atsijungęs
+      console.log(`[BossRaidRoom] ${username} disconnected — laukiam reconnect (${BOSS_RECONNECT_SECONDS}s)`);
+      try {
+        await this.allowReconnection(client, BOSS_RECONNECT_SECONDS);
+        p.disconnected = false; // grįžo — playerCount nepasikeitė, būsena išsaugota
+        console.log(`[BossRaidRoom] ${username} reconnected`);
+        return;
+      } catch (e) {
+        // Langas baigėsi — pašalinam (DOWNED_UNTIL jau saugo revive laiką, jei buvo nokautuotas).
+      }
+    }
+
     this.state.players.delete(client.sessionId);
     this.state.playerCount = this.state.players.size;
-
     console.log(`[BossRaidRoom] ${username} left (${this.state.playerCount} online)`);
   }
 
@@ -565,7 +586,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
 
     targets.forEach((sid) => {
       const p = this.state.players.get(sid);
-      if (!p || p.state === STATE.DOWNED || p.state === STATE.DEAD) return;
+      if (!p || p.disconnected || p.state === STATE.DOWNED || p.state === STATE.DEAD) return;
 
       // AoE dodge — ore esantis žaidėjas išvengia smūgio (jokios žalos, jokio guard drain).
       if (type === "aoe" && p.airborne) {

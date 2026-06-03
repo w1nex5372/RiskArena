@@ -37,6 +37,9 @@ export class RaidPlayer extends Schema {
   // Ar žaidėjas šuolyje (ore) — klientas praneša per "airborne" žinutę (jump start/landing).
   // Naudojama AoE atakai: ore esantys žaidėjai DODGE'ina neblokuojamą AoE smūgį.
   airborne: boolean = false;
+  // Ar žaidėjas šiuo metu atsijungęs (laikom vietą reconnect'ui, BOSS_RECONNECT_SECONDS).
+  // Server-only — bosas tokio žaidėjo nepataiko, kol jis grįš arba langas baigsis.
+  disconnected: boolean = false;
   lastAttackAt: number = 0;
   // Per-ability cooldown PAGAL KEY (klasės ir item ability turi atskirus cooldown'us).
   // { abilityKey: paskutinio panaudojimo Date.now() } — server-side anti-cheat.
