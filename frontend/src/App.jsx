@@ -22,19 +22,26 @@ import RoomLobby from './components/rooms/RoomLobby';
 
 // Code-split heavy / non-initial screens so they download on demand instead of
 // bloating the first-load bundle. Each becomes its own JS chunk loaded on navigation.
-const ProfileScreen = lazy(() => import('./components/profile/ProfileScreen'));
+//
+// webpackPrefetch on the common, lightweight menus tells the browser to fetch
+// those chunks at low priority during idle time after first paint — so by the
+// time the user taps the menu, the chunk is already cached and opens instantly.
+// The Phaser-heavy combat/raid screens (ArenaScreen, RealTimeArenaScreen,
+// BossRaidScreen) and rare screens (admin/debug/tos/privacy) stay on-demand to
+// keep idle bandwidth low.
+const ProfileScreen = lazy(() => import(/* webpackPrefetch: true */ './components/profile/ProfileScreen'));
 const AdminPanel = lazy(() => import('./components/admin/AdminPanel'));
 const ArenaScreen = lazy(() => import('./components/game/ArenaScreen'));
-const ArenaEntryScreen = lazy(() => import('./components/game/ArenaEntryScreen'));
+const ArenaEntryScreen = lazy(() => import(/* webpackPrefetch: true */ './components/game/ArenaEntryScreen'));
 const RealTimeArenaScreen = lazy(() => import('./components/arena/RealTimeArenaScreen'));
 const WeaponDebugScreen = lazy(() => import('./components/arena/WeaponDebugScreen'));
 const BossRaidScreen = lazy(() => import('./components/game/BossRaidScreen'));
-const TournamentScreen = lazy(() => import('./components/game/TournamentScreen'));
-const LeaderboardScreen = lazy(() => import('./components/leaderboard/LeaderboardScreen'));
-const InventoryScreen = lazy(() => import('./components/inventory/InventoryScreen'));
+const TournamentScreen = lazy(() => import(/* webpackPrefetch: true */ './components/game/TournamentScreen'));
+const LeaderboardScreen = lazy(() => import(/* webpackPrefetch: true */ './components/leaderboard/LeaderboardScreen'));
+const InventoryScreen = lazy(() => import(/* webpackPrefetch: true */ './components/inventory/InventoryScreen'));
 const CharacterCreationScreen = lazy(() => import('./components/onboarding/CharacterCreationScreen'));
-const DailyQuestsScreen = lazy(() => import('./components/game/DailyQuestsScreen'));
-const DailyChestScreen = lazy(() => import('./components/game/DailyChestScreen'));
+const DailyQuestsScreen = lazy(() => import(/* webpackPrefetch: true */ './components/game/DailyQuestsScreen'));
+const DailyChestScreen = lazy(() => import(/* webpackPrefetch: true */ './components/game/DailyChestScreen'));
 const SettingsScreen = lazy(() => import('./components/settings/SettingsScreen'));
 const TosScreen = lazy(() => import('./components/settings/TosScreen'));
 const PrivacyScreen = lazy(() => import('./components/settings/PrivacyScreen'));
@@ -1073,6 +1080,25 @@ function App() {
         // Auto-dismiss after 12s
         setTimeout(() => setAdminBanner(null), 12000);
       }
+    });
+
+    // Global boss-defeated announcement — shown to ALL connected players (not just
+    // the raiders). Epic/legendary item drops are called out by who looted what.
+    newSocket.on('boss_defeated', (data) => {
+      const name = data?.boss_name || 'The boss';
+      toast.success(`⚔️ ${name} has been defeated!`, {
+        id: `boss-defeated-${data?.ts || ''}`,
+        duration: 8000,
+      });
+      (data?.epic_drops || []).forEach((drop, i) => {
+        if (!drop?.item) return;
+        const who = drop.username || 'A raider';
+        const isLegendary = drop.tier === 'legendary';
+        toast.success(`${isLegendary ? '🌟' : '💜'} ${who} looted ${drop.item} (${isLegendary ? 'LEGENDARY' : 'EPIC'})!`, {
+          id: `boss-drop-${data?.ts || ''}-${i}`,
+          duration: 10000,
+        });
+      });
     });
 
     newSocket.on('token_balance_updated', (data) => {

@@ -4,6 +4,7 @@ Boss Raid HTTP endpoints.
 import os
 import random
 import secrets as _secrets
+import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -131,6 +132,31 @@ async def internal_defeat_raid(body: DefeatRaidBody, http_request: Request):
 
     raid = await boss_repo.get_raid(body.raid_id)
     boss_name = raid["name"] if raid else ""
+
+    # Global announcement to ALL connected players (not just this raid's room).
+    # Only emit on the call that actually SETTLED the raid (rewards non-empty) so
+    # idempotent retries don't double-announce. Epic/legendary item drops are called
+    # out by name + who got them (currently empty — no epic/legendary items exist yet —
+    # but ready for when they are added to the catalog).
+    if _sio and rewards:
+        epic_drops = [
+            r for r in rewards
+            if r.get("item_drop") and r.get("item_drop_tier") in ("epic", "legendary")
+        ]
+        names = await boss_repo.get_usernames([r["user_id"] for r in epic_drops])
+        await _sio.emit("boss_defeated", {
+            "boss_name": boss_name,
+            "ts": int(time.time() * 1000),
+            "epic_drops": [
+                {
+                    "user_id": r["user_id"],
+                    "username": names.get(r["user_id"], "Raider"),
+                    "item": r["item_drop"],
+                    "tier": r["item_drop_tier"],
+                }
+                for r in epic_drops
+            ],
+        })
 
     return {"ok": True, "rewards": rewards, "boss_name": boss_name}
 

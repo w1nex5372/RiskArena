@@ -171,6 +171,19 @@ async def _fetch_recent_attackers(conn, raid_id: str, seconds: int = 15, limit: 
     ]
 
 
+async def get_usernames(user_ids: List[str]) -> Dict[str, str]:
+    """Map user_id -> first_name for the given ids (used for reward announcements)."""
+    ids = [u for u in dict.fromkeys(user_ids) if u]  # de-dupe, drop falsy
+    if not ids:
+        return {}
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, first_name FROM users WHERE id = ANY($1::text[])",
+            ids,
+        )
+    return {r["id"]: (r["first_name"] or "Raider") for r in rows}
+
+
 async def get_raid_state(raid_id: str, user_id: str) -> Optional[Dict]:
     """Full state including top_dealers, my_damage, and player_count for API responses."""
     async with get_pool().acquire() as conn:
