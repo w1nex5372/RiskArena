@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { Backpack, Crown, Medal, Swords, Users, Zap } from 'lucide-react';
+import { useUser } from '../../context/UserContext';
 
 function NavBtn({ tab, activeTab, onClick, icon: Icon, label }) {
   const effectiveActiveTab = activeTab === 'dailyChest' ? 'rooms' : activeTab;
@@ -29,7 +31,8 @@ function NavBtn({ tab, activeTab, onClick, icon: Icon, label }) {
   );
 }
 
-export default function BottomNav({ activeTab, setActiveTab, user }) {
+function BottomNav({ activeTab, setActiveTab }) {
+  const { user } = useUser();
   return (
     <nav
       className="mobile-bottom-nav"
@@ -61,3 +64,7 @@ export default function BottomNav({ activeTab, setActiveTab, user }) {
     </nav>
   );
 }
+
+// Memoized: `user` (admin flag) now comes from context, so BottomNav only
+// re-renders when activeTab or the user's admin status changes.
+export default memo(BottomNav);

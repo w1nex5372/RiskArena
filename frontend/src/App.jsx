@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, Suspense, lazy } from 'react';
+﻿import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 import { Button } from './components/ui/button';
@@ -45,6 +45,7 @@ const DailyChestScreen = lazy(() => import(/* webpackPrefetch: true */ './compon
 const SettingsScreen = lazy(() => import('./components/settings/SettingsScreen'));
 const TosScreen = lazy(() => import('./components/settings/TosScreen'));
 const PrivacyScreen = lazy(() => import('./components/settings/PrivacyScreen'));
+import { UserProvider } from './context/UserContext';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
@@ -2294,7 +2295,14 @@ function App() {
   const appBackground = useLightChrome
     ? 'radial-gradient(circle at top left, rgba(96,165,250,0.18), transparent 34%), linear-gradient(180deg, #f8fbff 0%, #eef6ff 48%, #f8fafc 100%)'
     : 'linear-gradient(135deg, #08080f 0%, #1a0320 40%, #08080f 100%)';
+
+  // Stable handlers for memoized chrome (TopBar/BottomNav). setActiveTab is a
+  // stable state setter, so these identities never change → memo isn't defeated.
+  const openTokensTab = useCallback(() => setActiveTab('tokens'), []);
+  const openSettingsTab = useCallback(() => setActiveTab('settings'), []);
+
   return (
+    <UserProvider user={user} setUser={setUserWithLog}>
     <div className={`min-h-screen mobile-app-shell ${useLightChrome ? 'text-slate-900' : 'text-white'} overflow-y-auto ${
       isMobile ? 'overflow-x-hidden max-w-full w-full' : ''
     }`} style={isMobile ? {maxWidth: '100vw', width: '100vw', background: appBackground} : {background: appBackground}}>
@@ -2328,13 +2336,9 @@ function App() {
       
       <TopBar
         key={topBarVersion}
-        isMobile={isMobile}
-        user={user}
         isConnected={isConnected}
-        userPrizes={userPrizes}
-        onBuyTokens={() => setActiveTab('tokens')}
-        onOpenItems={() => setActiveTab('inventory')}
-        onOpenSettings={() => setActiveTab('settings')}
+        onBuyTokens={openTokensTab}
+        onOpenSettings={openSettingsTab}
       />
 
       <div className="flex">
@@ -3239,8 +3243,6 @@ function App() {
         <BottomNav
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          user={user}
-          onOpenShop={openTelegramShop}
         />
       )}
 
@@ -3436,6 +3438,7 @@ function App() {
       />
 
     </div>
+    </UserProvider>
   );
 }
 

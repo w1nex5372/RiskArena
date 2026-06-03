@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Coins, Plus, Settings } from 'lucide-react';
 import apiClient from '../../api/client';
 import { CLASS_INFO } from '../../utils/characters';
+import { useUser } from '../../context/UserContext';
 
 const PROGRESS_TTL = 60_000;
 
@@ -21,7 +22,8 @@ function setCachedProgress(data) {
   } catch {}
 }
 
-export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyTokens, onOpenItems, onOpenSettings }) {
+function TopBar({ isConnected, onBuyTokens, onOpenSettings }) {
+  const { user } = useUser();
   const [progress, setProgress] = useState(() => getCachedProgress());
 
   useEffect(() => {
@@ -160,3 +162,7 @@ export default function TopBar({ isMobile, user, isConnected, userPrizes, onBuyT
     </header>
   );
 }
+
+// Memoized: with `user` now read from context (not props), TopBar only re-renders
+// when user/isConnected/isMobile change — not on every unrelated App.jsx state tick.
+export default memo(TopBar);
