@@ -19,13 +19,21 @@ from itemization import (
 )
 
 
-def test_full_catalog_has_one_item_per_class_slot_tier():
-    assert len(FULL_ITEM_CATALOG) == 45
-    seen = {
-        (item["class_name"], item["slot"], item["tier"])
-        for item in FULL_ITEM_CATALOG
-    }
-    assert len(seen) == 45
+def test_catalog_entries_are_unique_and_well_formed():
+    # The catalog is filled incrementally (drop-only epic/legendary items and some
+    # weapon/armor tiers are still pending), so we assert structural integrity rather
+    # than a fixed total — adding items must not silently introduce a duplicate
+    # (class, slot, tier) combo or a malformed entry.
+    all_tiers = SHOP_TIERS | DROP_ONLY_TIERS
+    seen = set()
+    for item in FULL_ITEM_CATALOG:
+        key = (item["class_name"], item["slot"], item["tier"])
+        assert key not in seen, f"duplicate catalog entry {key}"
+        seen.add(key)
+        assert item["class_name"] in {"warrior", "mage", "rogue"}
+        assert item["slot"] in {"weapon", "armor", "ability"}
+        assert item["tier"] in all_tiers
+    assert len(FULL_ITEM_CATALOG) == len(seen)
 
 
 def test_shop_and_drop_rules_match_locked_design():
@@ -36,13 +44,16 @@ def test_shop_and_drop_rules_match_locked_design():
             assert item["price"] == 0
 
 
-def test_only_epic_and_legendary_items_have_passives():
+def test_passives_follow_current_armor_design():
+    # Armor system v1: every armor item carries a passive (its defining effect) at any
+    # tier. Weapon and ability items carry no passive in the current catalog (drop-only
+    # epic/legendary weapons/abilities that would have passives are not defined yet).
     for item in FULL_ITEM_CATALOG:
-        if item["tier"] in DROP_ONLY_TIERS:
-            assert item["passive_type"]
+        if item["slot"] == "armor":
+            assert item["passive_type"], item
             assert item["passive_value"] > 0
         else:
-            assert item["passive_type"] is None
+            assert item["passive_type"] is None, item
 
 
 def test_class_restriction_helper_is_strict_and_case_insensitive():
@@ -91,18 +102,22 @@ def test_aggregate_item_modifiers_combines_flat_stats_and_passives():
     )
 
 
-def test_enchant_caps_follow_tier_rules():
-    assert max_enchant_for_tier("common") == 5
-    assert max_enchant_for_tier("uncommon") == 6
-    assert max_enchant_for_tier("rare") == 8
-    assert max_enchant_for_tier("epic") == 10
-    assert max_enchant_for_tier("legendary") == 12
+def test_enchant_caps_and_normal_scroll_ceiling():
+    # Current design: every tier shares a max enchant of 10; normal scrolls can only
+    # reach level 5 (blessed scrolls go higher).
+    for tier in ("common", "uncommon", "rare", "epic", "legendary"):
+        assert max_enchant_for_tier(tier) == 10
+    assert enchant_success_chance("rare", 5, "normal_scroll") == 0.0   # normal hard-capped at 5
+    assert enchant_success_chance("rare", 4, "normal_scroll") > 0.0
+    assert enchant_success_chance("rare", 5, "blessed_scroll") > 0.0   # blessed continues past 5
 
 
-def test_safe_threshold_is_guaranteed_success():
-    assert enchant_success_chance("rare", 0, "normal_scroll") == 1.0
-    assert enchant_success_chance("rare", 2, "normal_scroll") == 1.0
-    assert enchant_success_chance("epic", 1, "blessed_scroll") == 1.0
+def test_enchant_success_chance_model():
+    # No guaranteed "safe" levels: even level 0 has a base chance (< 1.0) that decays
+    # with level and floors at the per-tier minimum.
+    assert enchant_success_chance("rare", 0, "normal_scroll") == 0.78        # base
+    assert enchant_success_chance("rare", 1, "normal_scroll") == 0.71        # 0.78 - 0.07
+    assert enchant_success_chance("legendary", 8, "blessed_scroll") == 0.18  # max(0.15, 0.58 - 0.40)
 
 
 def test_above_safe_threshold_has_deterministic_tier_level_chance():
@@ -110,12 +125,14 @@ def test_above_safe_threshold_has_deterministic_tier_level_chance():
     assert enchant_success_chance("legendary", 6, "blessed_scroll") == 0.28
 
 
-def test_normal_scroll_failure_above_safe_threshold_destroys_copy():
-    result = resolve_enchant_attempt("rare", 4, "normal_scroll", roll=0.99)
-
-    assert result["success"] is False
-    assert result["destroyed"] is True
-    assert result["new_enchant_level"] == 4
+def test_enchant_failure_never_destroys_copy():
+    # Current design removed item destruction: a failed enchant (normal OR blessed)
+    # keeps the copy at its current level.
+    for scroll in ("normal_scroll", "blessed_scroll"):
+        result = resolve_enchant_attempt("rare", 4, scroll, roll=0.99)
+        assert result["success"] is False
+        assert result["destroyed"] is False
+        assert result["new_enchant_level"] == 4
 
 
 def test_blessed_scroll_failure_keeps_copy_and_level():
@@ -221,7 +238,7 @@ def test_next_enchant_preview_uses_authoritative_next_level_stats_and_risk():
 
     assert preview["current_enchant_level"] == 3
     assert preview["next_enchant_level"] == 4
-    assert preview["max_enchant"] == 8
+    assert preview["max_enchant"] == 10
     assert preview["success_chance"] == 0.57
     assert preview["current_stats"]["hp_bonus"] == 29
     assert preview["next_enchant_stats"] == {
@@ -233,8 +250,9 @@ def test_next_enchant_preview_uses_authoritative_next_level_stats_and_risk():
         "hp_bonus": 3,
         "damage_reduction_percent": 0.005,
     }
-    assert preview["can_destroy"] is True
-    assert preview["failure_behavior"] == "destroy_copy"
+    # Current design removed destruction — failure always keeps the copy.
+    assert preview["can_destroy"] is False
+    assert preview["failure_behavior"] == "keep_copy"
 
 
 def test_next_enchant_preview_at_max_reports_no_delta():
@@ -248,14 +266,14 @@ def test_next_enchant_preview_at_max_reports_no_delta():
         "risk_win_chance": 0.0,
         "passive_type": None,
         "passive_value": 0.0,
-        "enchant_level": 5,
+        "enchant_level": 10,  # max enchant for any tier in the current design
     }
 
     preview = next_enchant_preview(item, "blessed_scroll")
 
     assert preview["at_max"] is True
     assert preview["success_chance"] == 0.0
-    assert preview["next_enchant_level"] == 5
+    assert preview["next_enchant_level"] == 10
     assert preview["delta_stats"] == {}
     assert preview["failure_behavior"] == "keep_copy"
 
@@ -296,9 +314,10 @@ def test_legacy_stat_preview_uses_effective_enchanted_stats():
 
     preview = stat_preview(item)
 
-    assert "+10 Weapon ATK" in preview
-    assert "+10% Weapon ATK" in preview
-    assert "+4% Weapon Boss Damage" in preview
+    # Current label format (no "Weapon" prefix): base ATK + enchant attack% + boss dmg%.
+    assert "+10 ATK" in preview
+    assert "+10% ATK" in preview
+    assert "+4% Boss Damage" in preview
 
 
 def test_legacy_item_id_equip_rejects_ambiguous_duplicate_copies():
