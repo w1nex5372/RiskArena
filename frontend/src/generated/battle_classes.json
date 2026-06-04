@@ -78,7 +78,8 @@
       },
       "passives": [
         "Ranged basic attack",
-        "High spell burst",
+        "Spacing burst",
+        "Knockback projectile",
         "Weak guard"
       ],
       "presentation_stats": {

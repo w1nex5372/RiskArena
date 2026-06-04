@@ -51,9 +51,9 @@
       "role": "ranged_burst",
       "type": "projectile",
       "label": "Fireball",
-      "damage": 22,
+      "damage": 20,
       "ability_power_scale": 0.45,
-      "knockback": 100,
+      "knockback": 145,
       "range": 800,
       "cooldown_ms": 6500
     },
@@ -62,9 +62,9 @@
       "role": "ranged_burst",
       "type": "projectile",
       "label": "Fireball",
-      "damage": 22,
+      "damage": 20,
       "ability_power_scale": 0.45,
-      "knockback": 100,
+      "knockback": 145,
       "range": 800,
       "cooldown_ms": 6500
     },
