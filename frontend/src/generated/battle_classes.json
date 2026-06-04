@@ -11,7 +11,7 @@
       "glow": "rgba(139,0,0,0.5)",
       "base_hp": 165,
       "move_speed": 7.6,
-      "default_ability_key": "warrior_default",
+      "default_ability_key": "warrior_guardbreak",
       "basic_attack": {
         "kind": "melee",
         "range": 86,

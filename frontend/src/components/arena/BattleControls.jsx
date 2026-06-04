@@ -26,7 +26,7 @@ export const ABILITY_NAMES = Object.fromEntries(
 );
 
 export const CLASS_ABILITY_ICONS = {
-  warrior: '/items/skills/class_bash.png',
+  warrior: '/items/skills/warrior_guardbreak.png',
   mage:    '/items/skills/class_fireball.png',
   rogue:   '/items/skills/class_blink.png',
 };
