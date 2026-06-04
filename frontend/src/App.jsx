@@ -2166,6 +2166,29 @@ function App() {
     return () => clearInterval(interval);
   }, [user]); // eslint-disable-line
 
+  // Stable handlers for memoized children (TopBar/BottomNav/ArenaEntryScreen).
+  // These MUST be declared before the early returns below so the hook order stays
+  // identical across every render path (Rules of Hooks). setActiveTab/setUser are
+  // stable state setters; enterArenaBattle is wrapped via useStableCallback.
+  const openTokensTab = useCallback(() => setActiveTab('tokens'), []);
+  const openSettingsTab = useCallback(() => setActiveTab('settings'), []);
+  const arenaEnterBattle = useStableCallback(enterArenaBattle);
+  const arenaNavInventory = useCallback(() => setActiveTab('inventory'), []);
+  const arenaEnterRealTime = useCallback(() => setInRealTimeArena(true), []);
+  const arenaEnterRealTimeFallback = useCallback(() => {
+    setGameInProgress(false);
+    setShowWinnerScreen(false);
+    setWinnerData(null);
+    setInRealTimeArena(true);
+  }, []);
+  const arenaClassChange = useCallback((cls) => setUser((prev) => prev ? {
+    ...prev,
+    class_name: cls,
+    battle_spritesheet_path: '',
+    battle_spritesheet_hash: '',
+  } : prev), []);
+  const arenaEnergySpent = useCallback((energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev), []);
+
   // Error screen for non-Telegram access
   if (telegramError) {
     return (
@@ -2296,31 +2319,6 @@ function App() {
   const appBackground = useLightChrome
     ? 'radial-gradient(circle at top left, rgba(96,165,250,0.18), transparent 34%), linear-gradient(180deg, #f8fbff 0%, #eef6ff 48%, #f8fafc 100%)'
     : 'linear-gradient(135deg, #08080f 0%, #1a0320 40%, #08080f 100%)';
-
-  // Stable handlers for memoized chrome (TopBar/BottomNav). setActiveTab is a
-  // stable state setter, so these identities never change → memo isn't defeated.
-  const openTokensTab = useCallback(() => setActiveTab('tokens'), []);
-  const openSettingsTab = useCallback(() => setActiveTab('settings'), []);
-
-  // Stable handlers for the memoized ArenaEntryScreen. enterArenaBattle closes
-  // over user + setters, so it uses the ref-based stable wrapper; the rest only
-  // touch stable state setters and can use plain useCallback([]).
-  const arenaEnterBattle = useStableCallback(enterArenaBattle);
-  const arenaNavInventory = useCallback(() => setActiveTab('inventory'), []);
-  const arenaEnterRealTime = useCallback(() => setInRealTimeArena(true), []);
-  const arenaEnterRealTimeFallback = useCallback(() => {
-    setGameInProgress(false);
-    setShowWinnerScreen(false);
-    setWinnerData(null);
-    setInRealTimeArena(true);
-  }, []);
-  const arenaClassChange = useCallback((cls) => setUser((prev) => prev ? {
-    ...prev,
-    class_name: cls,
-    battle_spritesheet_path: '',
-    battle_spritesheet_hash: '',
-  } : prev), []);
-  const arenaEnergySpent = useCallback((energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev), []);
 
   return (
     <UserProvider user={user} setUser={setUserWithLog}>
