@@ -5594,9 +5594,11 @@ async def boss_raid_spawner():
             for s in settled:
                 logging.info(f"[BossRaid] Settled expired raid {s['raid_id']}: {s['name']}")
 
-            # Spawn a new boss if none is active
+            # Spawn a new boss if none is active AND the 1h respawn grid allows it.
+            # next_spawn_at() = previous raid's created_at + RESPAWN_INTERVAL, so an early
+            # kill does NOT instantly respawn — the next boss waits for its hourly slot.
             active = await _boss_repo.get_active_raid()
-            if not active:
+            if not active and datetime.now(timezone.utc) >= await _boss_repo.next_spawn_at():
                 name = random.choice(_boss_domain.BOSS_NAMES)
                 level = random.randint(1, 5)
                 raid = await _boss_repo.spawn_raid(name, level)

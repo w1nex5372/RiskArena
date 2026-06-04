@@ -66,6 +66,10 @@ function CountUp({ value = 0, duration = 900, style }) {
 export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [bossState,       setBossState]       = useState(null);
   const [loadError,       setLoadError]       = useState(null);
+  const [nextSpawnIn,     setNextSpawnIn]     = useState(null); // sek iki kito boso (downtime countdown)
+  const nextSpawnAtRef    = useRef(null);                       // kito boso spawn laikas (ms)
+  const viewRef           = useRef('lobby');                    // dabartinis view be stale closure (socket handler'iams)
+  viewRef.current = view;                                       // latest-value (skaitomas tik async socket callback'uose)
   const [view,            setView]            = useState('lobby');
   const [attackLocked,    setAttackLocked]    = useState(false);
   const [myDamage,        setMyDamage]        = useState(0);
@@ -125,6 +129,20 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   }, [user?.id]); // eslint-disable-line
 
   useEffect(() => { fetchBossState(); }, []); // eslint-disable-line
+
+  // Downtime countdown — kol nėra boso, tiksim iki kito spawn; pasibaigus perkraunam state.
+  useEffect(() => {
+    if (loadError !== 'no_raid' || !nextSpawnAtRef.current) { setNextSpawnIn(null); return; }
+    let id;
+    const tick = () => {
+      const remaining = Math.max(0, Math.round((nextSpawnAtRef.current - Date.now()) / 1000));
+      setNextSpawnIn(remaining);
+      if (remaining <= 0) { clearInterval(id); fetchBossState(); }
+    };
+    tick();
+    id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [loadError]); // eslint-disable-line
 
   // ── Phaser init — only when entering battle view ──────────────────────────
   useEffect(() => {
@@ -391,10 +409,16 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       fetchBossState();
     };
 
+    // Boso mirtis (global) — lobby žiūrovai (nekovoję) atsinaujina į downtime countdown.
+    // Kovojantys mato victory panelį per Colyseus raid_finished, tad jų netrikdom.
+    const onBossDefeated = () => { if (viewRef.current === 'lobby') fetchBossState(); };
+
     socket.on('boss_spawned', onBossSpawned);
+    socket.on('boss_defeated', onBossDefeated);
 
     return () => {
       socket.off('boss_spawned', onBossSpawned);
+      socket.off('boss_defeated', onBossDefeated);
       clearTimeout(attackLockTimer.current);
       clearInterval(raidInterval.current);
     };
@@ -423,6 +447,13 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     setBossState(null);
     try {
       const res = await apiClient.get('/boss-raid/current');
+      // Downtime tarp bosų — serveris grąžina {active:false, next_spawn_at} → countdown.
+      if (res.data && res.data.active === false) {
+        setBossState(null);
+        nextSpawnAtRef.current = res.data.next_spawn_at ? new Date(res.data.next_spawn_at).getTime() : null;
+        setLoadError('no_raid');
+        return;
+      }
       setBossState(res.data);
       if (res.data.top_dealers) setTopDealers(res.data.top_dealers.slice(0, 3));
       if (typeof res.data.my_damage === 'number') setMyDamage(res.data.my_damage);
@@ -494,8 +525,16 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(255,255,255,0.05)' }}>
             <Skull className="w-8 h-8" style={{ color: '#64748b' }} />
           </div>
-          <h2 className="text-xl font-extrabold mb-1" style={{ color: '#e8e0d0' }}>No Active Raid</h2>
-          <p className="text-sm" style={{ color: '#64748b' }}>The next Boss Raid hasn't started yet. Check back soon.</p>
+          <h2 className="text-xl font-extrabold mb-1" style={{ color: '#e8e0d0' }}>{nextSpawnIn != null ? 'Boss Slain' : 'No Active Raid'}</h2>
+          {nextSpawnIn != null ? (
+            <>
+              <p className="text-sm" style={{ color: '#64748b' }}>The next boss rises in</p>
+              <p style={{ fontSize: 34, fontWeight: 900, color: '#c9a84c', margin: '6px 0', letterSpacing: 2, fontVariantNumeric: 'tabular-nums' }}>{fmt(nextSpawnIn)}</p>
+              <p className="text-xs" style={{ color: '#475569' }}>Sharpen your blade — a new raid begins soon.</p>
+            </>
+          ) : (
+            <p className="text-sm" style={{ color: '#64748b' }}>The next Boss Raid hasn't started yet. Check back soon.</p>
+          )}
         </div>
       </div>
     );
@@ -535,9 +574,14 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: 'rgba(255,255,255,0.05)' }}>
             <Skull className="w-8 h-8" style={{ color: '#64748b' }} />
           </div>
-          <h2 className="text-xl font-extrabold mb-1" style={{ color: '#e8e0d0' }}>{bossState.name} defeated</h2>
+          <h2 className="text-xl font-extrabold mb-1" style={{ color: '#e8e0d0' }}>{bossState?.name || 'Boss'} defeated</h2>
           <p className="text-sm" style={{ color: '#64748b' }}>You didn't deal any damage this raid. No rewards.</p>
-          <p className="text-xs mt-3" style={{ color: '#475569' }}>A new boss will spawn soon.</p>
+          <Button
+            onClick={() => { setRaidEnded(false); setLootResult(null); setView('lobby'); fetchBossState(); }}
+            style={{ width: '100%', height: 48, borderRadius: 16, marginTop: 16, fontWeight: 800, color: '#e8e0d0', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(201,168,76,0.3)', cursor: 'pointer' }}
+          >
+            Back to Lobby
+          </Button>
         </div>
       </div>
     );
@@ -620,6 +664,12 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
             <p className="text-base font-extrabold" style={{ color: '#e8e0d0' }}>🔥 {myDamage.toLocaleString()}</p>
           </div>
         </div>
+        <Button
+          onClick={() => { setRaidEnded(false); setLootResult(null); setView('lobby'); fetchBossState(); }}
+          style={{ width: '100%', height: 50, borderRadius: 16, fontWeight: 800, color: '#e8e0d0', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(201,168,76,0.3)', cursor: 'pointer' }}
+        >
+          Back to Lobby
+        </Button>
       </div>
     );
   }

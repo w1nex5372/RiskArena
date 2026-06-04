@@ -46,14 +46,20 @@ def _http_error(exc: Exception) -> HTTPException:
 
 @router.get("/current")
 async def get_current_boss(http_request: Request):
-    """Return the active boss raid with top 3 dealers and the caller's total damage."""
+    """
+    Active boss raid (with top 3 dealers + caller damage), or {active: False,
+    next_spawn_at} during the respawn downtime so the lobby can count down to the
+    next boss (strict 1h grid).
+    """
     user_id = get_authenticated_user_id(http_request)
     try:
         state = await boss_repo.get_active_raid_state(user_id)
+        if not state:
+            nxt = await boss_repo.next_spawn_at()
+            return {"active": False, "next_spawn_at": nxt.isoformat()}
     except Exception as exc:
         raise _http_error(exc)
-    if not state:
-        raise HTTPException(status_code=404, detail="No active boss raid")
+    state["active"] = True
     return state
 
 

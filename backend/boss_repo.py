@@ -15,6 +15,9 @@ import daily_quests as _daily_quests
 from itemization import aggregate_item_modifiers, tier_to_rarity
 
 RAID_DURATION_HOURS = 1
+# Naujas bosas spawn'inasi griežtame 1h grid'e: nuo praeito raid'o created_at + intervalas.
+# Užmušus bosą anksti, kitas pasirodo tik po šio intervalo (downtime su countdown'u lobby).
+RAID_RESPAWN_INTERVAL = timedelta(hours=1)
 
 
 def _json(value) -> str:
@@ -99,6 +102,32 @@ async def get_active_raid() -> Optional[Dict]:
             "SELECT * FROM boss_raids WHERE status = 'active' ORDER BY created_at DESC LIMIT 1"
         )
         return _row(row)
+
+
+async def get_latest_raid() -> Optional[Dict]:
+    """Most recent raid of ANY status — used for respawn scheduling."""
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM boss_raids ORDER BY created_at DESC LIMIT 1"
+        )
+        return _row(row)
+
+
+async def next_spawn_at() -> datetime:
+    """
+    When the next boss is eligible to spawn: previous raid's created_at + RESPAWN
+    interval, so bosses appear on a strict 1h grid regardless of when one is killed.
+    No prior raid → eligible now (first boss).
+    """
+    latest = await get_latest_raid()
+    if not latest:
+        return datetime.now(timezone.utc)
+    created = latest.get("created_at")
+    if isinstance(created, str):
+        created = datetime.fromisoformat(created)
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return created + RAID_RESPAWN_INTERVAL
 
 
 async def get_raid(raid_id: str) -> Optional[Dict]:
