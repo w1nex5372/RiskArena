@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     item_rarity VARCHAR(20) NOT NULL DEFAULT 'Common',
     equipped    BOOLEAN NOT NULL DEFAULT FALSE,
     acquired_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    CHECK (item_type IN ('weapon', 'armor', 'ability', 'consumable'))
+    CHECK (item_type IN ('weapon', 'armor', 'ability', 'consumable', 'helmet'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_user ON inventory(user_id);
@@ -516,13 +516,21 @@ async def init():
             END;
             $$;
         """)
+        # Helmet support: drop old class-bound uniqueness, replace with name-inclusive
+        await conn.execute("DROP INDEX IF EXISTS uq_items_class_slot_tier;")
         await conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_items_class_slot_tier
-            ON items(class_name, slot, tier);
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_items_class_slot_tier_name
+            ON items(class_name, slot, tier, name);
         """)
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_items_shop_browse
             ON items(tier, class_name, slot);
+        """)
+        # Helmet support: refresh class/slot/inventory_type checks to include new values
+        await conn.execute("ALTER TABLE items DROP CONSTRAINT IF EXISTS items_class_name_check;")
+        await conn.execute("ALTER TABLE items DROP CONSTRAINT IF EXISTS items_slot_check;")
+        await conn.execute("""
+            ALTER TABLE inventory DROP CONSTRAINT IF EXISTS inventory_item_type_check;
         """)
         await conn.execute("""
             DO $$
@@ -532,14 +540,14 @@ async def init():
                     WHERE conname = 'items_class_name_check' AND conrelid = 'items'::regclass
                 ) THEN
                     ALTER TABLE items ADD CONSTRAINT items_class_name_check
-                        CHECK (class_name IN ('warrior', 'mage', 'rogue'));
+                        CHECK (class_name IN ('warrior', 'mage', 'rogue', 'any'));
                 END IF;
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = 'items_slot_check' AND conrelid = 'items'::regclass
                 ) THEN
                     ALTER TABLE items ADD CONSTRAINT items_slot_check
-                        CHECK (slot IN ('weapon', 'armor', 'ability'));
+                        CHECK (slot IN ('weapon', 'armor', 'ability', 'helmet'));
                 END IF;
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
@@ -565,6 +573,13 @@ async def init():
                             )
                         );
                 END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'inventory_item_type_check' AND conrelid = 'inventory'::regclass
+                ) THEN
+                    ALTER TABLE inventory ADD CONSTRAINT inventory_item_type_check
+                        CHECK (item_type IN ('weapon', 'armor', 'ability', 'consumable', 'helmet'));
+                END IF;
             END;
             $$;
         """)
@@ -580,9 +595,8 @@ async def init():
                  $7, $8, $9, $10,
                  $11, $12, $13, $14, $15::jsonb,
                  $16, $17)
-            ON CONFLICT (class_name, slot, tier) DO UPDATE
-            SET name = EXCLUDED.name,
-                description = EXCLUDED.description,
+            ON CONFLICT (class_name, slot, tier, name) DO UPDATE
+            SET description = EXCLUDED.description,
                 price = EXCLUDED.price,
                 attack_bonus = EXCLUDED.attack_bonus,
                 ability_bonus = EXCLUDED.ability_bonus,

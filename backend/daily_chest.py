@@ -119,7 +119,7 @@ async def _choose_drop_item(conn, tier: str, class_name: Optional[str]):
             """
             SELECT *
             FROM items
-            WHERE tier = $1 AND class_name = $2
+            WHERE tier = $1 AND (class_name = $2 OR class_name = 'any')
             ORDER BY RANDOM()
             LIMIT 1
             """,

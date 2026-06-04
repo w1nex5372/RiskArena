@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Backpack, BatteryCharging, Gem, Shield, ShoppingBag, Sparkles, Sword } from 'lucide-react';
+import { AlertTriangle, Backpack, BatteryCharging, Gem, HardHat, Shield, ShoppingBag, Sparkles, Sword } from 'lucide-react';
 import ItemDetailModal from './ItemDetailModal';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -31,11 +31,12 @@ const HUB_TABS = [
   { key: 'upgrade', label: 'Upgrade', helper: 'Enchant owned copies', cta: 'Enchant', Icon: Gem },
 ];
 
-const TABS = ['Weapon', 'Armor', 'Ability', 'Consumables'];
+const TABS = ['Weapon', 'Armor', 'Helmet', 'Ability', 'Consumables'];
 
 const TAB_CATEGORY = {
   Weapon: 'weapon',
   Armor: 'armor',
+  Helmet: 'helmet',
   Ability: 'ability',
   Consumables: 'consumable',
 };
@@ -43,12 +44,14 @@ const TAB_CATEGORY = {
 const TAB_ICON = {
   Weapon: Sword,
   Armor: Shield,
+  Helmet: HardHat,
   Ability: Sparkles,
   Consumables: BatteryCharging,
 };
 
 const LOADOUT_SLOTS = [
   { key: 'weapon', label: 'Weapon', Icon: Sword },
+  { key: 'helmet', label: 'Helmet', Icon: HardHat },
   { key: 'armor', label: 'Armor', Icon: Shield },
   { key: 'ability', label: 'Ability', Icon: Sparkles },
 ];
@@ -75,7 +78,7 @@ function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
   if (slot === 'weapon' && imagePath && !failed) {
     return <WeaponIcon imagePath={imagePath} size={54} borderRadius={10} enchantLevel={item?.enchant_level || 0} />;
   }
-  if (slot === 'armor' && imagePath && !failed) {
+  if ((slot === 'armor' || slot === 'helmet') && imagePath && !failed) {
     return <ArmorIcon imagePath={imagePath} size={54} borderRadius={10} />;
   }
   if (!src || failed) {
@@ -129,7 +132,7 @@ function ItemImage({ item, size = 52 }) {
     );
   }
 
-  if (slot === 'armor' && imagePath && !failed) {
+  if ((slot === 'armor' || slot === 'helmet') && imagePath && !failed) {
     return (
       <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
         <ArmorIcon imagePath={imagePath} size={size} borderRadius={0} />
@@ -397,6 +400,7 @@ function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, equip
             sheetPath={isActive ? (user?.battle_spritesheet_path || user?.character_spritesheet_path) : null}
             sheetLoading={isActive && user && !user.battle_spritesheet_path && !user.character_spritesheet_path}
             armor={equippedBySlot?.armor || null}
+            helmet={equippedBySlot?.helmet || null}
             style={{
               borderRadius: 14,
               border: `1px solid ${info.color}33`,
@@ -578,7 +582,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
   const [displayBalance, setDisplayBalance] = useState(user?.token_balance || 0);
   const [inventory, setInventory] = useState(null);
   const [equippedInventoryIds, setEquippedInventoryIds] = useState(new Set());
-  const [equippedBySlot, setEquippedBySlot] = useState({ weapon: null, armor: null, ability: null });
+  const [equippedBySlot, setEquippedBySlot] = useState({ weapon: null, armor: null, ability: null, helmet: null });
   const [loadoutEffectiveStats, setLoadoutEffectiveStats] = useState({});
   const [upgradeItems, setUpgradeItems] = useState([]);
   const [scrolls, setScrolls] = useState({ normal_scroll: 0, blessed_scroll: 0 });
@@ -619,6 +623,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
       weapon: equipped.weapon || null,
       armor: equipped.armor || null,
       ability: equipped.ability || null,
+      helmet: equipped.helmet || null,
     });
     setLoadoutEffectiveStats(data?.loadout_effective_stats || {});
     const nextBattleSheetPath = data?.battle_spritesheet_path || '';
@@ -1107,9 +1112,10 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
             <div style={{ display: 'flex', gap: 5, marginBottom: 10 }}>
               {[
                 { key: 'all', label: 'All' },
-                { key: 'weapon', label: '⚔️ Weapon' },
-                { key: 'armor', label: '🛡️ Armor' },
-                { key: 'ability', label: '✨ Ability' },
+                { key: 'weapon', label: '⚔️' },
+                { key: 'helmet', label: '🪖' },
+                { key: 'armor', label: '🛡️' },
+                { key: 'ability', label: '✨' },
               ].map(({ key, label }) => {
                 const active = filterSlot === key;
                 return (

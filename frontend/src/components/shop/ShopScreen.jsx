@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Filter, Shield, Sparkles, Sword } from 'lucide-react';
+import { Filter, HardHat, Shield, Sparkles, Sword } from 'lucide-react';
 import { toast } from 'sonner';
 import apiClient from '../../api/client';
 import {
@@ -16,12 +16,13 @@ import {
   getTierTheme,
 } from '../../utils/itemPresentation';
 import WeaponIcon from '../WeaponIcon';
+import ArmorIcon from '../ArmorIcon';
 
 const SHOP_TIERS = ['common', 'uncommon', 'rare'];
 const SHOP_CLASSES = ['all', 'warrior', 'mage', 'rogue'];
 const CLASS_ICON = { all: '✦', warrior: '⚔️', mage: '🔮', rogue: '🗡️' };
 
-const SLOT_ICON = { weapon: Sword, armor: Shield, ability: Sparkles };
+const SLOT_ICON = { weapon: Sword, armor: Shield, helmet: HardHat, ability: Sparkles };
 
 function rarityRingClass(item) {
   const tier = getTierKey(item);
@@ -56,6 +57,14 @@ function ItemImage({ item, size = 54 }) {
     return (
       <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
         <WeaponIcon imagePath={imagePath} size={size} borderRadius={0} />
+      </div>
+    );
+  }
+
+  if ((slot === 'armor' || slot === 'helmet') && imagePath && !failed) {
+    return (
+      <div className={ringClass} style={{ flexShrink: 0, border: `1px solid ${theme.border}`, borderRadius: 14, overflow: 'hidden' }}>
+        <ArmorIcon imagePath={imagePath} size={size} borderRadius={0} />
       </div>
     );
   }
@@ -118,7 +127,11 @@ export default function ShopScreen({ user, onInventoryChanged }) {
   const visibleItems = useMemo(() => (items || []).filter((item) => {
     const catalogId = item.item_id || item.id;
     if (ownedCounts[catalogId] > 0) return false;
-    return getTierKey(item) === tierFilter && (classFilter === 'all' || getClassKey(item) === classFilter);
+    if (getTierKey(item) !== tierFilter) return false;
+    const itemClass = getClassKey(item);
+    // Class-agnostic items (e.g., helmets with class_name='any') show regardless of class filter
+    if (itemClass === 'any') return true;
+    return classFilter === 'all' || itemClass === classFilter;
   }), [items, tierFilter, classFilter, ownedCounts]);
 
   const userClass = String(user?.class_name || '').trim().toLowerCase();
@@ -243,7 +256,7 @@ export default function ShopScreen({ user, onInventoryChanged }) {
             const price = Number(item.price || 0);
             const canAfford = balance >= price;
             const isBuying = buying === item.id;
-            const classMismatch = Boolean(userClass && itemClass && userClass !== itemClass);
+            const classMismatch = Boolean(userClass && itemClass && itemClass !== 'any' && userClass !== itemClass);
 
             return (
               <article key={item.id} className={rarityCardClass(item)} style={{

@@ -475,6 +475,19 @@ ALLOWED_CHARACTER_BUILD_ASSETS = {
     "hair.bedhead",
     "hair.bangslong",
     "hair.xlong",
+    "helmet.nasal",
+    "helmet.flattop",
+    "helmet.barbuta_simple",
+    "helmet.sugarloaf_simple",
+    "helmet.spangenhelm",
+    "helmet.barbarian",
+    "helmet.close",
+    "helmet.barbuta",
+    "helmet.sugarloaf",
+    "helmet.barbarian_nasal",
+    "helmet.spangenhelm_viking",
+    "helmet.barbarian_viking",
+    "helmet.greathelm",
 }
 ALLOWED_CHARACTER_WEAPONS = {
     "weapon.sword.katana",
@@ -486,7 +499,7 @@ CLASS_CHARACTER_WEAPON = {
     "rogue": "weapon.sword.scimitar",
     "mage": "weapon.staff.mage_staff",
 }
-ALLOWED_CHARACTER_SLOTS = {"body", "head", "face", "eyes", "legs", "feet", "torso", "waist", "hair"}
+ALLOWED_CHARACTER_SLOTS = {"body", "head", "face", "eyes", "legs", "feet", "torso", "waist", "hair", "helmet"}
 REQUIRED_CHARACTER_LAYER_SLOTS = {"body", "head", "face", "eyes"}
 
 
@@ -692,12 +705,12 @@ async def _fetch_equipped_snapshot(user_id: str) -> Dict[str, Any]:
             ) inv ON TRUE
             WHERE ei.user_id = $1
               AND ei.class_name = u.class_name
-              AND i.class_name = u.class_name
+              AND (i.class_name = u.class_name OR i.class_name = 'any')
             """,
             user_id,
         )
 
-    equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None}
+    equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None, "helmet": None}
     for row in rows:
         slot = row["slot"]
         if slot in equipped:
@@ -3782,6 +3795,16 @@ def _character_build_for_equipped_visuals(
         ]
         build["layers"].append({"slot": "torso", "asset": armor_asset, "variant": None})
 
+    # Apply equipped helmet: add helmet layer on top of hair/head
+    helmet_visual = _coerce_json_dict((equipped.get("helmet") or {}).get("lpc_visual"))
+    helmet_asset = str(helmet_visual.get("asset") or "").strip()
+    if helmet_asset and helmet_asset in ALLOWED_CHARACTER_BUILD_ASSETS:
+        build["layers"] = [
+            layer for layer in build.get("layers", [])
+            if layer.get("slot") != "helmet"
+        ]
+        build["layers"].append({"slot": "helmet", "asset": helmet_asset, "variant": None})
+
     weapon = build.get("weapon") if isinstance(build.get("weapon"), dict) else {}
     weapon_visual = _coerce_json_dict((equipped.get("weapon") or {}).get("lpc_visual"))
     weapon_asset = str(weapon_visual.get("asset") or "").strip()
@@ -3812,16 +3835,19 @@ async def _battle_spritesheet_for_loadout(
         return {"path": "", "hash": ""}
     weapon = equipped.get("weapon") or {}
     armor = equipped.get("armor") or {}
+    helmet = equipped.get("helmet") or {}
     weapon_key = weapon.get("inventory_id") or weapon.get("item_id") or "no-weapon"
     armor_key = armor.get("inventory_id") or armor.get("item_id") or "noarmor"
+    helmet_key = helmet.get("inventory_id") or helmet.get("item_id") or "nohelm"
     enchant = int(weapon.get("enchant_level", 0) or 0)
     runtime_build = _character_build_for_equipped_visuals(cls, character_build, equipped)
     build_hash = _stable_character_build_hash(runtime_build)
     visual_hash = hashlib.sha1(json.dumps({
         "weapon": weapon.get("lpc_visual"),
         "armor": armor.get("lpc_visual"),
+        "helmet": helmet.get("lpc_visual"),
     }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()[:10]
-    sheet_hash = hashlib.sha1(f"lpc-v5:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}".encode("utf-8")).hexdigest()[:16]
+    sheet_hash = hashlib.sha1(f"lpc-v6:{cls}:{build_hash}:{visual_hash}:{weapon_key}:{enchant}:{armor_key}:{helmet_key}".encode("utf-8")).hexdigest()[:16]
     generated_path = await _ensure_runtime_character_sheet(user_id, runtime_build, sheet_hash, enchant_level=enchant)
     return {
         "path": generated_path or "",
@@ -3920,7 +3946,7 @@ async def buy_shop_item(body: ShopBuyBody, http_request: Request):
             if not item or not is_shop_tier(item["tier"]):
                 raise HTTPException(status_code=404, detail="Item not found or not purchasable")
             user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
-            if not user_row or not can_user_equip_item(user_row["class_name"], item["class_name"]):
+            if not user_row or not can_user_equip_item(user_row["class_name"], item["class_name"], item["slot"]):
                 raise HTTPException(status_code=400, detail="Item class does not match your class")
             updated = await conn.fetchrow(
                 "UPDATE users SET token_balance = token_balance - $2 "
@@ -4109,7 +4135,8 @@ async def get_my_equipped(http_request: Request):
                    COALESCE(inv.enchant_level, 0) AS enchant_level, i.*
             FROM equipped_items ei
             JOIN items i ON i.id = ei.item_id
-            JOIN users u ON u.id = ei.user_id AND i.class_name = u.class_name
+            JOIN users u ON u.id = ei.user_id
+                          AND (i.class_name = u.class_name OR i.class_name = 'any')
             LEFT JOIN LATERAL (
                 SELECT id, enchant_level
                 FROM inventory
@@ -4127,7 +4154,7 @@ async def get_my_equipped(http_request: Request):
             """,
             user_id,
         )
-        equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None}
+        equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None, "helmet": None}
         equipped_items: List[Dict[str, Any]] = []
         for row in rows:
             slot = row["slot"]
@@ -4204,7 +4231,7 @@ async def equip_item(body: EquipBody, http_request: Request):
         if not inv_row:
             raise HTTPException(status_code=404, detail="Item not in your inventory")
         user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
-        if not user_row or not can_user_equip_item(user_row["class_name"], inv_row["class_name"]):
+        if not user_row or not can_user_equip_item(user_row["class_name"], inv_row["class_name"], inv_row["slot"]):
             raise HTTPException(status_code=400, detail="Item class does not match your class")
         await conn.execute(
             """
@@ -4253,7 +4280,7 @@ async def enchant_item(body: EnchantBody, http_request: Request):
                 raise HTTPException(status_code=400, detail="Only weapon and armor items can be enchanted")
 
             user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)
-            if not user_row or not can_user_equip_item(user_row["class_name"], row["class_name"]):
+            if not user_row or not can_user_equip_item(user_row["class_name"], row["class_name"], row["slot"]):
                 raise HTTPException(status_code=400, detail="Item class does not match your class")
 
             current_level = int(row["enchant_level"] or 0)
@@ -4337,8 +4364,8 @@ class SellBody(BaseModel):
 
 @api_router.post("/me/unequip")
 async def unequip_item(body: UnequipBody, http_request: Request):
-    if body.slot not in ("weapon", "armor", "ability"):
-        raise HTTPException(status_code=400, detail="slot must be weapon, armor, or ability")
+    if body.slot not in ("weapon", "armor", "ability", "helmet"):
+        raise HTTPException(status_code=400, detail="slot must be weapon, armor, ability, or helmet")
     user_id = get_authenticated_user_id(http_request)
     async with get_pool().acquire() as conn:
         user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)

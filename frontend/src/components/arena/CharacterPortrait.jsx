@@ -13,6 +13,7 @@ export default function CharacterPortrait({
   cls = 'warrior',
   weapon = null,
   armor = null,
+  helmet = null,
   size = 150,
   badgeSize = 44,
   active = true,
@@ -20,6 +21,7 @@ export default function CharacterPortrait({
   sheetLoading = false,
   showWeaponBadge = true,
   showArmorBadge = true,
+  showHelmetBadge = true,
   style = {},
 }) {
   const classKey = normalizeCharacterClass(cls) || 'warrior';
@@ -116,6 +118,31 @@ export default function CharacterPortrait({
         >
           <ArmorIcon
             imagePath={armor.image_path}
+            size={Math.round(badgeSize * 0.78)}
+            borderRadius={9}
+          />
+        </div>
+      ) : null}
+      {showHelmetBadge && helmet?.image_path ? (
+        <div
+          style={{
+            position: 'absolute',
+            left: 7,
+            top: 7,
+            width: badgeSize,
+            height: badgeSize,
+            borderRadius: 14,
+            background: 'linear-gradient(180deg, rgba(15,23,42,0.94), rgba(5,8,16,0.98))',
+            border: '1px solid rgba(201,168,76,0.36)',
+            boxShadow: '0 8px 18px rgba(0,0,0,0.42), 0 0 14px rgba(201,168,76,0.18)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          <ArmorIcon
+            imagePath={helmet.image_path}
             size={Math.round(badgeSize * 0.78)}
             borderRadius={9}
           />

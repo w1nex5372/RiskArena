@@ -2,9 +2,13 @@ import pytest
 
 from arena_domain import ItemModifiers
 from itemization import (
+    ANY_CLASS,
     DROP_ONLY_TIERS,
     FULL_ITEM_CATALOG,
+    SHARED_SLOTS,
     SHOP_TIERS,
+    VALID_ITEM_CLASSES,
+    VALID_SLOTS,
     aggregate_item_modifiers,
     can_user_equip_item,
     choose_inventory_copy_for_equip,
@@ -20,19 +24,20 @@ from itemization import (
 
 
 def test_catalog_entries_are_unique_and_well_formed():
-    # The catalog is filled incrementally (drop-only epic/legendary items and some
-    # weapon/armor tiers are still pending), so we assert structural integrity rather
-    # than a fixed total — adding items must not silently introduce a duplicate
-    # (class, slot, tier) combo or a malformed entry.
+    # Shared-slot items (e.g. helmets with class_name='any') intentionally collide on
+    # (class, slot, tier) when multiple visual variants exist per tier — include the
+    # name in the uniqueness key so the structural check still catches accidental dupes.
     all_tiers = SHOP_TIERS | DROP_ONLY_TIERS
     seen = set()
     for item in FULL_ITEM_CATALOG:
-        key = (item["class_name"], item["slot"], item["tier"])
+        key = (item["class_name"], item["slot"], item["tier"], item["name"])
         assert key not in seen, f"duplicate catalog entry {key}"
         seen.add(key)
-        assert item["class_name"] in {"warrior", "mage", "rogue"}
-        assert item["slot"] in {"weapon", "armor", "ability"}
+        assert item["class_name"] in set(VALID_ITEM_CLASSES)
+        assert item["slot"] in set(VALID_SLOTS)
         assert item["tier"] in all_tiers
+        if item["class_name"] == ANY_CLASS:
+            assert item["slot"] in SHARED_SLOTS, f"non-shared slot {item['slot']!r} cannot use class_name='any'"
     assert len(FULL_ITEM_CATALOG) == len(seen)
 
 
@@ -45,21 +50,60 @@ def test_shop_and_drop_rules_match_locked_design():
 
 
 def test_passives_follow_current_armor_design():
-    # Armor system v1: every armor item carries a passive (its defining effect) at any
-    # tier. Weapon and ability items carry no passive in the current catalog (drop-only
-    # epic/legendary weapons/abilities that would have passives are not defined yet).
+    # Armor and helmet items both carry a defining passive at every tier. Weapon and
+    # ability items carry no passive in the current catalog (drop-only epic/legendary
+    # weapons/abilities with passives are not defined yet).
     for item in FULL_ITEM_CATALOG:
-        if item["slot"] == "armor":
+        if item["slot"] in {"armor", "helmet"}:
             assert item["passive_type"], item
             assert item["passive_value"] > 0
         else:
             assert item["passive_type"] is None, item
 
 
+def test_helmet_armor_passive_progression():
+    # Helmet stat curve: HP and damage_reduction_percent scale strictly by tier.
+    expected = {
+        "common":    (5,  0.01),
+        "uncommon":  (10, 0.02),
+        "rare":      (18, 0.04),
+        "epic":      (25, 0.06),
+        "legendary": (35, 0.10),
+    }
+    for item in FULL_ITEM_CATALOG:
+        if item["slot"] != "helmet":
+            continue
+        hp, reduction = expected[item["tier"]]
+        assert item["hp_bonus"] == hp, f"{item['name']} hp_bonus={item['hp_bonus']}, expected {hp}"
+        assert item["passive_type"] == "damage_reduction_percent", item
+        assert item["passive_value"] == pytest.approx(reduction), \
+            f"{item['name']} passive_value={item['passive_value']}, expected {reduction}"
+
+
 def test_class_restriction_helper_is_strict_and_case_insensitive():
     assert can_user_equip_item("warrior", "warrior") is True
     assert can_user_equip_item("Mage", "mage") is True
     assert can_user_equip_item("rogue", "mage") is False
+
+
+def test_shared_slot_items_can_be_equipped_by_any_class():
+    # Helmets are class-agnostic — class_name='any' on the item OR a shared slot
+    # (helmet) should let any logged-in class equip them.
+    assert can_user_equip_item("warrior", "any", "helmet") is True
+    assert can_user_equip_item("mage", "any", "helmet") is True
+    assert can_user_equip_item("rogue", "any", "helmet") is True
+    # Even if class_name disagrees, the shared slot wins.
+    assert can_user_equip_item("warrior", "rogue", "helmet") is True
+    # A non-shared slot with class='any' still accepts any logged-in class.
+    assert can_user_equip_item("warrior", "any", "weapon") is True
+    # No authenticated class → always rejected.
+    assert can_user_equip_item("", "any", "helmet") is False
+    assert can_user_equip_item(None, "warrior", "armor") is False
+
+
+def test_helmet_is_not_enchantable():
+    # Helmets are universal items; they don't share the enchant economy with weapon/armor.
+    assert is_enchantable_slot("helmet") is False
 
 
 def test_only_weapon_and_armor_are_enchantable():

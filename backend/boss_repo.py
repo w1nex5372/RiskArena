@@ -68,18 +68,30 @@ async def _grant_boss_item_drop_tx(conn, user_id: str, tier: Optional[str], rng:
     class_name = user_row["class_name"] if user_row else None
     if not class_name:
         return None
-    items = await conn.fetch(
-        """
-        SELECT * FROM items
-        WHERE class_name = $1 AND tier = $2
-        ORDER BY slot ASC
-        """,
+    # Two-stage roll: first pick the pool (class-specific 90% / shared 10%), then a
+    # uniform pick within the pool. Without this, a shared pool with N helmets at the
+    # same tier would skew drops away from the smaller class-specific pool.
+    # At epic/legendary tiers no class-specific items exist yet, so the shared pool is
+    # the only option there.
+    class_items = await conn.fetch(
+        "SELECT * FROM items WHERE class_name = $1 AND tier = $2",
         class_name,
         tier,
     )
-    if not items:
+    shared_items = await conn.fetch(
+        "SELECT * FROM items WHERE class_name = 'any' AND tier = $1",
+        tier,
+    )
+    pool: list = []
+    if shared_items and class_items:
+        pool = list(shared_items if rng.random() < 0.10 else class_items)
+    elif shared_items:
+        pool = list(shared_items)
+    elif class_items:
+        pool = list(class_items)
+    if not pool:
         return None
-    granted = dict(items[rng.randrange(len(items))])
+    granted = dict(pool[rng.randrange(len(pool))])
     await conn.execute(
         """
         INSERT INTO inventory

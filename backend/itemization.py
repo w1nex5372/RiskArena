@@ -12,7 +12,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from arena_domain import ItemModifiers
 
 VALID_CLASSES = ("warrior", "mage", "rogue")
-VALID_SLOTS = ("weapon", "armor", "ability")
+ANY_CLASS = "any"
+VALID_ITEM_CLASSES = (*VALID_CLASSES, ANY_CLASS)
+VALID_SLOTS = ("weapon", "armor", "ability", "helmet")
+SHARED_SLOTS = {"helmet"}
 VALID_TIERS = ("common", "uncommon", "rare", "epic", "legendary")
 ENCHANTABLE_SLOTS = {"weapon", "armor"}
 SCROLL_TYPES = {"normal_scroll", "blessed_scroll"}
@@ -320,6 +323,84 @@ FULL_ITEM_CATALOG: List[Dict] = [
           hp_bonus=20, passive_type="bonus_ability_percent", passive_value=0.12,
           image_path="/items/mage_armor_mystic.png",
           lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "torso", "asset": "torso.armour.leather"}),
+    # --- Helmets (universal — any class) ---
+    # Stat curve: every tier gives HP + a small damage-reduction passive ("armor")
+    # so the helmet slot is purely a defensive secondary slot for all classes.
+    #   common    +5 HP,  +1% reduction
+    #   uncommon +10 HP,  +2% reduction
+    #   rare     +18 HP,  +4% reduction
+    #   epic     +25 HP,  +6% reduction  (boss only)
+    #   legendary +35 HP, +10% reduction (boss only)
+    # Common (shop)
+    _item("any", "helmet", "common", "Iron Nasal Helm",
+          "A simple iron skullcap with a nasal guard.",
+          hp_bonus=5, passive_type="damage_reduction_percent", passive_value=0.01,
+          image_path="/items/helmet_nasal_iron.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.nasal"}),
+    _item("any", "helmet", "common", "Iron Flattop Helm",
+          "A flat-crowned iron helm favored by foot soldiers.",
+          hp_bonus=5, passive_type="damage_reduction_percent", passive_value=0.01,
+          image_path="/items/helmet_flattop_iron.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.flattop"}),
+    _item("any", "helmet", "common", "Iron Barbuta",
+          "A rough open-faced iron barbuta.",
+          hp_bonus=5, passive_type="damage_reduction_percent", passive_value=0.01,
+          image_path="/items/helmet_barbuta_simple_iron.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.barbuta_simple"}),
+    _item("any", "helmet", "common", "Iron Sugarloaf",
+          "A tapered iron sugarloaf helm.",
+          hp_bonus=5, passive_type="damage_reduction_percent", passive_value=0.01,
+          image_path="/items/helmet_sugarloaf_simple_iron.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.sugarloaf_simple"}),
+    # Uncommon (shop)
+    _item("any", "helmet", "uncommon", "Steel Spangenhelm",
+          "A segmented steel helm with reinforced ribs.",
+          hp_bonus=10, passive_type="damage_reduction_percent", passive_value=0.02,
+          image_path="/items/helmet_spangenhelm_steel.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.spangenhelm"}),
+    _item("any", "helmet", "uncommon", "Steel Barbarian Helm",
+          "A steel barbarian helm forged in distant lands.",
+          hp_bonus=10, passive_type="damage_reduction_percent", passive_value=0.02,
+          image_path="/items/helmet_barbarian_steel.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.barbarian"}),
+    _item("any", "helmet", "uncommon", "Steel Close Helm",
+          "A closed steel helm covering the face fully.",
+          hp_bonus=10, passive_type="damage_reduction_percent", passive_value=0.02,
+          image_path="/items/helmet_close_steel.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.close"}),
+    # Rare (shop)
+    _item("any", "helmet", "rare", "Silver Barbuta",
+          "A finely-crafted silver barbuta worn by arena veterans.",
+          hp_bonus=18, passive_type="damage_reduction_percent", passive_value=0.04,
+          image_path="/items/helmet_barbuta_silver.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.barbuta"}),
+    _item("any", "helmet", "rare", "Silver Sugarloaf",
+          "A polished silver sugarloaf with reinforced crown.",
+          hp_bonus=18, passive_type="damage_reduction_percent", passive_value=0.04,
+          image_path="/items/helmet_sugarloaf_silver.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.sugarloaf"}),
+    _item("any", "helmet", "rare", "Silver Barbarian Nasal",
+          "A silver barbarian helm with an added nasal guard.",
+          hp_bonus=18, passive_type="damage_reduction_percent", passive_value=0.04,
+          image_path="/items/helmet_barbarian_nasal_silver.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.barbarian_nasal"}),
+    # Epic (boss only)
+    _item("any", "helmet", "epic", "Golden Viking Spangen",
+          "A golden viking spangenhelm gleaming with raid spoils.",
+          hp_bonus=25, passive_type="damage_reduction_percent", passive_value=0.06,
+          image_path="/items/helmet_spangenhelm_viking_gold.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.spangenhelm_viking"}),
+    _item("any", "helmet", "epic", "Golden Barbarian Horns",
+          "A golden barbarian helm crowned with menacing horns.",
+          hp_bonus=25, passive_type="damage_reduction_percent", passive_value=0.06,
+          image_path="/items/helmet_barbarian_viking_gold.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.barbarian_viking"}),
+    # Legendary (boss only)
+    _item("any", "helmet", "legendary", "Golden Greathelm",
+          "An ornate golden greathelm. The mark of a true champion.",
+          hp_bonus=35, passive_type="damage_reduction_percent", passive_value=0.10,
+          image_path="/items/helmet_greathelm_gold.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.greathelm"}),
 ]
 
 
@@ -335,7 +416,15 @@ def tier_to_rarity(tier: str) -> str:
     return TIER_TO_RARITY.get((tier or "").lower(), "Common")
 
 
-def can_user_equip_item(user_class_name: Optional[str], item_class_name: Optional[str]) -> bool:
+def can_user_equip_item(
+    user_class_name: Optional[str],
+    item_class_name: Optional[str],
+    item_slot: Optional[str] = None,
+) -> bool:
+    if (item_slot or "").lower() in SHARED_SLOTS:
+        return bool(user_class_name)
+    if (item_class_name or "").lower() == ANY_CLASS:
+        return bool(user_class_name)
     return bool(user_class_name and item_class_name and user_class_name.lower() == item_class_name.lower())
 
 

@@ -201,6 +201,71 @@
         "white",
         "blue"
       ]
+    },
+    "helmet.nasal": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/nasal/male/iron" }
+    },
+    "helmet.flattop": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/flattop/male/iron" }
+    },
+    "helmet.barbuta_simple": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/barbuta_simple/male/iron" }
+    },
+    "helmet.sugarloaf_simple": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/sugarloaf_simple/male/iron" }
+    },
+    "helmet.spangenhelm": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/spangenhelm/male/steel" }
+    },
+    "helmet.barbarian": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/barbarian/male/steel" }
+    },
+    "helmet.close": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/close/male/steel" }
+    },
+    "helmet.barbuta": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/barbuta/male/silver" }
+    },
+    "helmet.sugarloaf": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/sugarloaf/male/silver" }
+    },
+    "helmet.barbarian_nasal": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/barbarian_nasal/male/silver" }
+    },
+    "helmet.spangenhelm_viking": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/spangenhelm_viking/male/gold" }
+    },
+    "helmet.barbarian_viking": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/barbarian_viking/male/gold" }
+    },
+    "helmet.greathelm": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/greathelm/male/gold" }
     }
   },
   "weapons": {
