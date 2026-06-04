@@ -105,7 +105,12 @@
         "damage_min": 12,
         "damage_max": 19,
         "cooldown_ms": 520,
-        "backstab_multiplier": 1.55
+        "backstab_multiplier": 1.55,
+        "backstab_window_multiplier": 1.8
+      },
+      "passive_effects": {
+        "blink_backstab_window_ms": 1000,
+        "backstab_window_multiplier": 1.8
       },
       "guard": {
         "max": 75,
@@ -119,6 +124,7 @@
       },
       "passives": [
         "Backstab damage",
+        "Blink execute window",
         "Fast movement",
         "Reposition specialist"
       ],
@@ -127,7 +133,8 @@
         "move_speed": 9.4,
         "guard_max": 75,
         "attack_range": 76,
-        "backstab_bonus_percent": 0.55
+        "backstab_bonus_percent": 0.55,
+        "blink_backstab_window_ms": 1000
       }
     }
   }

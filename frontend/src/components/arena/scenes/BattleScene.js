@@ -1164,6 +1164,7 @@ export default class BattleScene extends Phaser.Scene {
             guardRemaining: Number(d.guardRemaining || 0),
             guardBroken: Boolean(d.guardBroken),
             backstab: Boolean(d.backstab),
+            backstabWindow: Boolean(d.backstabWindow),
             frontalPassive: Boolean(d.frontalPassive),
             attackerSid: d.attackerSid,
             targetSid: d.targetSid,
@@ -1942,6 +1943,7 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     const isBackstab = Boolean(opts.backstab);
+    const isBackstabWindow = Boolean(opts.backstabWindow);
     const isFrontalPassive = Boolean(opts.frontalPassive);
 
     // Particle burst
@@ -1962,9 +1964,9 @@ export default class BattleScene extends Phaser.Scene {
 
     // Floating number
     const isBig  = isBackstab || damage >= 20;
-    const color  = isBackstab ? '#f472b6' : isFrontalPassive ? '#fbbf24' : isBig ? '#ff2200' : '#ef4444';
+    const color  = isBackstabWindow ? '#facc15' : isBackstab ? '#f472b6' : isFrontalPassive ? '#fbbf24' : isBig ? '#ff2200' : '#ef4444';
     const size   = isBackstab ? '24px' : isBig ? '28px' : '20px';
-    const text = isBackstab ? `-${damage} BACKSTAB` : isFrontalPassive ? `-${damage} BRACED` : `-${damage}`;
+    const text = isBackstabWindow ? `-${damage} EXECUTE` : isBackstab ? `-${damage} BACKSTAB` : isFrontalPassive ? `-${damage} BRACED` : `-${damage}`;
     if (isBackstab) {
       const ring = this.add.graphics().setDepth(6);
       ring.lineStyle(3, 0xf472b6, 0.95);

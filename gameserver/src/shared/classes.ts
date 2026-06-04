@@ -8,6 +8,7 @@ type BasicAttackMeta = {
   damage_max: number;
   cooldown_ms: number;
   backstab_multiplier?: number;
+  backstab_window_multiplier?: number;
 };
 
 type GuardMeta = {

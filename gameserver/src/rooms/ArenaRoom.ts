@@ -288,6 +288,10 @@ export class ArenaRoom extends Room<ArenaState> {
       if (player.itemAbilityCharges === 0 && now >= player.itemAbilityCooldownUntil) {
         player.itemAbilityCharges = 1;
       }
+      if (player.backstabWindowUntil > 0 && now >= player.backstabWindowUntil) {
+        player.backstabWindowUntil = 0;
+        player.backstabTargetSid = "";
+      }
       this.updateGuard(player, now);
 
       const input = player.inputState;
@@ -369,6 +373,7 @@ export class ArenaRoom extends Room<ArenaState> {
           player.lastAttackTime = now;
           player.state = "attacking";
           player.attackUntil = now + ATTACK_ANIM_MS;
+          const consumesBackstabWindow = this.isBackstabWindowArmed(player, now);
 
           let hit = false;
           let missReason = "MISS";
@@ -398,6 +403,10 @@ export class ArenaRoom extends Room<ArenaState> {
               });
             }
           });
+          if (consumesBackstabWindow) {
+            player.backstabWindowUntil = 0;
+            player.backstabTargetSid = "";
+          }
           if (!hit && basicAttack.kind === "projectile") {
             const dir = player.facingRight ? 1 : -1;
             feedbackX = Math.max(40, Math.min(ARENA_WIDTH - 40, player.x + dir * basicAttack.range));
@@ -615,15 +624,21 @@ export class ArenaRoom extends Room<ArenaState> {
         const dist = Math.abs(player.x - opp.x);
         if (dist > range + 120) return;
         const dir  = opp.x > player.x ? 1 : -1;
-        const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * offset));
+        const basicRange = classBasicAttack(player.characterClass).range;
+        const effectiveOffset = Math.min(offset, Math.max(32, basicRange - 8));
+        const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * effectiveOffset));
+        const backstabWindowMs = this.rogueBackstabWindowMs(player);
+        const backstabReady = this.isBehindTargetAt(newX, opp);
         this.broadcast("ability_used", {
           sessionId, cls, abilityKey, slot,
           fromX: player.x, fromY: player.y, toX: newX, toY: player.y, hit: true,
           mode: "target", targetSid: oppSid, targetX: opp.x, targetY: opp.y,
-          backstabReady: true, range, offset, cooldownMs,
+          backstabReady, backstabWindowMs: backstabReady ? backstabWindowMs : 0, range, offset: effectiveOffset, configuredOffset: offset, cooldownMs,
         });
         player.x = newX;
         player.facingRight = player.x < opp.x;
+        player.backstabWindowUntil = backstabReady && backstabWindowMs > 0 ? now + backstabWindowMs : 0;
+        player.backstabTargetSid = backstabReady && backstabWindowMs > 0 ? oppSid : "";
         blinked = true;
       });
       if (!blinked) {
@@ -635,6 +650,8 @@ export class ArenaRoom extends Room<ArenaState> {
           mode: "dash", backstabReady: false, range, offset, cooldownMs,
         });
         player.x = newX;
+        player.backstabWindowUntil = 0;
+        player.backstabTargetSid = "";
       }
       return true;
     }
@@ -668,9 +685,13 @@ export class ArenaRoom extends Room<ArenaState> {
     const targetGuard = classGuard(target.characterClass);
     const blocked = Boolean(!options.ignoreBlock && attacker && target.isBlocking && this.isAttackerInFront(target, attacker));
     const backstab = Boolean(attacker && this.isBackstab(attacker, target, options.source));
+    const backstabWindow = Boolean(backstab && attacker && this.isBackstabWindowActive(attacker, targetSid, now));
     const attackProfile = attacker ? classBasicAttack(attacker.characterClass) : null;
+    const backstabMultiplier = backstabWindow
+      ? Number(attackProfile?.backstab_window_multiplier || classPassiveEffects(attacker?.characterClass || "").backstab_window_multiplier || attackProfile?.backstab_multiplier || 1)
+      : Number(attackProfile?.backstab_multiplier || 1);
     const rawDmg = backstab
-      ? Math.max(1, Math.round(dmg * Number(attackProfile?.backstab_multiplier || 1)))
+      ? Math.max(1, Math.round(dmg * backstabMultiplier))
       : dmg;
     let guardDamage = 0;
     let guardBroken = false;
@@ -710,11 +731,16 @@ export class ArenaRoom extends Room<ArenaState> {
       guardRemaining,
       guardBroken,
       backstab,
+      backstabWindow,
       frontalPassive,
       visualDelayMs: this.clampNumber(options.visualDelayMs, 0, 1000, 0),
       attackerSid,
       targetSid,
     });
+    if (backstabWindow && attacker) {
+      attacker.backstabWindowUntil = 0;
+      attacker.backstabTargetSid = "";
+    }
     if (blocked && !guardBroken) {
       this.broadcastCombatFeedback("blocked", target, targetSid, "BLOCK", nx, ny);
     } else if (!blocked && target.hp > 0 && (target.isStunned || target.stunUntil > now)) {
@@ -737,7 +763,24 @@ export class ArenaRoom extends Room<ArenaState> {
     if (source !== "basic") return false;
     const multiplier = Number(classBasicAttack(attacker.characterClass).backstab_multiplier || 1);
     if (multiplier <= 1) return false;
-    return target.facingRight ? attacker.x < target.x : attacker.x > target.x;
+    return this.isBehindTargetAt(attacker.x, target);
+  }
+
+  private isBehindTargetAt(attackerX: number, target: Player) {
+    return target.facingRight ? attackerX < target.x : attackerX > target.x;
+  }
+
+  private rogueBackstabWindowMs(player: Player) {
+    return this.clampNumber(classPassiveEffects(player.characterClass).blink_backstab_window_ms, 0, 5000, 0);
+  }
+
+  private isBackstabWindowArmed(attacker: Player, now: number) {
+    return Boolean(attacker.backstabWindowUntil && now <= attacker.backstabWindowUntil);
+  }
+
+  private isBackstabWindowActive(attacker: Player, targetSid: string, now: number) {
+    if (!this.isBackstabWindowArmed(attacker, now)) return false;
+    return !attacker.backstabTargetSid || attacker.backstabTargetSid === targetSid;
   }
 
   private combineDamageReduction(a: number, b: number) {

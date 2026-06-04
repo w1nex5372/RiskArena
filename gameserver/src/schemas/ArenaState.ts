@@ -45,6 +45,8 @@ export class Player extends Schema {
   itemAbilityCooldownUntil: number = 0;
   guardBrokenUntil: number = 0;
   guardRegenPausedUntil: number = 0;
+  backstabWindowUntil: number = 0;
+  backstabTargetSid: string = "";
   inputState: { left: boolean; right: boolean; attack: boolean; ability: boolean; itemAbility: boolean; up: boolean; block: boolean } = {
     left: false,
     right: false,
