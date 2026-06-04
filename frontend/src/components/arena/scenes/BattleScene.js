@@ -1190,6 +1190,9 @@ export default class BattleScene extends Phaser.Scene {
     this._trackRoomDisposer(room.onMessage('ability_used',  (d) => {
       if (this.room === room) this.showAbilityEffect(d);
     }));
+    this._trackRoomDisposer(room.onMessage('ability_cast',  (d) => {
+      if (this.room === room) this.showAbilityCastIndicator(d);
+    }));
     this._trackRoomDisposer(room.onMessage('combat_feedback',  (d) => {
       if (this.room === room) this.showCombatFeedback(d);
     }));
@@ -2127,6 +2130,41 @@ export default class BattleScene extends Phaser.Scene {
     if (type === 'guard_broken') {
       this.cameras.main.shake(140, 0.008);
     }
+    if (type === 'miss' && label === 'OUT') {
+      const tick = this.add.graphics().setDepth(6);
+      tick.lineStyle(3, 0xf87171, 0.72);
+      tick.beginPath();
+      tick.moveTo(x - 12, y + 22);
+      tick.lineTo(x + 12, y + 22);
+      tick.moveTo(x, y + 10);
+      tick.lineTo(x, y + 34);
+      tick.strokePath();
+      tick.lineStyle(2, 0x94a3b8, 0.45);
+      tick.strokeCircle(x, y + 22, 18);
+      this.tweens.add({
+        targets: tick,
+        alpha: 0,
+        scaleX: 1.45,
+        scaleY: 1.45,
+        duration: 280,
+        ease: 'Power2',
+        onComplete: () => { if (tick.active) tick.destroy(); },
+      });
+    } else if (type === 'miss') {
+      const whiff = this.add.graphics().setDepth(6);
+      whiff.lineStyle(3, 0x94a3b8, 0.62);
+      whiff.beginPath();
+      whiff.arc(x, y + 18, 24, -0.9, 0.9, false);
+      whiff.strokePath();
+      this.tweens.add({
+        targets: whiff,
+        alpha: 0,
+        x: 10,
+        duration: 240,
+        ease: 'Power1',
+        onComplete: () => { if (whiff.active) whiff.destroy(); },
+      });
+    }
     if (type === 'dodge') {
       const ring = this.add.graphics().setDepth(6);
       ring.lineStyle(2, 0x93c5fd, 0.75);
@@ -2144,6 +2182,92 @@ export default class BattleScene extends Phaser.Scene {
   }
 
   // ── 9. Ability visual effects ─────────────────────────────────────────────
+  showAbilityCastIndicator(d = {}) {
+    const type = String(d.type || '');
+    const abilityKey = String(d.abilityKey || d.ability_key || '');
+    const cls = String(d.cls || 'warrior');
+    const fromX = Number.isFinite(Number(d.fromX)) ? Number(d.fromX) : W / 2;
+    const fromY = Number.isFinite(Number(d.fromY)) ? Number(d.fromY) : FLOOR_Y;
+    const range = Math.max(24, Math.min(Number(d.range || 90), W));
+    const facingRight = Boolean(d.facingRight);
+    const dir = facingRight ? 1 : -1;
+    const color = cls === 'mage' ? 0x60a5fa : cls === 'rogue' ? 0x22d3ee : 0xfacc15;
+    const labelColor = cls === 'mage' ? '#93c5fd' : cls === 'rogue' ? '#67e8f9' : '#facc15';
+    const label = abilityKey
+      .replace(/^warrior_|^mage_|^rogue_/, '')
+      .replace(/_/g, ' ')
+      .toUpperCase();
+
+    if (type === 'projectile') {
+      const lane = this.add.graphics().setDepth(6);
+      const endX = Math.max(30, Math.min(W - 30, fromX + dir * Math.min(range, 260)));
+      const y = fromY + FOOT_OFFSET - SPRITE_HEIGHT * 0.5;
+      lane.lineStyle(3, color, 0.35);
+      lane.beginPath();
+      lane.moveTo(fromX + dir * 18, y);
+      lane.lineTo(endX, y);
+      lane.strokePath();
+      lane.fillStyle(color, 0.16);
+      lane.fillCircle(endX, y, 16);
+      this.tweens.add({
+        targets: lane,
+        alpha: 0,
+        duration: 280,
+        ease: 'Power1',
+        onComplete: () => { if (lane.active) lane.destroy(); },
+      });
+      this._showCombatText(fromX, y - 34, label || 'CAST', labelColor, '12px');
+      return;
+    }
+
+    if (type === 'blink') {
+      const marker = this.add.graphics().setDepth(6);
+      const y = fromY + FOOT_OFFSET - SPRITE_HEIGHT * 0.45;
+      const endX = Math.max(36, Math.min(W - 36, fromX + dir * Math.min(range, 150)));
+      marker.lineStyle(3, color, 0.5);
+      marker.strokeCircle(endX, y, 24);
+      marker.lineStyle(2, 0xffffff, 0.38);
+      marker.beginPath();
+      marker.moveTo(fromX, y);
+      marker.lineTo(endX, y);
+      marker.strokePath();
+      this.tweens.add({
+        targets: marker,
+        alpha: 0,
+        scaleX: 1.2,
+        scaleY: 1.2,
+        duration: 260,
+        ease: 'Power2',
+        onComplete: () => { if (marker.active) marker.destroy(); },
+      });
+      this._showCombatText(fromX, fromY - 72, label || 'DASH', labelColor, '12px');
+      return;
+    }
+
+    const arc = this.add.graphics().setDepth(6);
+    const centerY = fromY + FOOT_OFFSET - SPRITE_HEIGHT * 0.42;
+    const radius = Math.min(range, 140);
+    const start = facingRight ? -0.52 : Math.PI - 0.52;
+    const end = facingRight ? 0.52 : Math.PI + 0.52;
+    arc.fillStyle(color, 0.12);
+    arc.slice(fromX, centerY, radius, start, end, false);
+    arc.fillPath();
+    arc.lineStyle(3, color, 0.5);
+    arc.beginPath();
+    arc.arc(fromX, centerY, radius, start, end, false);
+    arc.strokePath();
+    this.tweens.add({
+      targets: arc,
+      alpha: 0,
+      scaleX: 1.08,
+      scaleY: 1.08,
+      duration: 260,
+      ease: 'Power2',
+      onComplete: () => { if (arc.active) arc.destroy(); },
+    });
+    this._showCombatText(fromX, fromY - 76, label || 'CAST', labelColor, '12px');
+  }
+
   showAbilityEffect(d) {
     this._playSound('ability');
     const abilityKey = String(d.abilityKey || d.ability_key || '');

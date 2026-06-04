@@ -495,6 +495,18 @@ export class ArenaRoom extends Room<ArenaState> {
     player.state = "attacking";
     player.attackUntil = now + ATTACK_ANIM_MS;
     this.broadcast("weapon_swing", { sessionId, cls });
+    this.broadcast("ability_cast", {
+      sessionId,
+      cls,
+      abilityKey,
+      slot,
+      type: abilityType,
+      fromX: player.x,
+      fromY: player.y,
+      facingRight: player.facingRight,
+      range: this.abilityFallbackRange(abilityType, meta),
+      cooldownMs,
+    });
 
     if (abilityType === "guardbreak") {
       const range = abilityNumber(meta, "range", GUARDBREAK_RANGE);
@@ -804,6 +816,14 @@ export class ArenaRoom extends Room<ArenaState> {
     if (abilityType === "projectile") return FIREBALL_COOLDOWN_MS;
     if (abilityType === "blink") return BLINK_COOLDOWN_MS;
     return 0;
+  }
+
+  private abilityFallbackRange(abilityType: string, meta: any) {
+    if (abilityType === "guardbreak") return abilityNumber(meta, "range", GUARDBREAK_RANGE);
+    if (abilityType === "bash") return abilityNumber(meta, "range", BASH_RANGE);
+    if (abilityType === "projectile") return abilityNumber(meta, "range", ARENA_WIDTH);
+    if (abilityType === "blink") return abilityNumber(meta, "range", abilityNumber(meta, "offset", BLINK_OFFSET)) + 120;
+    return abilityNumber(meta, "range", 0);
   }
 
   private isItemAbilityAllowedForClass(className: string, abilityKey: string) {
