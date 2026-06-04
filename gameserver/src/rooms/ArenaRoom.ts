@@ -48,6 +48,8 @@ const BLINK_OFFSET = 80;          // teleport this far past the opponent
 const BLINK_COOLDOWN_MS = 5000;
 const ATTACK_ANIM_MS = 250;       // how long "attacking" state lasts
 const HURT_ANIM_MS = 300;
+const BASIC_PROJECTILE_IMPACT_DELAY_MS = 190;
+const ABILITY_PROJECTILE_IMPACT_DELAY_MS = 320;
 const TICK_MS = 66;               // ~15 FPS
 const COUNTDOWN_SECS = 3;
 const FINISH_CLEANUP_MS = 12_000; // room lives 12s after match ends
@@ -390,7 +392,10 @@ export class ArenaRoom extends Room<ArenaState> {
               const min = Math.round(basicAttack.damage_min);
               const max = Math.round(basicAttack.damage_max);
               const dmg = min + Math.floor(Math.random() * (max - min + 1)) + player.attackBonus;
-              this.dealDamage(sessionId, opp, oppSid, dmg, now, { source: "basic" });
+              this.dealDamage(sessionId, opp, oppSid, dmg, now, {
+                source: "basic",
+                visualDelayMs: basicAttack.kind === "projectile" ? BASIC_PROJECTILE_IMPACT_DELAY_MS : 0,
+              });
             }
           });
           if (!hit && basicAttack.kind === "projectile") {
@@ -578,6 +583,7 @@ export class ArenaRoom extends Room<ArenaState> {
           const dir   = opp.x > player.x ? 1 : -1;
           this.dealDamageAt(sessionId, opp, oppSid, effectiveDamage, origX, opp.y, now, {
             source: slot === "class" ? "classAbility" : "itemAbility",
+            visualDelayMs: ABILITY_PROJECTILE_IMPACT_DELAY_MS,
           });
           if (opp.state !== "dead") {
             opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * knockback));
@@ -631,7 +637,7 @@ export class ArenaRoom extends Room<ArenaState> {
     targetSid: string,
     dmg: number,
     now: number,
-    options: { ignoreBlock?: boolean; source?: "basic" | "classAbility" | "itemAbility" } = {},
+    options: { ignoreBlock?: boolean; source?: "basic" | "classAbility" | "itemAbility"; visualDelayMs?: number } = {},
   ) {
     this.dealDamageAt(attackerSid, target, targetSid, dmg, target.x, target.y, now, options);
   }
@@ -644,7 +650,7 @@ export class ArenaRoom extends Room<ArenaState> {
     nx: number,
     ny: number,
     now: number,
-    options: { ignoreBlock?: boolean; source?: "basic" | "classAbility" | "itemAbility" } = {},
+    options: { ignoreBlock?: boolean; source?: "basic" | "classAbility" | "itemAbility"; visualDelayMs?: number } = {},
   ) {
     const attacker = this.state.players.get(attackerSid);
     const targetGuard = classGuard(target.characterClass);
@@ -693,6 +699,7 @@ export class ArenaRoom extends Room<ArenaState> {
       guardBroken,
       backstab,
       frontalPassive,
+      visualDelayMs: this.clampNumber(options.visualDelayMs, 0, 1000, 0),
       attackerSid,
       targetSid,
     });

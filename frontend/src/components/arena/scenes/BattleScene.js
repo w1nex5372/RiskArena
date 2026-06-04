@@ -136,6 +136,7 @@ export default class BattleScene extends Phaser.Scene {
     this.weaponDebug     = null;
     this.dynamicSheetLoads = new Set();
     this._roomDisposers  = [];
+    this._pendingImpactUntilBySid = new Map();
   }
 
   // ── 1. Preload ─────────────────────────────────────────────────────────
@@ -1155,16 +1156,35 @@ export default class BattleScene extends Phaser.Scene {
     }));
     this._trackRoomDisposer(room.onMessage('damage_number', (d) => {
       if (this.room === room) {
-        this.showDamageNumber(d.x, d.y, d.damage, {
-          blocked: Boolean(d.blocked),
-          guardDamage: Number(d.guardDamage || 0),
-          guardRemaining: Number(d.guardRemaining || 0),
-          guardBroken: Boolean(d.guardBroken),
-          backstab: Boolean(d.backstab),
-          frontalPassive: Boolean(d.frontalPassive),
-          attackerSid: d.attackerSid,
-          targetSid: d.targetSid,
-        });
+        const showDamage = () => {
+          if (this.room !== room || !this.scene?.isActive()) return;
+          this.showDamageNumber(d.x, d.y, d.damage, {
+            blocked: Boolean(d.blocked),
+            guardDamage: Number(d.guardDamage || 0),
+            guardRemaining: Number(d.guardRemaining || 0),
+            guardBroken: Boolean(d.guardBroken),
+            backstab: Boolean(d.backstab),
+            frontalPassive: Boolean(d.frontalPassive),
+            attackerSid: d.attackerSid,
+            targetSid: d.targetSid,
+          });
+          if (d.targetSid) {
+            const until = this._pendingImpactUntilBySid.get(d.targetSid) || 0;
+            if (!until || until <= this.time.now + 16) {
+              this._pendingImpactUntilBySid.delete(d.targetSid);
+            }
+          }
+        };
+        const delayMs = Number(d.visualDelayMs || 0);
+        if (delayMs > 0) {
+          if (d.targetSid) {
+            const until = this.time.now + delayMs;
+            const existing = this._pendingImpactUntilBySid.get(d.targetSid) || 0;
+            this._pendingImpactUntilBySid.set(d.targetSid, Math.max(existing, until));
+          }
+          this.time.delayedCall(delayMs, showDamage);
+        }
+        else showDamage();
       }
     }));
     this._trackRoomDisposer(room.onMessage('ability_used',  (d) => {
@@ -1187,6 +1207,16 @@ export default class BattleScene extends Phaser.Scene {
       try { dispose(); } catch {}
     });
     this._roomDisposers = [];
+    this._pendingImpactUntilBySid.clear();
+  }
+
+  _hasPendingImpact(sessionId) {
+    const until = this._pendingImpactUntilBySid.get(sessionId) || 0;
+    if (until <= this.time.now) {
+      this._pendingImpactUntilBySid.delete(sessionId);
+      return false;
+    }
+    return true;
   }
 
   // ── 4. Create player visuals ────────────────────────────────────────────
@@ -1448,9 +1478,10 @@ export default class BattleScene extends Phaser.Scene {
     // ── Animations ───────────────────────────────────────────────────────
     if (s.useLPC) {
       const st = player.state;
+      const suppressHurtImpact = st === 'hurt' && this._hasPendingImpact(sessionId);
 
       // Hit flash on state transition to 'hurt'
-      if (st === 'hurt' && s.lastState !== 'hurt' && s.body.active) {
+      if (st === 'hurt' && !suppressHurtImpact && s.lastState !== 'hurt' && s.body.active) {
         s.body.setTint(0xffffff);
         this.time.delayedCall(80, () => {
           const sc = this.sprites.get(sessionId);
@@ -1523,11 +1554,12 @@ export default class BattleScene extends Phaser.Scene {
         return;
       }
 
-      const animKey = `${s.animPrefix || s.cls}_${STATE_ANIM[st] ?? 'idle'}`;
+      const visualState = suppressHurtImpact ? 'idle' : st;
+      const animKey = `${s.animPrefix || s.cls}_${STATE_ANIM[visualState] ?? 'idle'}`;
       if (this.anims.exists(animKey)) s.body.play(animKey, true);
 
       if (s.weapon?.active) {
-        const weaponAnimKey = `${s.cls}_weapon_${STATE_ANIM[st] ?? 'idle'}`;
+        const weaponAnimKey = `${s.cls}_weapon_${STATE_ANIM[visualState] ?? 'idle'}`;
         if (this.anims.exists(weaponAnimKey)) s.weapon.play?.(weaponAnimKey, true);
       }
 
@@ -1535,6 +1567,7 @@ export default class BattleScene extends Phaser.Scene {
 
     } else {
       const st = player.state;
+      const suppressHurtImpact = st === 'hurt' && this._hasPendingImpact(sessionId);
       if (st === 'disconnected') {
         s.body.setAlpha(0.3);
         this._ensureDcLabel(s, x, topY - 12);
@@ -1542,7 +1575,7 @@ export default class BattleScene extends Phaser.Scene {
         if (s.dcLabel) s.dcLabel.setVisible(false);
         if (st !== 'dead') s.body.setAlpha(1);
       }
-      if (st === 'hurt') {
+      if (st === 'hurt' && !suppressHurtImpact) {
         s.body.setFillStyle(0xffffff);
         this.time.delayedCall(80, () => {
           const sc = this.sprites.get(sessionId);
