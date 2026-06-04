@@ -50,6 +50,7 @@ import useStableCallback from './hooks/useStableCallback';
 import useIsMobile from './hooks/useIsMobile';
 import useRecentWinners from './hooks/useRecentWinners';
 import useLobbyChatPolling from './hooks/useLobbyChatPolling';
+import useLobbyParticipantsPolling from './hooks/useLobbyParticipantsPolling';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
@@ -270,64 +271,8 @@ function App() {
     console.log('🚪 lobbyData:', lobbyData);
   }, [inLobby, lobbyData]);
 
-  // Polling for lobby participants (only if in lobby)
-  useEffect(() => {
-    console.log(`🚪 inLobby changed: ${inLobby}`);
-    console.log(`🚪 lobbyData:`, lobbyData);
-    
-    if (!inLobby || !lobbyData || !lobbyData.room_type) {
-      console.log('⚠️ Polling NOT started - inLobby:', inLobby, 'lobbyData:', lobbyData);
-      return;
-    }
-
-    let pollCount = 0;
-
-    const fetchParticipants = async () => {
-      if (document.hidden) return; // don't poll while backgrounded
-      pollCount++;
-
-      try {
-        const response = await axios.get(`${API}/room-participants/${lobbyData.room_type}`);
-        const players = response.data.players || [];
-
-        setRoomParticipants(prev => ({ ...prev, [lobbyData.room_type]: players }));
-
-        // Update min/max players in lobbyData if server returned them
-        if (response.data.min_players || response.data.max_players) {
-          setLobbyData(prev => prev ? { ...prev, min_players: response.data.min_players, max_players: response.data.max_players } : prev);
-        }
-
-        const minNeeded = response.data.min_players || lobbyData.min_players || 3;
-        // React will automatically re-render when state changes.
-        // game_finished socket event handles winner display from here.
-        if (players.length >= minNeeded) {
-          toast.success(`🎰 Room Full! Game starting...`, { id: `room-full-${lobbyData.room_type}`, duration: 3000 });
-        }
-
-      } catch (error) {
-        console.error('Error fetching participants:', error);
-        // Don't show error toast for every poll failure, just log it
-        if (pollCount === 1) {
-          // Only show error on first failure
-          toast.error('Failed to load players. Retrying...');
-        }
-      }
-    };
-
-    // Fetch immediately
-    fetchParticipants();
-    
-    // Then poll every 2000ms (reasonable for lobby updates)
-    const pollInterval = setInterval(fetchParticipants, 2000);
-
-    return () => {
-      console.log('🧹 Cleaning up lobby polling');
-      clearInterval(pollInterval);
-    };
-    // Depend on room_type only (stable per lobby session). Depending on the whole
-    // lobbyData object would restart this interval on every poll, since the poll
-    // itself calls setLobbyData (new object reference each time).
-  }, [inLobby, lobbyData?.room_type]); // eslint-disable-line
+  // Lobby participants polling now lives in useLobbyParticipantsPolling (see hooks/).
+  useLobbyParticipantsPolling(inLobby, lobbyData, setRoomParticipants, setLobbyData);
 
   // GAME STATE POLLING — primary mechanism for showing roulette (socket events are unreliable)
   // Polls /api/room/{room_id} every 1s while user is in a game room
