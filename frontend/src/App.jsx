@@ -49,6 +49,7 @@ import { UserProvider } from './context/UserContext';
 import useStableCallback from './hooks/useStableCallback';
 import useIsMobile from './hooks/useIsMobile';
 import useRecentWinners from './hooks/useRecentWinners';
+import useLobbyChatPolling from './hooks/useLobbyChatPolling';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
@@ -428,21 +429,8 @@ function App() {
     }
   }, [roomParticipants, inLobby, lobbyData])
 
-  // Poll lobby chat history when in lobby (fallback for missed socket events)
-  useEffect(() => {
-    if (!inLobby || !lobbyData?.room_id) return;
-    const fetchChat = async () => {
-      try {
-        const res = await axios.get(`${API}/room-chat/${lobbyData.room_id}`);
-        const msgs = res.data.messages || [];
-        // Always sync with server state (source of truth)
-        setLobbyMessages(msgs.slice(-50));
-      } catch (_) {}
-    };
-    fetchChat();
-    const interval = setInterval(fetchChat, 1500);
-    return () => clearInterval(interval);
-  }, [inLobby, lobbyData?.room_id]); // eslint-disable-line
+  // Lobby chat polling now lives in useLobbyChatPolling (see hooks/).
+  useLobbyChatPolling(inLobby, lobbyData?.room_id, setLobbyMessages);
 
   // Detect platform
   const detectPlatform = () => {
