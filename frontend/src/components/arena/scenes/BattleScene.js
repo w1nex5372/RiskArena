@@ -959,11 +959,65 @@ export default class BattleScene extends Phaser.Scene {
     });
   }
 
-  playWeaponSwing(sessionId = this.mySessionId) {
+  playWeaponSwing(sessionId = this.mySessionId, swing = {}) {
     const s = this.sprites.get(sessionId);
     const player = this.room?.state?.players?.get(sessionId);
     if (!s || !player) return;
     this._playAttackBodyMotion(s, player);
+    if (String(swing.attackKind || '') === 'projectile') {
+      this._showBasicProjectile(s, player, swing);
+    }
+  }
+
+  _showBasicProjectile(s, player, swing = {}) {
+    if (!s.body?.active) return;
+    const facingRight = this._getVisualFacingRight(player);
+    const range = Number(swing.range || 150);
+    const fromX = s.body.x + (facingRight ? 22 : -22);
+    const fromY = s.body.y - SPRITE_HEIGHT * 0.48;
+    const rawToX = Number(swing.toX);
+    const rawToY = Number(swing.toY);
+    const toX = Number.isFinite(rawToX) ? rawToX : player.x + (facingRight ? range : -range);
+    const toY = Number.isFinite(rawToY) ? rawToY + FOOT_OFFSET - SPRITE_HEIGHT * 0.48 : fromY;
+    const hit = Boolean(swing.hit);
+
+    const bolt = this.add.circle(fromX, fromY, 6, 0x93c5fd, 0.92).setDepth(8);
+    const core = this.add.circle(fromX, fromY, 2.5, 0xffffff, 0.95).setDepth(9);
+    const trail = this.add.graphics().setDepth(7);
+    trail.lineStyle(2, 0x60a5fa, 0.35);
+    trail.beginPath();
+    trail.moveTo(fromX, fromY);
+    trail.lineTo(toX, toY);
+    trail.strokePath();
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      duration: 220,
+      ease: 'Power1',
+      onComplete: () => { if (trail.active) trail.destroy(); },
+    });
+    this.tweens.add({
+      targets: [bolt, core],
+      x: toX,
+      y: toY,
+      duration: 190,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        if (bolt.active) bolt.destroy();
+        if (core.active) core.destroy();
+        const ring = this.add.circle(toX, toY, 7, hit ? 0x60a5fa : 0x64748b, 0).setDepth(8);
+        ring.setStrokeStyle(2, hit ? 0x93c5fd : 0x64748b, hit ? 0.8 : 0.45);
+        this.tweens.add({
+          targets: ring,
+          alpha: 0,
+          scaleX: hit ? 2.2 : 1.5,
+          scaleY: hit ? 2.2 : 1.5,
+          duration: 230,
+          ease: 'Power2',
+          onComplete: () => { if (ring.active) ring.destroy(); },
+        });
+      },
+    });
   }
 
   _getVisualFacingRight(player) {
@@ -1107,6 +1161,7 @@ export default class BattleScene extends Phaser.Scene {
           guardRemaining: Number(d.guardRemaining || 0),
           guardBroken: Boolean(d.guardBroken),
           backstab: Boolean(d.backstab),
+          frontalPassive: Boolean(d.frontalPassive),
           attackerSid: d.attackerSid,
           targetSid: d.targetSid,
         });
@@ -1119,7 +1174,7 @@ export default class BattleScene extends Phaser.Scene {
       if (this.room === room) this.showCombatFeedback(d);
     }));
     this._trackRoomDisposer(room.onMessage('weapon_swing',  (d) => {
-      if (this.room === room) this.playWeaponSwing(d.sessionId);
+      if (this.room === room) this.playWeaponSwing(d.sessionId, d);
     }));
   }
 
@@ -1851,6 +1906,7 @@ export default class BattleScene extends Phaser.Scene {
     }
 
     const isBackstab = Boolean(opts.backstab);
+    const isFrontalPassive = Boolean(opts.frontalPassive);
 
     // Particle burst
     if (this.hitEmitter) {
@@ -1870,9 +1926,9 @@ export default class BattleScene extends Phaser.Scene {
 
     // Floating number
     const isBig  = isBackstab || damage >= 20;
-    const color  = isBackstab ? '#f472b6' : isBig ? '#ff2200' : '#ef4444';
+    const color  = isBackstab ? '#f472b6' : isFrontalPassive ? '#fbbf24' : isBig ? '#ff2200' : '#ef4444';
     const size   = isBackstab ? '24px' : isBig ? '28px' : '20px';
-    const text = isBackstab ? `-${damage} BACKSTAB` : `-${damage}`;
+    const text = isBackstab ? `-${damage} BACKSTAB` : isFrontalPassive ? `-${damage} BRACED` : `-${damage}`;
     if (isBackstab) {
       const ring = this.add.graphics().setDepth(6);
       ring.lineStyle(3, 0xf472b6, 0.95);

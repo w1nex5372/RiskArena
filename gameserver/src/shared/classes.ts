@@ -2,6 +2,7 @@
 // New classes should be added in shared/battle_classes.json, then consumed here.
 
 type BasicAttackMeta = {
+  kind?: "melee" | "projectile";
   range: number;
   damage_min: number;
   damage_max: number;
@@ -31,9 +32,11 @@ type ClassMeta = {
   basic_attack: BasicAttackMeta;
   guard: GuardMeta;
   passives?: string[];
+  passive_effects?: Record<string, number | boolean>;
 };
 
 const DEFAULT_BASIC_ATTACK: BasicAttackMeta = {
+  kind: "melee",
   range: 90,
   damage_min: 15,
   damage_max: 25,
@@ -100,4 +103,8 @@ export function classGuard(className: string): GuardMeta {
 
 export function classPassives(className: string): string[] {
   return classMeta(className).passives || [];
+}
+
+export function classPassiveEffects(className: string): Record<string, number | boolean> {
+  return classMeta(className).passive_effects || {};
 }

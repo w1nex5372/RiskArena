@@ -13,10 +13,14 @@
       "move_speed": 7.6,
       "default_ability_key": "warrior_default",
       "basic_attack": {
+        "kind": "melee",
         "range": 86,
         "damage_min": 18,
         "damage_max": 26,
         "cooldown_ms": 650
+      },
+      "passive_effects": {
+        "frontal_damage_reduction": 0.1
       },
       "guard": {
         "max": 130,
@@ -30,6 +34,7 @@
       },
       "passives": [
         "Heavy guard",
+        "10% frontal toughness",
         "Melee control",
         "Guardbreak specialist"
       ],
@@ -52,10 +57,14 @@
       "move_speed": 7,
       "default_ability_key": "mage_default",
       "basic_attack": {
+        "kind": "projectile",
         "range": 150,
         "damage_min": 10,
         "damage_max": 16,
         "cooldown_ms": 760
+      },
+      "passive_effects": {
+        "ranged_basic_projectile": true
       },
       "guard": {
         "max": 70,
@@ -91,6 +100,7 @@
       "move_speed": 9.4,
       "default_ability_key": "rogue_default",
       "basic_attack": {
+        "kind": "melee",
         "range": 76,
         "damage_min": 12,
         "damage_max": 19,

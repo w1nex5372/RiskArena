@@ -9,6 +9,7 @@ import {
   classDefaultAbilityKey,
   classGuard,
   classMoveSpeed,
+  classPassiveEffects,
 } from "../shared/classes";
 // Shared ability metadata helpers — single source of truth (also used by BossRaidRoom)
 import {
@@ -366,7 +367,6 @@ export class ArenaRoom extends Room<ArenaState> {
           player.lastAttackTime = now;
           player.state = "attacking";
           player.attackUntil = now + ATTACK_ANIM_MS;
-          this.broadcast("weapon_swing", { sessionId, cls: player.characterClass });
 
           let hit = false;
           let missReason = "MISS";
@@ -392,6 +392,22 @@ export class ArenaRoom extends Room<ArenaState> {
               const dmg = min + Math.floor(Math.random() * (max - min + 1)) + player.attackBonus;
               this.dealDamage(sessionId, opp, oppSid, dmg, now, { source: "basic" });
             }
+          });
+          if (!hit && basicAttack.kind === "projectile") {
+            const dir = player.facingRight ? 1 : -1;
+            feedbackX = Math.max(40, Math.min(ARENA_WIDTH - 40, player.x + dir * basicAttack.range));
+            feedbackY = player.y;
+          }
+          this.broadcast("weapon_swing", {
+            sessionId,
+            cls: player.characterClass,
+            attackKind: basicAttack.kind || "melee",
+            fromX: player.x,
+            fromY: player.y,
+            toX: feedbackX,
+            toY: feedbackY,
+            hit,
+            range: basicAttack.range,
           });
           if (!hit) {
             this.broadcastCombatFeedback(
@@ -650,9 +666,20 @@ export class ArenaRoom extends Room<ArenaState> {
         guardBroken = this.breakGuard(target, now);
       }
     }
+    const targetPassives = classPassiveEffects(target.characterClass);
+    const frontalReduction = Number(targetPassives.frontal_damage_reduction || 0);
+    const frontalPassive = Boolean(
+      !blocked &&
+      attacker &&
+      frontalReduction > 0 &&
+      this.isAttackerInFront(target, attacker),
+    );
+    const defendReduction = frontalPassive
+      ? this.combineDamageReduction(target.defendReduction, frontalReduction)
+      : target.defendReduction;
     const effectiveDmg = resolveDamage(rawDmg, {
       blocked,
-      defendReduction: target.defendReduction,
+      defendReduction,
       blockReduction: targetGuard.block_reduction,
     });
     target.hp = Math.max(0, target.hp - effectiveDmg);
@@ -665,6 +692,7 @@ export class ArenaRoom extends Room<ArenaState> {
       guardRemaining,
       guardBroken,
       backstab,
+      frontalPassive,
       attackerSid,
       targetSid,
     });
@@ -691,6 +719,12 @@ export class ArenaRoom extends Room<ArenaState> {
     const multiplier = Number(classBasicAttack(attacker.characterClass).backstab_multiplier || 1);
     if (multiplier <= 1) return false;
     return target.facingRight ? attacker.x < target.x : attacker.x > target.x;
+  }
+
+  private combineDamageReduction(a: number, b: number) {
+    const first = this.clampNumber(a, 0, 0.9, 0);
+    const second = this.clampNumber(b, 0, 0.9, 0);
+    return 1 - ((1 - first) * (1 - second));
   }
 
   private updateGuard(player: Player, now: number) {
