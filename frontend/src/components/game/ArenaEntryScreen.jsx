@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
 import apiClient from '../../api/client';
+import { useUser } from '../../context/UserContext';
 import { CLASS_INFO } from '../../utils/characters';
 import { getItemImageSrc, getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
 import CharacterPortrait from '../arena/CharacterPortrait';
@@ -54,7 +55,8 @@ const LOADOUT_SLOTS = [
   { key: 'ability',   label: 'ABILITY', Icon: Sparkles },
 ];
 
-export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
+function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
+  const { user } = useUser();
   const [history, setHistory] = useState(null);
   const [entering, setEntering] = useState(false);
   const [enteringRealTime, setEnteringRealTime] = useState(false);
@@ -589,3 +591,8 @@ export default function ArenaEntryScreen({ user, rooms, onEnterBattle, onEnterRe
     </div>
   );
 }
+
+// Memoized: `user` now comes from context and all callbacks from App are stable,
+// so ArenaEntryScreen only re-renders when its real data (user/rooms/equipped)
+// changes — not on unrelated App.jsx state ticks (e.g. recent-winners poll).
+export default memo(ArenaEntryScreen);

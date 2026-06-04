@@ -46,6 +46,7 @@ const SettingsScreen = lazy(() => import('./components/settings/SettingsScreen')
 const TosScreen = lazy(() => import('./components/settings/TosScreen'));
 const PrivacyScreen = lazy(() => import('./components/settings/PrivacyScreen'));
 import { UserProvider } from './context/UserContext';
+import useStableCallback from './hooks/useStableCallback';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
@@ -2301,6 +2302,26 @@ function App() {
   const openTokensTab = useCallback(() => setActiveTab('tokens'), []);
   const openSettingsTab = useCallback(() => setActiveTab('settings'), []);
 
+  // Stable handlers for the memoized ArenaEntryScreen. enterArenaBattle closes
+  // over user + setters, so it uses the ref-based stable wrapper; the rest only
+  // touch stable state setters and can use plain useCallback([]).
+  const arenaEnterBattle = useStableCallback(enterArenaBattle);
+  const arenaNavInventory = useCallback(() => setActiveTab('inventory'), []);
+  const arenaEnterRealTime = useCallback(() => setInRealTimeArena(true), []);
+  const arenaEnterRealTimeFallback = useCallback(() => {
+    setGameInProgress(false);
+    setShowWinnerScreen(false);
+    setWinnerData(null);
+    setInRealTimeArena(true);
+  }, []);
+  const arenaClassChange = useCallback((cls) => setUser((prev) => prev ? {
+    ...prev,
+    class_name: cls,
+    battle_spritesheet_path: '',
+    battle_spritesheet_hash: '',
+  } : prev), []);
+  const arenaEnergySpent = useCallback((energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev), []);
+
   return (
     <UserProvider user={user} setUser={setUserWithLog}>
     <div className={`min-h-screen mobile-app-shell ${useLightChrome ? 'text-slate-900' : 'text-white'} overflow-y-auto ${
@@ -2841,41 +2862,24 @@ function App() {
 
             {activeTab === 'arena' && !inRealTimeArena && !activeArenaMatchId && !inLobby && !showWinnerScreen && !gameInProgress && (
               <ArenaEntryScreen
-                user={user}
                 rooms={rooms}
-                onEnterBattle={enterArenaBattle}
-                onEnterRealTime={() => setInRealTimeArena(true)}
-                onClassChange={(cls) => setUser((prev) => prev ? {
-                  ...prev,
-                  class_name: cls,
-                  battle_spritesheet_path: '',
-                  battle_spritesheet_hash: '',
-                } : prev)}
-                onNavigateInventory={() => setActiveTab('inventory')}
-                onEnergySpent={(energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev)}
+                onEnterBattle={arenaEnterBattle}
+                onEnterRealTime={arenaEnterRealTime}
+                onClassChange={arenaClassChange}
+                onNavigateInventory={arenaNavInventory}
+                onEnergySpent={arenaEnergySpent}
               />
             )}
 
             {/* Safety fallback: arena tab stuck with stale blocking flags but no content to show */}
             {activeTab === 'arena' && !inRealTimeArena && !activeArenaMatchId && !inLobby && (showWinnerScreen ? !winnerData : gameInProgress ? !currentGameData : false) && (
               <ArenaEntryScreen
-                user={user}
                 rooms={rooms}
-                onEnterBattle={enterArenaBattle}
-                onEnterRealTime={() => {
-                  setGameInProgress(false);
-                  setShowWinnerScreen(false);
-                  setWinnerData(null);
-                  setInRealTimeArena(true);
-                }}
-                onClassChange={(cls) => setUser((prev) => prev ? {
-                  ...prev,
-                  class_name: cls,
-                  battle_spritesheet_path: '',
-                  battle_spritesheet_hash: '',
-                } : prev)}
-                onNavigateInventory={() => setActiveTab('inventory')}
-                onEnergySpent={(energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev)}
+                onEnterBattle={arenaEnterBattle}
+                onEnterRealTime={arenaEnterRealTimeFallback}
+                onClassChange={arenaClassChange}
+                onNavigateInventory={arenaNavInventory}
+                onEnergySpent={arenaEnergySpent}
               />
             )}
 
