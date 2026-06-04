@@ -47,6 +47,8 @@ const TosScreen = lazy(() => import('./components/settings/TosScreen'));
 const PrivacyScreen = lazy(() => import('./components/settings/PrivacyScreen'));
 import { UserProvider } from './context/UserContext';
 import useStableCallback from './hooks/useStableCallback';
+import useIsMobile from './hooks/useIsMobile';
+import useRecentWinners from './hooks/useRecentWinners';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
@@ -151,7 +153,7 @@ function App() {
   const [activeRoom, setActiveRoom] = useState(null);
   const [roomParticipants, setRoomParticipants] = useState({}); // Track participants per room
   const [gameHistory, setGameHistory] = useState([]);
-  const [recentWinners, setRecentWinners] = useState([]);
+  const recentWinners = useRecentWinners(user);
   const [userPrizes, setUserPrizes] = useState([]);
   const [inLobby, setInLobby] = useState(false); // Track if user is in lobby waiting
   const [lobbyIsAnonymous, setLobbyIsAnonymous] = useState(false); // Track if joined lobby anonymously
@@ -198,7 +200,7 @@ function App() {
   
   // UI state
   const [activeTab, setActiveTab] = useState('rooms');
-  const [isMobile, setIsMobile] = useState(false);
+  const isMobile = useIsMobile();
   const [isRefreshingHistory, setIsRefreshingHistory] = useState(false);
   const [anonModal, setAnonModal] = useState(null); // { roomType, betAmount } when open
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -405,26 +407,7 @@ function App() {
     };
   }, [activeGameRoomId]);
 
-  // Mobile detection - force mobile for Telegram WebApp
-  useEffect(() => {
-    const checkMobile = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-      // Force mobile in Telegram WebApp environment or narrow screens
-      const isTelegram = !!(window.Telegram && window.Telegram.WebApp);
-      const shouldBeMobile = width <= 768 || isTelegram || (height > width && width <= 1024);
-      setIsMobile(shouldBeMobile);
-      console.log(`Mobile detection: width=${width}, height=${height}, isTelegram=${!!isTelegram}, isMobile=${shouldBeMobile}`);
-    };
-    
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    window.addEventListener('orientationchange', checkMobile);
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-      window.removeEventListener('orientationchange', checkMobile);
-    };
-  }, []);
+  // Mobile detection now lives in useIsMobile() (see hooks/useIsMobile.js).
   // Service Worker completely disabled - no SW listener needed
   // Cache clearing handled in index.html
 
@@ -2151,20 +2134,7 @@ function App() {
     };
   }, [user]);
 
-  // Auto-fetch recent winners every 10 seconds
-  useEffect(() => {
-    if (!user) return;
-    const fetchWinners = async () => {
-      if (document.hidden) return; // don't poll while backgrounded
-      try {
-        const res = await axios.get(`${API}/game-history?limit=5`);
-        setRecentWinners(res.data.games || []);
-      } catch (e) {}
-    };
-    fetchWinners();
-    const interval = setInterval(fetchWinners, 10000);
-    return () => clearInterval(interval);
-  }, [user]); // eslint-disable-line
+  // Recent-winners polling now lives in useRecentWinners(user) (see hooks/).
 
   // Stable handlers for memoized children (TopBar/BottomNav/ArenaEntryScreen).
   // These MUST be declared before the early returns below so the hook order stays
