@@ -790,21 +790,28 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           </section>
         )}
 
-        {/* Join CTA */}
+        {/* Join CTA — contextual: urgent "finish the kill" framing once the boss is in
+            its burn phase (phase 3 ≈ enrage), plus a live raiders/HP subtitle. */}
         <Button
           onClick={() => setView('battle')}
           style={{
-            width: '100%', height: 62, borderRadius: 22, fontWeight: 900, fontSize: 18,
+            width: '100%', minHeight: 62, borderRadius: 22, fontWeight: 900,
             color: 'white',
-            background: 'linear-gradient(135deg,#8b0000,#c0392b)',
+            background: phase >= 3 ? 'linear-gradient(135deg,#b00000,#ef4444)' : 'linear-gradient(135deg,#8b0000,#c0392b)',
             border: '1px solid rgba(201,168,76,0.4)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            animation: 'joinBtnPulse 2s ease-in-out infinite',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
+            padding: '9px 0',
+            animation: `joinBtnPulse ${phase >= 3 ? '1.1s' : '2s'} ease-in-out infinite`,
             cursor: 'pointer',
           }}
         >
-          <Swords style={{ width: 22, height: 22 }} />
-          Join Raid
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 18 }}>
+            <Swords style={{ width: 22, height: 22 }} />
+            {phase >= 3 ? 'Finish the Kill' : 'Join Raid'}
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.85 }}>
+            {(bossState.player_count ?? 0)} raider{(bossState.player_count ?? 0) === 1 ? '' : 's'} battling · {hpPct}% HP left
+          </span>
         </Button>
       </div>
     );
