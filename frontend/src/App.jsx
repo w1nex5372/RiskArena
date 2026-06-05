@@ -51,6 +51,7 @@ import useIsMobile from './hooks/useIsMobile';
 import useRecentWinners from './hooks/useRecentWinners';
 import useLobbyChatPolling from './hooks/useLobbyChatPolling';
 import useLobbyParticipantsPolling from './hooks/useLobbyParticipantsPolling';
+import useGameStatePolling from './hooks/useGameStatePolling';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
 import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
@@ -274,84 +275,9 @@ function App() {
   // Lobby participants polling now lives in useLobbyParticipantsPolling (see hooks/).
   useLobbyParticipantsPolling(inLobby, lobbyData, setRoomParticipants, setLobbyData);
 
-  // GAME STATE POLLING — primary mechanism for showing roulette (socket events are unreliable)
-  // Polls /api/room/{room_id} every 1s while user is in a game room
-  useEffect(() => {
-    const roomId = activeGameRoomId;
-    if (!roomId) return;
-
-    let lastStatus = '';
-    let lastMatchId = '';
-
-    const pollGameState = async () => {
-      // Skip polling while app is backgrounded (saves battery + server load).
-      // Interval resumes automatically when the tab/app becomes visible again.
-      if (document.hidden) return;
-      try {
-        const response = await axios.get(`${API}/room/${roomId}`);
-        const data = response.data;
-        const status = data.status;
-        const matchId = data.match_id || '';
-        const playerCount = (data.players || []).length;
-        const arenaMatchId = extractArenaMatchId(data);
-
-        if (arenaMatchId) {
-          openArenaCombat(arenaMatchId, {
-            room_id: roomId,
-            room_type: data.room_type,
-            players: data.players || [],
-            stake_amount: data.bet_amount || data.stake_amount,
-          });
-          return;
-        }
-
-        // Status: ready → show roulette wheel (never for arena duel rooms)
-        const isDuelRoom = data.settings?.game_mode === 'duel';
-        if (!isDuelRoom &&
-            (status === 'ready' || status === 'playing' || status === 'finished') &&
-            lastStatus !== 'ready' && lastStatus !== 'playing' && lastStatus !== 'finished' &&
-            !showGetReadyRef.current) {
-          blockWinnerScreenRef.current = false;
-          showGetReadyRef.current = true;
-          setInLobby(false);
-          setLobbyData(null);
-          setLobbyMessages([]);
-          setGameInProgress(false);
-          setShowWinnerScreen(false);
-          setWinnerData(null);
-          setForceHideLobby(true);
-          setRouletteConfig({ players: data.players || [], winner: null });
-        }
-
-        // Status: finished + winner → inject winner into roulette (never for duel rooms)
-        if (!isDuelRoom && status === 'finished' && data.winner && matchId && matchId !== lastMatchId) {
-          if (showGetReadyRef.current) {
-            lastMatchId = matchId;
-            setShownMatchIds(prev => new Set([...prev, matchId]));
-            setRouletteConfig(prev => prev ? { ...prev, winner: data.winner } : prev);
-          }
-        }
-
-        lastStatus = status;
-      } catch (e) {
-        // Room gone (game ended, room reset) — stop polling
-        if (e.response && e.response.status === 404) {
-          clearInterval(interval);
-        }
-      }
-    };
-
-    const interval = setInterval(pollGameState, 1000);
-    pollGameState(); // immediate first check
-    // Poll immediately when app returns to foreground (don't wait for next tick)
-    const onVisible = () => { if (!document.hidden) pollGameState(); };
-    document.addEventListener('visibilitychange', onVisible);
-
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [activeGameRoomId]);
+  // Game-state polling now lives in useGameStatePolling (see hooks/). The hook call
+  // is below, after openArenaCombat/extractArenaMatchId are defined (they're passed
+  // in), but still above the early returns.
 
   // Mobile detection now lives in useIsMobile() (see hooks/useIsMobile.js).
   // Service Worker completely disabled - no SW listener needed
@@ -453,7 +379,26 @@ function App() {
         .catch(() => {});
     }
   };
-  
+
+  // Game-state polling (roulette wheel + arena match detection). Declared here so
+  // the openArenaCombat / extractArenaMatchId it receives are already defined; still
+  // above all early returns. Game state stays in App.jsx — passed in as actions.
+  useGameStatePolling(activeGameRoomId, {
+    extractArenaMatchId,
+    openArenaCombat,
+    showGetReadyRef,
+    blockWinnerScreenRef,
+    setInLobby,
+    setLobbyData,
+    setLobbyMessages,
+    setGameInProgress,
+    setShowWinnerScreen,
+    setWinnerData,
+    setForceHideLobby,
+    setRouletteConfig,
+    setShownMatchIds,
+  });
+
   // Socket connection with robust reconnection
   useEffect(() => {
     console.log('🔌🔌🔌 CONNECTING TO WEBSOCKET 🔌🔌🔌');
