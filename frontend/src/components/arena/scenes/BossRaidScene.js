@@ -1422,17 +1422,29 @@ export default class BossRaidScene extends Phaser.Scene {
   // Floating damage number virš pataikyto kito žaidėjo (block → melsva, dodge → "DODGE").
   _showSlotDamage(slot, t) {
     const x = (slot.curX ?? slot.x) + Phaser.Math.Between(-8, 8);
-    const y = slot.y - 72;
+    this._floatCombatText(x, slot.y - 72, t, 14, 20);
+  }
+
+  // Žalos skaičius VIRŠ MANO žaidėjo, kai bosas pataiko (matau, kiek gavau).
+  showMyDamageTaken(t) {
+    if (!this._sceneReady) return;
+    const x = this._myPlayerX + Phaser.Math.Between(-8, 8);
+    const y = (FLOOR_Y + FOOT_OFFSET) - SPRITE_HEIGHT * 0.7;
+    this._floatCombatText(x, y, t, 17, 21);
+  }
+
+  // Bendras floating combat tekstas: DODGE / BLOCK / -N (žala). t = {dmg, blocked, dodged}.
+  _floatCombatText(x, y, t, size, depth) {
     let label, color;
     if (t.dodged)       { label = 'DODGE';     color = '#38bdf8'; }
-    else if (t.blocked) { label = `-${t.dmg}`; color = '#93c5fd'; }
+    else if (t.blocked) { label = 'BLOCK';     color = '#93c5fd'; }
     else                { label = `-${t.dmg}`; color = '#ef4444'; }
     const txt = this.add.text(x, y, label, {
-      fontSize: '14px', fontFamily: 'monospace', fontStyle: 'bold',
+      fontSize: `${size}px`, fontFamily: 'monospace', fontStyle: 'bold',
       color, stroke: '#000000', strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(20);
+    }).setOrigin(0.5).setDepth(depth);
     this.tweens.add({
-      targets: txt, y: y - 42, alpha: 0, duration: 750, ease: 'Power1',
+      targets: txt, y: y - 44, alpha: 0, duration: 780, ease: 'Power1',
       onComplete: () => { if (txt.active) txt.destroy(); },
     });
   }

@@ -612,11 +612,12 @@ export class BossRaidRoom extends Room<BossRaidState> {
         }
       }
 
-      const dmg = resolveDamage(rawDmg, {
-        blocked,
-        defendReduction: p.defendReduction,
-        blockReduction: g.block_reduction,
-      });
+      // 100% block: holding guard fully negates a blockable hit (0 damage). Guard still
+      // drains above (and a guard break flips blocked=false → full damage), and AoE is
+      // unblockable — so blocking stays a guard-limited trade-off, not a free shield.
+      const dmg = blocked
+        ? 0
+        : resolveDamage(rawDmg, { blocked: false, defendReduction: p.defendReduction, blockReduction: g.block_reduction });
       p.hp = Math.max(0, p.hp - dmg);
 
       if (p.hp <= 0) {

@@ -306,9 +306,11 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         // data.type: 'melee' | 'aoe'. AoE is dodged by being airborne (jumping) when it lands.
         room.onMessage('boss_attack', (data) => {
           sceneRef.current?.onBossAttack(data);
+          // Mane pataikė? Rodom žalos skaičių VIRŠ mano žaidėjo (DODGE/BLOCK/-N).
+          const mine = (data.targets || []).find((t) => t.sid === room.sessionId);
+          if (mine) sceneRef.current?.showMyDamageTaken(mine);
           // Knockback: stumiame TIK jei mane pataikė be block'o, tai nenokautavo
           // ir aš neišvengiau (dodged). block/dodge apsaugo nuo knockback.
-          const mine = (data.targets || []).find((t) => t.sid === room.sessionId);
           if (mine && !mine.blocked && !mine.downed && !mine.dodged) sceneRef.current?.knockbackMyPlayer?.();
         });
 
