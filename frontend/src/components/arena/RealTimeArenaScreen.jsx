@@ -29,6 +29,41 @@ function formatConnectionError(err) {
   return String(err);
 }
 
+function arenaStat(player, key) {
+  const value = Number(player?.[key] || 0);
+  return Number.isFinite(value) ? Math.round(value) : 0;
+}
+
+function snapshotArenaStats(player) {
+  return {
+    damageDealt: arenaStat(player, 'damageDealt'),
+    damageTaken: arenaStat(player, 'damageTaken'),
+    damageBlocked: arenaStat(player, 'damageBlocked'),
+    guardDamageDealt: arenaStat(player, 'guardDamageDealt'),
+    blocks: arenaStat(player, 'blocks'),
+    guardBreaks: arenaStat(player, 'guardBreaks'),
+    dodges: arenaStat(player, 'dodges'),
+    backstabs: arenaStat(player, 'backstabs'),
+    executes: arenaStat(player, 'executes'),
+    skillUses: arenaStat(player, 'skillUses'),
+    hits: arenaStat(player, 'hits'),
+    misses: arenaStat(player, 'misses'),
+  };
+}
+
+function buildResultPayload(room) {
+  const state = room?.state;
+  const myPlayer = state?.players?.get?.(room.sessionId);
+  const opponentEntry = state ? [...state.players.entries()].find(([sid]) => sid !== room.sessionId) : null;
+  const opponent = opponentEntry?.[1] || null;
+  return {
+    won: state?.winnerId === room.sessionId,
+    opponentName: opponent?.username || 'Opponent',
+    myStats: snapshotArenaStats(myPlayer),
+    opponentStats: snapshotArenaStats(opponent),
+  };
+}
+
 // Game world dimensions
 const GAME_W = 800;
 const GAME_H = 420;
@@ -229,10 +264,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
           if (s.phase === 'finished') {
             sessionStorage.removeItem('arena_reconnect');
-            const isWinner = s.winnerId === room.sessionId;
-            const opponentEntry = [...s.players.entries()].find(([sid]) => sid !== room.sessionId);
-            const opponentName = opponentEntry?.[1]?.username || 'Opponent';
-            setResult({ won: isWinner, opponentName });
+            setResult(buildResultPayload(room));
           }
         });
 
@@ -310,10 +342,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
           if (s.phase === 'finished') {
             sessionStorage.removeItem('arena_reconnect');
-            const isWinner = s.winnerId === room.sessionId;
-            const opponentEntry = [...s.players.entries()].find(([sid]) => sid !== room.sessionId);
-            const opponentName = opponentEntry?.[1]?.username || 'Opponent';
-            setResult({ won: isWinner, opponentName });
+            setResult(buildResultPayload(room));
           }
         });
 
@@ -452,6 +481,14 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
   const equippedAbility = equipped?.ability || null;
   const hasEquippedAbility = Boolean(equippedAbility?.ability_key && activeAbilityKey);
+  const resultStatRows = [
+    { label: 'Damage', mine: result?.myStats?.damageDealt, opp: result?.opponentStats?.damageDealt },
+    { label: 'Blocked', mine: result?.myStats?.damageBlocked, opp: result?.opponentStats?.damageBlocked },
+    { label: 'Guardbreak', mine: result?.myStats?.guardBreaks, opp: result?.opponentStats?.guardBreaks },
+    { label: 'Dodges', mine: result?.myStats?.dodges, opp: result?.opponentStats?.dodges },
+    { label: 'Executes', mine: result?.myStats?.executes, opp: result?.opponentStats?.executes },
+    { label: 'Skills', mine: result?.myStats?.skillUses, opp: result?.opponentStats?.skillUses },
+  ];
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -568,6 +605,47 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
               : 'Battle ended'}
           </div>
 
+          {result && (
+            <div style={{
+              width: 'min(520px, calc(100% - 48px))',
+              background: 'rgba(15,23,42,0.65)',
+              border: '1px solid rgba(201,168,76,0.18)',
+              borderRadius: 12,
+              padding: '10px 12px',
+              marginBottom: 18,
+            }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '64px 1fr 64px',
+                gap: 8,
+                color: '#64748b',
+                fontSize: 9,
+                fontWeight: 900,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                marginBottom: 6,
+              }}>
+                <span>You</span>
+                <span style={{ textAlign: 'center' }}>Stats</span>
+                <span style={{ textAlign: 'right' }}>Opp</span>
+              </div>
+              {resultStatRows.map((row) => (
+                <div key={row.label} style={{
+                  display: 'grid',
+                  gridTemplateColumns: '64px 1fr 64px',
+                  gap: 8,
+                  alignItems: 'center',
+                  padding: '5px 0',
+                  borderTop: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <span style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 900 }}>{row.mine ?? 0}</span>
+                  <span style={{ color: '#94a3b8', fontSize: 10, fontWeight: 800, textAlign: 'center', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{row.label}</span>
+                  <span style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 900, textAlign: 'right' }}>{row.opp ?? 0}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Rewards */}
           <div style={{
             display: 'flex', gap: 12, marginBottom: 28,
@@ -586,7 +664,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
               borderRadius: 10, padding: '10px 18px', textAlign: 'center', minWidth: 80,
             }}>
               <div style={{ fontSize: 18, fontWeight: 900, color: '#818cf8' }}>
-                +{result.won ? 120 : 30}
+                +{result?.won ? 120 : 30}
               </div>
               <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>XP</div>
             </div>

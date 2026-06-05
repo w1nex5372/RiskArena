@@ -2020,13 +2020,20 @@ function App() {
   // stable state setters; enterArenaBattle is wrapped via useStableCallback.
   const openTokensTab = useCallback(() => setActiveTab('tokens'), []);
   const openSettingsTab = useCallback(() => setActiveTab('settings'), []);
-  const arenaEnterBattle = useStableCallback(enterArenaBattle);
   const arenaNavInventory = useCallback(() => setActiveTab('inventory'), []);
-  const arenaEnterRealTime = useCallback(() => setInRealTimeArena(true), []);
-  const arenaEnterRealTimeFallback = useCallback(() => {
+  const arenaEnterRealTime = useCallback(() => {
+    setActiveTab('arena');
+    setActiveArenaMatchId(null);
+    setActiveArenaRoomContext(null);
+    setInLobby(false);
+    setLobbyData(null);
     setGameInProgress(false);
+    setCurrentGameData(null);
     setShowWinnerScreen(false);
     setWinnerData(null);
+    setForceHideLobby(false);
+    setRouletteConfig(null);
+    showGetReadyRef.current = false;
     setInRealTimeArena(true);
   }, []);
   const arenaClassChange = useCallback((cls) => setUser((prev) => prev ? {
@@ -2167,6 +2174,22 @@ function App() {
   const appBackground = useLightChrome
     ? 'radial-gradient(circle at top left, rgba(96,165,250,0.18), transparent 34%), linear-gradient(180deg, #f8fbff 0%, #eef6ff 48%, #f8fafc 100%)'
     : 'linear-gradient(135deg, #08080f 0%, #1a0320 40%, #08080f 100%)';
+  const showArenaLobby =
+    !activeArenaMatchId &&
+    !showWinnerScreen &&
+    !gameInProgress &&
+    inLobby &&
+    !rouletteConfig &&
+    !forceHideLobby &&
+    lobbyData;
+  const showArenaEntry =
+    activeTab === 'arena' &&
+    !inRealTimeArena &&
+    !activeArenaMatchId &&
+    !rouletteConfig &&
+    !showArenaLobby &&
+    (!showWinnerScreen || !winnerData) &&
+    (!gameInProgress || !currentGameData);
 
   return (
     <UserProvider user={user} setUser={setUserWithLog}>
@@ -2201,12 +2224,14 @@ function App() {
         />
       )}
       
-      <TopBar
-        key={topBarVersion}
-        isConnected={isConnected}
-        onBuyTokens={openTokensTab}
-        onOpenSettings={openSettingsTab}
-      />
+      {!inRealTimeArena && (
+        <TopBar
+          key={topBarVersion}
+          isConnected={isConnected}
+          onBuyTokens={openTokensTab}
+          onOpenSettings={openSettingsTab}
+        />
+      )}
 
       <div className="flex">
         {/* Desktop Sidebar */}
@@ -2655,7 +2680,7 @@ function App() {
             )}
 
             {/* LOBBY SCREEN - Show when player is waiting in room - HIDDEN when GET READY animation is showing */}
-            {!activeArenaMatchId && !showWinnerScreen && !gameInProgress && inLobby && !rouletteConfig && !forceHideLobby && lobbyData && (
+            {showArenaLobby && (
               <RoomLobby
                 socket={socket}
                 lobbyData={lobbyData}
@@ -2706,23 +2731,10 @@ function App() {
               />
             )}
 
-            {activeTab === 'arena' && !inRealTimeArena && !activeArenaMatchId && !inLobby && !showWinnerScreen && !gameInProgress && (
+            {showArenaEntry && (
               <ArenaEntryScreen
                 rooms={rooms}
-                onEnterBattle={arenaEnterBattle}
                 onEnterRealTime={arenaEnterRealTime}
-                onClassChange={arenaClassChange}
-                onNavigateInventory={arenaNavInventory}
-                onEnergySpent={arenaEnergySpent}
-              />
-            )}
-
-            {/* Safety fallback: arena tab stuck with stale blocking flags but no content to show */}
-            {activeTab === 'arena' && !inRealTimeArena && !activeArenaMatchId && !inLobby && (showWinnerScreen ? !winnerData : gameInProgress ? !currentGameData : false) && (
-              <ArenaEntryScreen
-                rooms={rooms}
-                onEnterBattle={arenaEnterBattle}
-                onEnterRealTime={arenaEnterRealTimeFallback}
                 onClassChange={arenaClassChange}
                 onNavigateInventory={arenaNavInventory}
                 onEnergySpent={arenaEnergySpent}
@@ -3089,7 +3101,7 @@ function App() {
         </main>
       </div>
 
-      {isMobile && (
+      {isMobile && !inRealTimeArena && (
         <BottomNav
           activeTab={activeTab}
           setActiveTab={setActiveTab}

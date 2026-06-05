@@ -5350,6 +5350,8 @@ class RealtimeMatchResultBody(BaseModel):
     loser_user_id: str
     by_disconnect: bool = False
     room_id: str = ""
+    winner_stats: Optional[Dict[str, Any]] = None
+    loser_stats: Optional[Dict[str, Any]] = None
 
 @api_router.post("/internal/match-result")
 async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Request):

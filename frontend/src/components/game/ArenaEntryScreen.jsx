@@ -55,10 +55,9 @@ const LOADOUT_SLOTS = [
   { key: 'ability',   label: 'ABILITY', Icon: Sparkles },
 ];
 
-function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
+function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
   const { user } = useUser();
   const [history, setHistory] = useState(null);
-  const [entering, setEntering] = useState(false);
   const [enteringRealTime, setEnteringRealTime] = useState(false);
   const [energyError, setEnergyError] = useState('');
   const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
@@ -164,18 +163,6 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
       won,
     };
   });
-
-  const canEnter = !entering && !!user?.class_name;
-
-  const handleEnter = async () => {
-    if (!canEnter) return;
-    setEntering(true);
-    try {
-      await onEnterBattle(0);
-    } finally {
-      setEntering(false);
-    }
-  };
 
   const getEquipped = (slotKey) => equipped?.[slotKey] || null;
   // Base class identity (HP / ATK / Guard / Speed) is shown in ClassStatRow.
@@ -418,7 +405,7 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
 
       {/* ── Real-Time Battle Button (Colyseus) ─────────────────── */}
       {onEnterRealTime && (
-        <div style={{ margin: '14px 16px 0' }}>
+        <div style={{ margin: '10px 12px 0' }}>
           <button
             disabled={enteringRealTime || (user?.energy !== undefined && user.energy < 1)}
             onClick={async () => {
@@ -437,7 +424,7 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
               }
             }}
             style={{
-              width: '100%', height: 60, borderRadius: 16,
+              width: '100%', height: 52, borderRadius: 14,
               border: (user?.energy !== undefined && user.energy < 1)
                 ? '1px solid rgba(100,116,139,0.3)'
                 : '1px solid rgba(34,197,94,0.5)',
@@ -446,34 +433,26 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
                 ? 'rgba(255,255,255,0.04)'
                 : 'linear-gradient(135deg, #064e3b 0%, #065f46 50%, #064e3b 100%)',
               color: (user?.energy !== undefined && user.energy < 1) ? '#475569' : '#6ee7b7',
-              fontWeight: 900, fontSize: 16, letterSpacing: '0.08em',
+              fontWeight: 900, fontSize: 14, letterSpacing: '0.08em',
               boxShadow: (user?.energy !== undefined && user.energy < 1)
                 ? 'none'
-                : '0 6px 24px rgba(34,197,94,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                : '0 5px 18px rgba(34,197,94,0.3), inset 0 1px 0 rgba(255,255,255,0.1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               opacity: enteringRealTime ? 0.7 : 1,
               transition: 'all 0.2s ease',
             }}
           >
-            <Swords style={{ width: 20, height: 20 }} />
-            {enteringRealTime ? 'Entering…' : '⚡ REAL-TIME BATTLE'}
+            <Swords style={{ width: 18, height: 18 }} />
+            {enteringRealTime ? 'Entering…' : 'REAL-TIME BATTLE'}
             {!enteringRealTime && (
-              <>
-                <span style={{
-                  fontSize: 9, fontWeight: 800, padding: '2px 6px',
-                  borderRadius: 999, background: 'rgba(34,197,94,0.2)',
-                  border: '1px solid rgba(34,197,94,0.3)', color: '#86efac',
-                  letterSpacing: '0.1em',
-                }}>BETA</span>
-                <span style={{
-                  fontSize: 9, fontWeight: 800, padding: '2px 6px',
-                  borderRadius: 999,
-                  background: (user?.energy !== undefined && user.energy < 1) ? 'rgba(100,116,139,0.15)' : 'rgba(245,158,11,0.18)',
-                  border: `1px solid ${(user?.energy !== undefined && user.energy < 1) ? 'rgba(100,116,139,0.3)' : 'rgba(245,158,11,0.35)'}`,
-                  color: (user?.energy !== undefined && user.energy < 1) ? '#475569' : '#fbbf24',
-                  letterSpacing: '0.08em',
-                }}>1 energy</span>
-              </>
+              <span style={{
+                fontSize: 9, fontWeight: 800, padding: '2px 6px',
+                borderRadius: 999,
+                background: (user?.energy !== undefined && user.energy < 1) ? 'rgba(100,116,139,0.15)' : 'rgba(245,158,11,0.18)',
+                border: `1px solid ${(user?.energy !== undefined && user.energy < 1) ? 'rgba(100,116,139,0.3)' : 'rgba(245,158,11,0.35)'}`,
+                color: (user?.energy !== undefined && user.energy < 1) ? '#475569' : '#fbbf24',
+                letterSpacing: '0.08em',
+              }}>⚡ 1</span>
             )}
           </button>
           {energyError && (
@@ -485,20 +464,20 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
       )}
 
       {/* ── Queue Status ────────────────────────────────────────── */}
-      <div style={{ margin: '10px 16px 0', display: 'flex', justifyContent: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: queueCount > 0 ? '#22c55e' : '#475569', boxShadow: queueCount > 0 ? '0 0 6px rgba(34,197,94,0.8)' : 'none' }} />
-          <Users style={{ width: 12, height: 12, color: '#64748b' }} />
-          <span style={{ color: queueCount > 0 ? '#94a3b8' : '#475569', fontSize: 12, fontWeight: 600 }}>
-            {queueCount > 0 ? `${queueCount} warrior${queueCount !== 1 ? 's' : ''} in queue` : 'Queue is empty'}
+      <div style={{ margin: '8px 12px 0', display: 'flex', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: queueCount > 0 ? '#22c55e' : '#475569', boxShadow: queueCount > 0 ? '0 0 6px rgba(34,197,94,0.8)' : 'none' }} />
+          <Users style={{ width: 11, height: 11, color: '#64748b' }} />
+          <span style={{ color: queueCount > 0 ? '#94a3b8' : '#475569', fontSize: 10, fontWeight: 600 }}>
+            {queueCount > 0 ? `${queueCount} in queue` : 'Queue empty'}
           </span>
         </div>
       </div>
 
       {/* ── Recent Duels ────────────────────────────────────────── */}
       {history !== null && recentOpponents.length > 0 && (
-        <div style={{ margin: '20px 16px 0' }}>
-          <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase', margin: '0 0 10px' }}>
+        <div style={{ margin: '14px 12px 0' }}>
+          <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase', margin: '0 0 8px' }}>
             Recent Duels
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -35,6 +35,20 @@ export class Player extends Schema {
   @type("string") activeAbilityName: string = "";
   @type("string") activeAbilityIcon: string = "";
   @type("number") activeAbilityCooldownMs: number = 0;
+  @type("number") damageDealt: number = 0;
+  @type("number") damageTaken: number = 0;
+  @type("number") damageBlocked: number = 0;
+  @type("number") guardDamageDealt: number = 0;
+  @type("number") blocks: number = 0;
+  @type("number") guardBreaks: number = 0;
+  @type("number") dodges: number = 0;
+  @type("number") backstabs: number = 0;
+  @type("number") executes: number = 0;
+  @type("number") skillUses: number = 0;
+  @type("number") classSkillUses: number = 0;
+  @type("number") itemSkillUses: number = 0;
+  @type("number") hits: number = 0;
+  @type("number") misses: number = 0;
 
   // Server-only — not synced to clients
   lastAttackTime: number = 0;

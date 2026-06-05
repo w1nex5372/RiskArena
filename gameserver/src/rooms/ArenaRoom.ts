@@ -377,6 +377,7 @@ export class ArenaRoom extends Room<ArenaState> {
 
           let hit = false;
           let missReason = "MISS";
+          let dodgedSid = "";
           let feedbackX = player.x + (player.facingRight ? 64 : -64);
           let feedbackY = player.y;
           this.state.players.forEach((opp, oppSid) => {
@@ -391,6 +392,7 @@ export class ArenaRoom extends Room<ArenaState> {
               missReason = "MISS";
             } else if (opp.isGrounded === false && yDist > 40) {
               missReason = "DODGE";
+              dodgedSid = oppSid;
             }
             if (dist <= basicAttack.range && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
               hit = true;
@@ -424,6 +426,11 @@ export class ArenaRoom extends Room<ArenaState> {
             range: basicAttack.range,
           });
           if (!hit) {
+            player.misses += 1;
+            if (missReason === "DODGE" && dodgedSid) {
+              const dodger = this.state.players.get(dodgedSid);
+              if (dodger) dodger.dodges += 1;
+            }
             this.broadcastCombatFeedback(
               missReason === "DODGE" ? "dodge" : "miss",
               player,
@@ -503,6 +510,9 @@ export class ArenaRoom extends Room<ArenaState> {
     }
     player.state = "attacking";
     player.attackUntil = now + ATTACK_ANIM_MS;
+    player.skillUses += 1;
+    if (slot === "class") player.classSkillUses += 1;
+    if (slot === "item") player.itemSkillUses += 1;
     this.broadcast("weapon_swing", { sessionId, cls });
     this.broadcast("ability_cast", {
       sessionId,
@@ -536,7 +546,8 @@ export class ArenaRoom extends Room<ArenaState> {
           targetY = opp.y;
           brokeBlock = brokeBlock || opp.isBlocking;
           if (opp.isBlocking) {
-            this.breakGuard(opp, now, stunMs);
+            const didBreak = this.breakGuard(opp, now, stunMs);
+            if (didBreak) player.guardBreaks += 1;
           }
           opp.stunUntil = now + stunMs;
           opp.isStunned = true;
@@ -546,6 +557,10 @@ export class ArenaRoom extends Room<ArenaState> {
           });
         }
       });
+      if (!hit) {
+        player.misses += 1;
+        this.broadcastCombatFeedback("miss", player, sessionId, "MISS", targetX, targetY);
+      }
       this.broadcast("ability_used", {
         sessionId, cls, abilityKey, slot,
         fromX: player.x, fromY: player.y, toX: targetX, toY: targetY,
@@ -577,6 +592,10 @@ export class ArenaRoom extends Room<ArenaState> {
           });
         }
       });
+      if (!hit) {
+        player.misses += 1;
+        this.broadcastCombatFeedback("miss", player, sessionId, "MISS", targetX, targetY);
+      }
       this.broadcast("ability_used", {
         sessionId, cls, abilityKey, slot,
         fromX: player.x, fromY: player.y, toX: targetX, toY: targetY,
@@ -602,6 +621,11 @@ export class ArenaRoom extends Room<ArenaState> {
           toX: opp.x, toY: opp.y, hit: !dodged,
           damage, effectiveDamage, knockback, appliedKnockback, blockedKnockback, range: abilityNumber(meta, "range", ARENA_WIDTH), cooldownMs,
         });
+        if (dodged) {
+          opp.dodges += 1;
+          player.misses += 1;
+          this.broadcastCombatFeedback("dodge", opp, oppSid, "DODGE", opp.x, opp.y);
+        }
         if (!dodged) {
           const origX = opp.x;
           const dir   = opp.x > player.x ? 1 : -1;
@@ -724,6 +748,22 @@ export class ArenaRoom extends Room<ArenaState> {
       defendReduction,
       blockReduction: targetGuard.block_reduction,
     });
+    if (attacker) {
+      attacker.hits += 1;
+      attacker.damageDealt += effectiveDmg;
+      target.damageTaken += effectiveDmg;
+      if (blocked) {
+        target.blocks += 1;
+        target.damageBlocked += Math.max(0, rawDmg - effectiveDmg);
+        attacker.guardDamageDealt += guardDamage;
+      }
+      if (guardBroken) attacker.guardBreaks += 1;
+      if (backstabWindow) {
+        attacker.executes += 1;
+      } else if (backstab) {
+        attacker.backstabs += 1;
+      }
+    }
     target.hp = Math.max(0, target.hp - effectiveDmg);
     this.broadcast("damage_number", {
       x: nx,
@@ -880,6 +920,25 @@ export class ArenaRoom extends Room<ArenaState> {
     return Math.max(player.activeAbilityCooldownMs || defaultCooldownMs, defaultCooldownMs);
   }
 
+  private playerCombatStats(player?: Player) {
+    return {
+      damage_dealt: Math.round(player?.damageDealt || 0),
+      damage_taken: Math.round(player?.damageTaken || 0),
+      damage_blocked: Math.round(player?.damageBlocked || 0),
+      guard_damage_dealt: Math.round(player?.guardDamageDealt || 0),
+      blocks: Math.round(player?.blocks || 0),
+      guard_breaks: Math.round(player?.guardBreaks || 0),
+      dodges: Math.round(player?.dodges || 0),
+      backstabs: Math.round(player?.backstabs || 0),
+      executes: Math.round(player?.executes || 0),
+      skill_uses: Math.round(player?.skillUses || 0),
+      class_skill_uses: Math.round(player?.classSkillUses || 0),
+      item_skill_uses: Math.round(player?.itemSkillUses || 0),
+      hits: Math.round(player?.hits || 0),
+      misses: Math.round(player?.misses || 0),
+    };
+  }
+
   // ── Private: finalize match ───────────────────────────────────────────────
   private endMatch(winnerSid: string, loserSid: string, byDisconnect: boolean) {
     if (this.state.phase === "finished") return;
@@ -895,6 +954,15 @@ export class ArenaRoom extends Room<ArenaState> {
       `[ArenaRoom] match ended — winner: ${winner?.username} loser: ${loser?.username} disconnect:${byDisconnect}`
     );
 
+    const winnerStats = this.playerCombatStats(winner);
+    const loserStats = this.playerCombatStats(loser);
+    this.broadcast("match_stats", {
+      winnerSid,
+      loserSid,
+      winnerStats,
+      loserStats,
+    });
+
     // Report result to FastAPI (fire-and-forget)
     if (winner?.userId && loser?.userId) {
       if (!INTERNAL_SECRET) {
@@ -908,6 +976,8 @@ export class ArenaRoom extends Room<ArenaState> {
               loser_user_id: loser.userId,
               by_disconnect: byDisconnect,
               room_id: this.roomId,
+              winner_stats: winnerStats,
+              loser_stats: loserStats,
             },
             { headers: { "x-internal-secret": INTERNAL_SECRET }, timeout: 5000 }
           )
