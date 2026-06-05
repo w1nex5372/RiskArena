@@ -69,8 +69,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [nextSpawnIn,     setNextSpawnIn]     = useState(null); // sek iki kito boso (downtime countdown)
   const nextSpawnAtRef    = useRef(null);                       // kito boso spawn laikas (ms)
   const viewRef           = useRef('lobby');                    // dabartinis view be stale closure (socket handler'iams)
-  viewRef.current = view;                                       // latest-value (skaitomas tik async socket callback'uose)
   const [view,            setView]            = useState('lobby');
+  viewRef.current = view;                                       // latest-value (skaitomas tik async socket callback'uose)
   const [attackLocked,    setAttackLocked]    = useState(false);
   const [myDamage,        setMyDamage]        = useState(0);
   const [topDealers,      setTopDealers]      = useState([]);
