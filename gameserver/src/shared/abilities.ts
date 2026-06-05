@@ -12,6 +12,7 @@ export type AbilityMeta = {
   ability_power_scale?: number;
   stun_ms?: number;
   knockback?: number;
+  blocked_knockback_mult?: number;
   range?: number;
   offset?: number;
   cooldown_ms?: number;

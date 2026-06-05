@@ -589,15 +589,18 @@ export class ArenaRoom extends Room<ArenaState> {
       const damage = abilityNumber(meta, "damage", FIREBALL_DMG);
       const effectiveDamage = abilityDamage(damage);
       const knockback = abilityNumber(meta, "knockback", FIREBALL_KNOCKBACK);
+      const blockedKnockbackMult = this.clampNumber(abilityNumber(meta, "blocked_knockback_mult", 1), 0, 1, 1);
       this.state.players.forEach((opp, oppSid) => {
         if (oppSid === sessionId || opp.state === "dead") return;
         const yDist  = Math.abs(player.y - opp.y);
         const dodged = !opp.isGrounded && yDist > 60;
+        const blockedKnockback = Boolean(!meta.ignore_block && opp.isBlocking && this.isAttackerInFront(opp, player));
+        const appliedKnockback = Math.round(knockback * (blockedKnockback ? blockedKnockbackMult : 1));
         this.broadcast("ability_used", {
           sessionId, cls, abilityKey, slot,
           fromX: player.x, fromY: player.y,
           toX: opp.x, toY: opp.y, hit: !dodged,
-          damage, effectiveDamage, knockback, range: abilityNumber(meta, "range", ARENA_WIDTH), cooldownMs,
+          damage, effectiveDamage, knockback, appliedKnockback, blockedKnockback, range: abilityNumber(meta, "range", ARENA_WIDTH), cooldownMs,
         });
         if (!dodged) {
           const origX = opp.x;
@@ -607,7 +610,7 @@ export class ArenaRoom extends Room<ArenaState> {
             visualDelayMs: ABILITY_PROJECTILE_IMPACT_DELAY_MS,
           });
           if (opp.state !== "dead") {
-            opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * knockback));
+            opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * appliedKnockback));
           }
         }
       });
