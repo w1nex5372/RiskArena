@@ -2281,7 +2281,9 @@ export default class BattleScene extends Phaser.Scene {
       return;
     }
     if (d.cls === 'warrior') this._showBashEffect(d.toX ?? d.fromX, d.toY ?? d.fromY, d.hit, abilityKey);
-    if (d.cls === 'mage')    this._showFireballEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit, abilityKey);
+    if (d.cls === 'mage')    this._showFireballEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit, abilityKey, {
+      blockedKnockback: Boolean(d.blockedKnockback),
+    });
     if (d.cls === 'rogue') {
       this._showBlinkEffect(d.fromX, d.fromY, d.toX, abilityKey, {
         mode: d.mode,
@@ -2321,8 +2323,8 @@ export default class BattleScene extends Phaser.Scene {
     showBash(this, { x, y, hit, abilityKey });
   }
 
-  _showFireballEffect(fromX, fromY, toX, toY, hit, abilityKey = '') {
-    showFireball(this, { fromX, fromY, toX, toY, hit, abilityKey });
+  _showFireballEffect(fromX, fromY, toX, toY, hit, abilityKey = '', extra = {}) {
+    showFireball(this, { fromX, fromY, toX, toY, hit, abilityKey, ...extra });
   }
 
   _showBlinkEffect(fromX, fromY, toX, abilityKey = '', extra = {}) {

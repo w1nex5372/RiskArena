@@ -189,13 +189,13 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
 
       {/* ── Hero ────────────────────────────────────────────────── */}
       <div style={{
-        margin: '12px 16px 0',
-        borderRadius: 20,
+        margin: '10px 12px 0',
+        borderRadius: 16,
         background: 'linear-gradient(135deg, #0d0d1a 0%, #1a0a0a 50%, #2d0000 100%)',
         border: '1px solid rgba(201,168,76,0.3)',
         borderBottom: '2px solid rgba(201,168,76,0.5)',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-        padding: '20px 20px 16px',
+        boxShadow: '0 6px 20px rgba(0,0,0,0.5)',
+        padding: '12px 14px 10px',
         position: 'relative',
         overflow: 'hidden',
       }}>
@@ -209,34 +209,26 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
           {/* Left: text */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', zIndex: 1 }}>
             <div>
-              <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', color: '#c9a84c', margin: '0 0 8px', textTransform: 'uppercase' }}>
-                The Arena
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span style={{ fontSize: 22 }}>{classInfo.icon}</span>
-                <h2 style={{ color: 'white', fontSize: 24, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 2 }}>
+                <span style={{ fontSize: 18 }}>{classInfo.icon}</span>
+                <h2 style={{ color: 'white', fontSize: 17, fontWeight: 900, margin: 0, letterSpacing: '-0.01em' }}>
                   {classInfo.name}
                 </h2>
+                <span style={{ color: classInfo.color, fontSize: 10, fontWeight: 700, marginLeft: 2 }}>
+                  {classInfo.role || classInfo.title}
+                </span>
               </div>
-              <p style={{ color: classInfo.color, fontSize: 12, fontWeight: 700, margin: '0 0 4px' }}>
-                {classInfo.role || classInfo.title}
-              </p>
-              {classInfo.roleDescription ? (
-                <p style={{ color: '#94a3b8', fontSize: 10, fontWeight: 700, lineHeight: 1.35, margin: '0 0 6px' }}>
-                  {classInfo.roleDescription}
-                </p>
-              ) : null}
 
               {/* Base class identity stats (HP / ATK / Guard / Speed) */}
-              <ClassStatRow classInfo={classInfo} showNote={false} style={{ marginTop: 8 }} />
+              <ClassStatRow classInfo={classInfo} showNote={false} style={{ marginTop: 6 }} />
 
               {/* Bonuses from equipped gear (kept separate from base stats above) */}
               {gearStatChips.length > 0 ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 8 }}>
-                  <span style={{ color: '#64748b', fontSize: 9, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                  <span style={{ color: '#64748b', fontSize: 8, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                     Gear
                   </span>
-                  {gearStatChips.slice(0, 6).map((chip) => (
+                  {gearStatChips.slice(0, 4).map((chip) => (
                     <span
                       key={`${chip.key}-${chip.label}`}
                       style={{
@@ -244,8 +236,8 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
                         background: 'rgba(201,168,76,0.1)',
                         border: '1px solid rgba(201,168,76,0.18)',
                         borderRadius: 999,
-                        padding: '4px 7px',
-                        fontSize: 10,
+                        padding: '2px 6px',
+                        fontSize: 9,
                         fontWeight: 800,
                         whiteSpace: 'nowrap',
                       }}
@@ -258,67 +250,61 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
             </div>
 
             {/* Win / Loss pills */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
-              <div style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20, padding: '4px 12px' }}>
-                <span style={{ color: '#22c55e', fontWeight: 800, fontSize: 13 }}>
+            <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
+              <div style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20, padding: '2px 8px' }}>
+                <span style={{ color: '#22c55e', fontWeight: 800, fontSize: 11 }}>
                   {history === null ? '—' : wins}W
                 </span>
               </div>
-              <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 20, padding: '4px 12px' }}>
-                <span style={{ color: '#f87171', fontWeight: 800, fontSize: 13 }}>
+              <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 20, padding: '2px 8px' }}>
+                <span style={{ color: '#f87171', fontWeight: 800, fontSize: 11 }}>
                   {history === null ? '—' : losses}L
                 </span>
               </div>
               {bronzeGames.length > 0 && (
-                <div style={{ background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 20, padding: '4px 12px' }}>
-                  <span style={{ color: '#c9a84c', fontWeight: 700, fontSize: 12 }}>
+                <div style={{ background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 20, padding: '2px 8px' }}>
+                  <span style={{ color: '#c9a84c', fontWeight: 700, fontSize: 10 }}>
                     {Math.round((wins / bronzeGames.length) * 100)}% WR
                   </span>
                 </div>
               )}
               {(user?.current_win_streak || 0) >= 2 && (
-                <div style={{ background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 20, padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: 12 }}>🔥</span>
-                  <span style={{ color: '#fb923c', fontWeight: 800, fontSize: 12 }}>
-                    {user.current_win_streak} streak
+                <div style={{ background: 'rgba(249,115,22,0.15)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 20, padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 10 }}>🔥</span>
+                  <span style={{ color: '#fb923c', fontWeight: 800, fontSize: 10 }}>
+                    {user.current_win_streak}
                   </span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Right: arrows + character image */}
-          <div style={{ position: 'relative', flexShrink: 0, width: 140, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1 }}>
-            {/* Glow behind image */}
-            <div style={{ position: 'absolute', bottom: -16, right: -20, width: 120, height: 120, background: `radial-gradient(circle, ${classInfo.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
+          {/* Right: character portrait */}
+          <div style={{ position: 'relative', flexShrink: 0, width: 96, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1 }}>
+            <div style={{ position: 'absolute', bottom: -10, right: -10, width: 88, height: 88, background: `radial-gradient(circle, ${classInfo.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
 
             <CharacterPortrait
               cls={selectedClass}
-              size={150}
+              size={96}
+              badgeSize={28}
               weapon={equipped?.weapon || null}
+              helmet={equipped?.helmet || null}
               sheetPath={localSheetPath || user?.battle_spritesheet_path || user?.character_spritesheet_path || null}
               armor={equipped?.armor || null}
             />
           </div>
         </div>
-
-        {/* Status pill */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, zIndex: 1, position: 'relative' }}>
-          <span style={{ padding: '4px 14px', borderRadius: 20, background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.35)', color: '#c9a84c', fontSize: 11, fontWeight: 800 }}>
-            ACTIVE
-          </span>
-        </div>
       </div>
 
       {/* ── Energy ──────────────────────────────────────────────── */}
       {user?.energy !== undefined && (
-        <div style={{ margin: '10px 16px 0', borderRadius: 16, background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.12)', padding: '12px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase' }}>
-              Energy
+        <div style={{ margin: '8px 12px 0', borderRadius: 12, background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.12)', padding: '8px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase' }}>
+              Energy{timeToNext ? ` · next ${timeToNext}` : ''}
             </span>
             <span style={{
-              fontSize: 13,
+              fontSize: 11,
               fontWeight: 800,
               color: user.energy === user.max_energy
                 ? '#22c55e'
@@ -329,7 +315,7 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
               ⚡ {user.energy} / {user.max_energy}
             </span>
           </div>
-          <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 999, overflow: 'hidden' }}>
+          <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 999, overflow: 'hidden' }}>
             <div style={{
               height: '100%',
               width: `${Math.min(100, Math.round((user.energy / (user.max_energy || 10)) * 100))}%`,
@@ -342,48 +328,42 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
               transition: 'width 0.4s ease',
             }} />
           </div>
-          {timeToNext && (
-            <p style={{ color: '#64748b', fontSize: 11, fontWeight: 600, margin: '6px 0 0', textAlign: 'right' }}>
-              Next in {timeToNext}
-            </p>
-          )}
         </div>
       )}
 
       {/* ── Loadout ─────────────────────────────────────────────── */}
-      <div style={{ margin: '12px 16px 0', borderRadius: 18, background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.12)', padding: '14px 14px 16px' }}>
-        <p style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase', margin: '0 0 10px' }}>
+      <div style={{ margin: '8px 12px 0', borderRadius: 14, background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.12)', padding: '8px 10px 10px' }}>
+        <p style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', color: '#c9a84c', textTransform: 'uppercase', margin: '0 0 6px' }}>
           Loadout
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
           {LOADOUT_SLOTS.map(({ key, label, Icon }) => {
                 const item = getEquipped(key);
                 const tier = getTierKey(item);
                 const tierTheme = item ? getTierTheme(item) : null;
             const rarityColor = tierTheme?.color || null;
             const rarityBorder = tierTheme?.border || 'rgba(201,168,76,0.2)';
-                const statChips = getItemStatRows(item).slice(0, 2);
-                const passiveText = getPassiveText(item);
+                const statChips = getItemStatRows(item).slice(0, 1);
                 const enchantLevel = Number(item?.enchant_level || 0);
                 return (
               <button
                 key={key}
                 onClick={onNavigateInventory}
                 style={{
-                  minHeight: 126, borderRadius: 16, padding: 9,
+                  borderRadius: 12, padding: '6px 6px 8px',
                   background: item
                     ? `linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(10,14,28,0.98) 100%)`
                     : 'rgba(255,255,255,0.02)',
                   border: item ? `1px solid ${rarityBorder}` : '1px dashed rgba(201,168,76,0.2)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', gap: 6,
+                  display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', gap: 4,
                   cursor: 'pointer',
-                  boxShadow: item ? `0 0 14px ${tier === 'legendary' ? 'rgba(201,168,76,0.18)' : tier === 'epic' ? 'rgba(168,85,247,0.14)' : 'rgba(0,0,0,0.18)'}` : 'none',
+                  boxShadow: item ? `0 0 10px ${tier === 'legendary' ? 'rgba(201,168,76,0.18)' : tier === 'epic' ? 'rgba(168,85,247,0.14)' : 'rgba(0,0,0,0.18)'}` : 'none',
                   transition: 'all 0.15s ease',
                 }}
               >
                 <div style={{
-                  height: 54,
-                  borderRadius: 12,
+                  height: 40,
+                  borderRadius: 9,
                   border: item ? `1px solid ${rarityBorder}` : '1px solid rgba(255,255,255,0.06)',
                   background: item
                     ? `radial-gradient(circle at 50% 28%, ${tierTheme?.soft || 'rgba(201,168,76,0.12)'} 0%, rgba(8,12,24,0.95) 66%)`
@@ -395,20 +375,20 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
                   overflow: 'hidden',
                 }}>
                   {item
-                    ? <SlotImage item={item} size={42} FallbackIcon={Icon} />
-                    : <Icon style={{ width: 22, height: 22, color: '#334155', opacity: 0.35 }} />
+                    ? <SlotImage item={item} size={32} FallbackIcon={Icon} />
+                    : <Icon style={{ width: 18, height: 18, color: '#334155', opacity: 0.35 }} />
                   }
                   {item && enchantLevel > 0 ? (
                     <span style={{
                       position: 'absolute',
-                      top: 5,
-                      right: 5,
+                      top: 3,
+                      right: 3,
                       color: '#c9a84c',
                       background: 'rgba(0,0,0,0.62)',
                       border: '1px solid rgba(201,168,76,0.28)',
                       borderRadius: 999,
-                      padding: '2px 5px',
-                      fontSize: 9,
+                      padding: '1px 4px',
+                      fontSize: 8,
                       fontWeight: 900,
                       lineHeight: 1,
                     }}>
@@ -416,26 +396,19 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
                     </span>
                   ) : null}
                 </div>
-                <p style={{ color: '#64748b', fontSize: 8, fontWeight: 900, letterSpacing: '0.08em', margin: 0, textAlign: 'center', textTransform: 'uppercase' }}>{label}</p>
-                {item && (
+                {item ? (
                   <>
-                    <p style={{ color: '#f8fafc', fontSize: 10, fontWeight: 850, lineHeight: 1.15, minHeight: 22, margin: 0, maxWidth: '100%', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', textAlign: 'center' }}>
+                    <p style={{ color: '#f8fafc', fontSize: 9, fontWeight: 850, lineHeight: 1.15, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
                       {item.name}
                     </p>
-                    <p style={{ color: rarityColor, fontSize: 8, fontWeight: 900, margin: 0, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                      {item.rarity || ''}
-                    </p>
                     {statChips[0] ? (
-                      <p style={{ color: '#c9a84c', fontSize: 8, fontWeight: 800, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                      <p style={{ color: rarityColor || '#c9a84c', fontSize: 8, fontWeight: 800, margin: 0, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {statChips[0].label}
                       </p>
                     ) : null}
-                    {passiveText ? (
-                      <p style={{ color: '#e8e0d0', fontSize: 8, fontWeight: 600, margin: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                        {passiveText}
-                      </p>
-                    ) : null}
                   </>
+                ) : (
+                  <p style={{ color: '#64748b', fontSize: 8, fontWeight: 900, letterSpacing: '0.08em', margin: 0, textAlign: 'center', textTransform: 'uppercase' }}>{label}</p>
                 )}
               </button>
             );
@@ -510,41 +483,6 @@ function ArenaEntryScreen({ rooms, onEnterBattle, onEnterRealTime, onClassChange
           )}
         </div>
       )}
-
-      {/* ── Enter Battle Button (turn-based legacy) ─────────────── */}
-      <div style={{ margin: '10px 16px 0' }}>
-        <button
-          onClick={handleEnter}
-          disabled={!canEnter}
-          style={{
-            width: '100%', height: 56, borderRadius: 16,
-            border: canEnter ? '1px solid rgba(201,168,76,0.5)' : 'none',
-            cursor: canEnter ? 'pointer' : 'not-allowed',
-            background: canEnter
-              ? 'linear-gradient(135deg, #8b0000 0%, #c0392b 50%, #8b0000 100%)'
-              : 'rgba(255,255,255,0.05)',
-            color: canEnter ? '#f5e6c0' : '#475569',
-            fontWeight: 900, fontSize: 17, letterSpacing: '0.1em',
-            boxShadow: canEnter ? '0 6px 24px rgba(139,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.12)' : 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            transition: 'all 0.2s ease',
-          }}
-        >
-          {entering ? (
-            <span style={{ opacity: 0.7 }}>Entering…</span>
-          ) : !user?.class_name ? (
-            <>
-              <Swords style={{ width: 20, height: 20 }} />
-              Choose a Class First
-            </>
-          ) : (
-            <>
-              <Swords style={{ width: 20, height: 20 }} />
-              ENTER BATTLE
-            </>
-          )}
-        </button>
-      </div>
 
       {/* ── Queue Status ────────────────────────────────────────── */}
       <div style={{ margin: '10px 16px 0', display: 'flex', justifyContent: 'center' }}>

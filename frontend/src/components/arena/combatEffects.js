@@ -94,7 +94,7 @@ export function showBash(scene, { x, y, hit = true, abilityKey = '' } = {}) {
 }
 
 // ── Mage: Fireball ────────────────────────────────────────────────────────────
-export function showFireball(scene, { fromX, fromY, toX, toY, hit = true, abilityKey = '' } = {}) {
+export function showFireball(scene, { fromX, fromY, toX, toY, hit = true, abilityKey = '', blockedKnockback = false } = {}) {
   const variant = {
     mage_inferno_blast: { label: 'INFERNO!', color: '#fb7185', ball: 0xdc2626, core: 0xfef08a, tints: [0xdc2626, 0xfb7185, 0xfef08a], radius: 15, blast: 1.9, shake: 0.008 },
     mage_ember_bolt: { label: 'EMBER!', color: '#f97316', ball: 0xf97316, core: 0xffee00, tints: [0xf97316, 0xffaa00, 0xffee00], radius: 9, blast: 1.25, shake: 0.004 },
@@ -138,9 +138,22 @@ export function showFireball(scene, { fromX, fromY, toX, toY, hit = true, abilit
 
       if (hit) {
         const ring = scene.add.circle(toX, toY - 30, 8, variant.ball).setDepth(9);
-        scene.tweens.add({ targets: ring, scaleX: 6, scaleY: 6, alpha: 0, duration: 350, ease: 'Power2', onComplete: () => { if (ring.active) ring.destroy(); } });
-        scene._showCombatText?.(toX, toY - 72, 'HIT', '#facc15');
-        scene.cameras?.main?.shake(90, variant.shake);
+        scene.tweens.add({
+          targets: ring,
+          scaleX: blockedKnockback ? 4 : 6,
+          scaleY: blockedKnockback ? 4 : 6,
+          alpha: 0,
+          duration: 350,
+          ease: 'Power2',
+          onComplete: () => { if (ring.active) ring.destroy(); },
+        });
+        scene._showCombatText?.(
+          toX,
+          toY - 72,
+          blockedKnockback ? 'GUARDED' : 'HIT',
+          blockedKnockback ? '#93c5fd' : '#facc15',
+        );
+        scene.cameras?.main?.shake(90, blockedKnockback ? variant.shake * 0.45 : variant.shake);
       } else {
         scene._showCombatText?.(toX, toY - 72, 'DODGE', '#93c5fd');
       }
