@@ -358,6 +358,7 @@ class User(BaseModel):
     # NEW: Each user gets unique Solana receiving address
     personal_solana_address: Optional[str] = None
     token_balance: int = Field(default=0)  # Starting balance - users must purchase tokens
+    diamonds: int = Field(default=0)        # Premium currency (cases/energy reset later)
     is_verified: bool = Field(default=False)
     is_admin: bool = Field(default=False)
     is_owner: bool = Field(default=False)
@@ -2238,6 +2239,32 @@ async def add_tokens_by_telegram_id(telegram_id: int, admin_key: str, tokens: in
         logging.error(f"Failed to add tokens by Telegram ID: {e}")
         raise HTTPException(status_code=500, detail="Failed to add tokens")
 
+
+@api_router.post("/admin/add-diamonds/{telegram_id}")
+async def add_diamonds_by_telegram_id(telegram_id: int, admin_key: str, diamonds: int):
+    """Grant diamonds (premium currency) to a user by Telegram ID. Admin only."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        updated = await dbq.increment_user_diamonds_by_telegram_id(telegram_id, diamonds)
+        if not updated:
+            return {
+                "status": "user_not_found",
+                "message": f"User with Telegram ID {telegram_id} not found (or balance would go negative).",
+                "telegram_id": telegram_id,
+            }
+        new_balance = updated.get("diamonds", 0)
+        logging.info(f"💎 Added {diamonds} diamonds to Telegram user {telegram_id}. New balance: {new_balance}")
+        return {
+            "status": "success",
+            "message": f"Added {diamonds} diamonds to Telegram user {telegram_id}",
+            "new_diamonds": new_balance,
+            "user_id": updated.get("id"),
+        }
+    except Exception as e:
+        logging.error(f"Failed to add diamonds by Telegram ID: {e}")
+        raise HTTPException(status_code=500, detail="Failed to add diamonds")
+
 @api_router.post("/admin/cleanup-database")
 async def cleanup_database_for_production(admin_key: str):
     """ADMIN ONLY: Clean database for production launch"""
@@ -2813,6 +2840,7 @@ async def get_current_user(http_request: Request):
         "username": user_doc.get("telegram_username", ""),
         "photo_url": user_doc.get("photo_url", ""),
         "token_balance": user_doc.get("token_balance", 0),
+        "diamonds": user_doc.get("diamonds", 0),
         "xp": user_doc.get("xp", 0),
         "level": user_doc.get("level", 1),
         "class_name": user_doc.get("class_name"),

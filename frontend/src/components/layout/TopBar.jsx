@@ -1,5 +1,5 @@
 import { memo, useEffect, useState } from 'react';
-import { Coins, Plus, Settings } from 'lucide-react';
+import { Coins, Gem, Plus, Settings } from 'lucide-react';
 import apiClient from '../../api/client';
 import { CLASS_INFO } from '../../utils/characters';
 import { useUser } from '../../context/UserContext';
@@ -108,6 +108,12 @@ function TopBar({ isConnected, onBuyTokens, onOpenSettings }) {
               </span>
             </div>
           )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Gem style={{ width: 16, height: 16, color: '#38bdf8' }} />
+            <span style={{ color: '#7dd3fc', fontWeight: 700, fontSize: 15 }}>
+              {(user?.diamonds || 0).toLocaleString()}
+            </span>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Coins style={{ width: 18, height: 18, color: '#f59e0b' }} />
             <span style={{ color: '#fbbf24', fontWeight: 700, fontSize: 16 }}>

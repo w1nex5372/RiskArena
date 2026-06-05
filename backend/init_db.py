@@ -53,6 +53,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS wins               INTEGER NOT NULL D
 ALTER TABLE users ADD COLUMN IF NOT EXISTS losses             INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS energy INTEGER NOT NULL DEFAULT 10;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS energy_last_regen TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- Diamonds: premium currency (bought with real money / crypto later; spent on cases,
+-- energy resets, etc.). Infra only for now — no spending yet.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS diamonds INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS promo_codes (
     code         VARCHAR(50) PRIMARY KEY,
@@ -412,6 +415,18 @@ async def init():
                     WHERE conname = 'xp_non_negative' AND conrelid = 'users'::regclass
                 ) THEN
                     ALTER TABLE users ADD CONSTRAINT xp_non_negative CHECK (xp >= 0);
+                END IF;
+            END;
+            $$;
+        """)
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'diamonds_non_negative' AND conrelid = 'users'::regclass
+                ) THEN
+                    ALTER TABLE users ADD CONSTRAINT diamonds_non_negative CHECK (diamonds >= 0);
                 END IF;
             END;
             $$;

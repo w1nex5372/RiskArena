@@ -226,6 +226,23 @@ async def increment_user_tokens_by_telegram_id(telegram_id: int, amount: int) ->
         return _row_to_dict(row)
 
 
+async def increment_user_diamonds_by_telegram_id(telegram_id: int, amount: int) -> Optional[Dict]:
+    """Atomically increment diamonds (premium currency). Guards against going below zero."""
+    async with get_pool().acquire() as conn:
+        if amount < 0:
+            row = await conn.fetchrow(
+                "UPDATE users SET diamonds = diamonds + $2 "
+                "WHERE telegram_id = $1 AND diamonds + $2 >= 0 RETURNING *",
+                telegram_id, amount
+            )
+        else:
+            row = await conn.fetchrow(
+                "UPDATE users SET diamonds = diamonds + $2 WHERE telegram_id = $1 RETURNING *",
+                telegram_id, amount
+            )
+        return _row_to_dict(row)
+
+
 async def get_leaderboard(tab: str = "coins", limit: int = 20) -> List[Dict]:
     base_select = """
         SELECT u.id, u.first_name, u.telegram_username, u.photo_url,
