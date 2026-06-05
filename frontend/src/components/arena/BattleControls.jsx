@@ -348,10 +348,18 @@ export function BattleControlsOverlay({
   onBlockDown,
   onBlockUp,
 }) {
+  // Reset controls ONLY on unmount. Keeping onJoystick/onBlockUp in the deps made the
+  // cleanup re-run on every parent render where those callbacks have a new identity
+  // (BossRaidScreen passes inline onBlockUp) — which neutralised a held joystick every
+  // frame, so movement kept stopping. Refs let the unmount cleanup call the latest fns.
+  const onJoystickRef = React.useRef(onJoystick);
+  const onBlockUpRef  = React.useRef(onBlockUp);
+  onJoystickRef.current = onJoystick;
+  onBlockUpRef.current  = onBlockUp;
   React.useEffect(() => () => {
-    onJoystick?.({ left: false, right: false, up: false });
-    onBlockUp?.();
-  }, [onJoystick, onBlockUp]);
+    onJoystickRef.current?.({ left: false, right: false, up: false });
+    onBlockUpRef.current?.();
+  }, []);
 
   return (
     <div style={{ position:'absolute', inset:0, zIndex:20, pointerEvents:'none' }}>
