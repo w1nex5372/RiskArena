@@ -50,11 +50,11 @@ def test_shop_and_drop_rules_match_locked_design():
 
 
 def test_passives_follow_current_armor_design():
-    # Armor and helmet items both carry a defining passive at every tier. Weapon and
-    # ability items carry no passive in the current catalog (drop-only epic/legendary
-    # weapons/abilities with passives are not defined yet).
+    # Armor and helmet carry a passive at EVERY tier. Weapon and ability carry a passive
+    # ONLY at the drop-only epic/legendary tiers (the boss-set pieces); common/uncommon/
+    # rare weapons and abilities have none.
     for item in FULL_ITEM_CATALOG:
-        if item["slot"] in {"armor", "helmet"}:
+        if item["slot"] in {"armor", "helmet"} or item["tier"] in DROP_ONLY_TIERS:
             assert item["passive_type"], item
             assert item["passive_value"] > 0
         else:
