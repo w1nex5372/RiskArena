@@ -535,7 +535,7 @@ export class ArenaRoom extends Room<ArenaState> {
           targetX = opp.x;
           targetY = opp.y;
           brokeBlock = brokeBlock || opp.isBlocking;
-          if (opp.isBlocking || opp.guard > 0) {
+          if (opp.isBlocking) {
             this.breakGuard(opp, now, stunMs);
           }
           opp.stunUntil = now + stunMs;
