@@ -170,8 +170,10 @@ export function AbilityButton({
   style = {},
 }) {
   const [progress, setProgress] = React.useState(0);
+  const [readyPulse, setReadyPulse] = React.useState(false);
   const rafRef   = React.useRef(null);
   const startRef = React.useRef(null);
+  const wasCoolingDownRef = React.useRef(false);
 
   const abilityName = equippedAbility?.name || ABILITY_NAMES[playerClass] || 'Ability';
   const imagePath   = equippedAbility?.image_path || '';
@@ -192,6 +194,7 @@ export function AbilityButton({
 
   React.useEffect(() => {
     if (!abilityReady) {
+      wasCoolingDownRef.current = true;
       startRef.current = Date.now();
       setProgress(0);
       const tick = () => {
@@ -208,8 +211,14 @@ export function AbilityButton({
     } else {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       setProgress(0);
+      if (wasCoolingDownRef.current && hasAbility) {
+        wasCoolingDownRef.current = false;
+        setReadyPulse(true);
+        const id = setTimeout(() => setReadyPulse(false), 620);
+        return () => clearTimeout(id);
+      }
     }
-  }, [abilityReady, cooldownMs, cooldownUntil]);
+  }, [abilityReady, cooldownMs, cooldownUntil, hasAbility]);
 
   const r                = 27;
   const circ             = 2 * Math.PI * r;
@@ -250,7 +259,23 @@ export function AbilityButton({
         {canActivate && (
           <circle cx={32} cy={32} r={r} fill="none" stroke="rgba(196,105,255,0.55)" strokeWidth={5} />
         )}
+        {readyPulse && (
+          <circle cx={32} cy={32} r={r - 2} fill="none"
+            stroke="rgba(250,204,21,0.95)" strokeWidth={4}
+            strokeDasharray={`${circ * 0.72} ${circ}`} strokeLinecap="round"
+          />
+        )}
       </svg>
+
+      {readyPulse && (
+        <div style={{
+          position:'absolute', inset:-8, borderRadius:'50%',
+          border:'2px solid rgba(250,204,21,0.9)',
+          boxShadow:'0 0 20px rgba(250,204,21,0.65)',
+          animation:'riskarenaAbilityReadyPulse 0.62s ease-out forwards',
+          pointerEvents:'none',
+        }} />
+      )}
 
       {/* Inner circle */}
       <div style={{
@@ -260,7 +285,9 @@ export function AbilityButton({
         display:'flex', alignItems:'center', justifyContent:'center',
         fontSize:22, color:'white', fontWeight:900,
         boxShadow: canActivate
-          ? '0 0 12px rgba(147,51,234,0.6), 0 4px 14px rgba(0,0,0,0.5)'
+          ? readyPulse
+            ? '0 0 22px rgba(250,204,21,0.82), 0 0 14px rgba(147,51,234,0.72), 0 4px 14px rgba(0,0,0,0.5)'
+            : '0 0 12px rgba(147,51,234,0.6), 0 4px 14px rgba(0,0,0,0.5)'
           : '0 4px 14px rgba(0,0,0,0.5)',
         opacity: canActivate ? 1 : 0.55,
         transition:'background 0.25s, opacity 0.25s, box-shadow 0.25s',
@@ -328,6 +355,12 @@ export function BattleControlsOverlay({
 
   return (
     <div style={{ position:'absolute', inset:0, zIndex:20, pointerEvents:'none' }}>
+      <style>{`
+        @keyframes riskarenaAbilityReadyPulse {
+          0% { transform: scale(0.86); opacity: 0.95; }
+          100% { transform: scale(1.32); opacity: 0; }
+        }
+      `}</style>
 
       {/* Joystick — bottom left */}
       <div style={{
