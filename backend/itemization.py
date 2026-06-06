@@ -487,12 +487,17 @@ FULL_ITEM_CATALOG: List[Dict] = [
           ability_bonus=20, passive_type="risk_success_bonus", passive_value=0.12,
           ability_key="rogue_nightfall", ability_cooldown_ms=6800,
           image_path="/items/skills/rogue_nightfall.png"),
-    # ── Roman Armor set (Nila122, CC-BY-SA 3.0) — EPIC boss-drop only ────────────
-    # Only the gold/epic tier exists — Roman armor is exclusive boss loot, never in shop.
+    # ── Roman Armor set (Nila122, CC-BY-SA 3.0) — EPIC + LEGENDARY boss-drop only ─
+    # Never sold in shop; drops exclusively from the boss (epic 2.5% / legendary 0.5%).
     # --- Warrior ---
     _item("warrior", "armor", "epic", "Roman Lorica Aurea",
           "Gold-inlaid imperial lorica worn by legionary commanders.",
           hp_bonus=50, passive_type="damage_reduction_percent", passive_value=0.12,
+          image_path="/items/warrior_armor_legion.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "torso", "asset": "torso.armour.roman_legion_gold"}),
+    _item("warrior", "armor", "legendary", "Roman Lorica Divina",
+          "The divine lorica of a true Roman general — blessed by the gods themselves.",
+          hp_bonus=68, passive_type="damage_reduction_percent", passive_value=0.17,
           image_path="/items/warrior_armor_legion.png",
           lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "torso", "asset": "torso.armour.roman_legion_gold"}),
     # --- Mage ---
@@ -501,17 +506,32 @@ FULL_ITEM_CATALOG: List[Dict] = [
           hp_bonus=30, passive_type="bonus_ability_percent", passive_value=0.17,
           image_path="/items/mage_armor_mystic.png",
           lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "torso", "asset": "torso.armour.roman_legion_gold"}),
+    _item("mage", "armor", "legendary", "Arcane Lorica Omnipotens",
+          "The all-powerful lorica of the arcane legion — conduit of infinite magic.",
+          hp_bonus=42, passive_type="bonus_ability_percent", passive_value=0.24,
+          image_path="/items/mage_armor_mystic.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "torso", "asset": "torso.armour.roman_legion_gold"}),
     # --- Rogue ---
     _item("rogue", "armor", "epic", "Rogue Gold Lorica",
           "Gold lorica that channels wounds into vitality.",
           hp_bonus=38, passive_type="lifesteal_percent", passive_value=0.08,
           image_path="/items/rogue_armor_shadow.png",
           lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "torso", "asset": "torso.armour.roman_legion_gold"}),
-    # --- Roman Galea Helmet (shared, 'any' class) — epic boss-drop only ---
+    _item("rogue", "armor", "legendary", "Rogue Lorica Umbra",
+          "Shadow-forged gold lorica that turns every wound into stolen life.",
+          hp_bonus=52, passive_type="lifesteal_percent", passive_value=0.12,
+          image_path="/items/rogue_armor_shadow.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "torso", "asset": "torso.armour.roman_legion_gold"}),
+    # --- Roman Galea Helmet (shared, 'any' class) ---
     _item("any", "helmet", "epic", "Roman Galea Aurea",
           "The golden galea of a Roman imperator. Rare and fearsome.",
           hp_bonus=25, passive_type="damage_reduction_percent", passive_value=0.06,
           image_path="/items/helmet_spangenhelm_viking_gold.png",
+          lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.roman_galea3_gold"}),
+    _item("any", "helmet", "legendary", "Roman Galea Divina",
+          "The divine golden galea worn only by the greatest champions of Rome.",
+          hp_bonus=35, passive_type="damage_reduction_percent", passive_value=0.10,
+          image_path="/items/helmet_greathelm_gold.png",
           lpc_visual={"schemaVersion": "item_lpc_visual.v1", "slot": "helmet", "asset": "helmet.roman_galea3_gold"}),
 ]
 
