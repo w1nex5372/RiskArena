@@ -57,6 +57,19 @@
       "guard_restore": 46,
       "cooldown_ms": 11000
     },
+    "warrior_shield_dash": {
+      "class": "warrior",
+      "role": "mobility",
+      "type": "dash_strike",
+      "label": "Shield Dash",
+      "damage": 16,
+      "ability_power_scale": 0.5,
+      "range": 200,
+      "offset": 90,
+      "knockback": 60,
+      "blocked_knockback_mult": 0.3,
+      "cooldown_ms": 7500
+    },
     "mage_default": {
       "class": "mage",
       "role": "ranged_burst",
@@ -113,6 +126,17 @@
       "offset": 96,
       "cooldown_ms": 10500
     },
+    "mage_frost_nova": {
+      "class": "mage",
+      "role": "defensive_burst",
+      "type": "bash",
+      "label": "Frost Nova",
+      "damage": 14,
+      "ability_power_scale": 0.6,
+      "range": 140,
+      "stun_ms": 900,
+      "cooldown_ms": 9000
+    },
     "rogue_default": {
       "class": "rogue",
       "role": "mobility",
@@ -161,6 +185,17 @@
       "offset": 74,
       "backstab_window_ms": 850,
       "cooldown_ms": 12000
+    },
+    "rogue_execute": {
+      "class": "rogue",
+      "role": "execute",
+      "type": "dash_strike",
+      "label": "Execute",
+      "damage": 22,
+      "ability_power_scale": 0.55,
+      "range": 220,
+      "offset": 80,
+      "cooldown_ms": 8500
     }
   }
 }

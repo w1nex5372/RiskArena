@@ -8,7 +8,7 @@ import {
   WEAPON_SHEET_COLS, WEAPON_ANIM_ROWS, HELD_WEAPON_POSE,
 } from '../combatSprites';
 // Shared skill VFX — single source of truth (also used by BossRaidScene)
-import { showGuardBreak, showBash, showFireball, showBlink, showFortify, showPhaseStep, showSmokeVeil } from '../combatEffects';
+import { showGuardBreak, showBash, showFireball, showBlink, showFortify, showPhaseStep, showSmokeVeil, showShieldDash, showExecute, showFrostNova } from '../combatEffects';
 
 const WEAPON_DEBUG_STATES = ['idle', 'walk', 'attack', 'hurt', 'dead', 'jump'];
 const ARENA_CAMERA_Y = 72;
@@ -2297,6 +2297,18 @@ export default class BattleScene extends Phaser.Scene {
       if (d.brokeBlock) {
         this._showCombatText(d.toX ?? d.fromX, (d.toY ?? d.fromY) - 72, 'GUARD BROKEN', '#facc15', '18px');
       }
+      return;
+    }
+    if (abilityKey === 'warrior_shield_dash') {
+      showShieldDash(this, { fromX: d.fromX ?? d.x ?? 0, fromY: d.fromY ?? d.y ?? 0, toX: d.toX ?? d.x ?? 0, toY: d.toY ?? d.y ?? 0, hit: d.hit !== false });
+      return;
+    }
+    if (abilityKey === 'rogue_execute') {
+      showExecute(this, { fromX: d.fromX ?? d.x ?? 0, fromY: d.fromY ?? d.y ?? 0, toX: d.toX ?? d.x ?? 0, toY: d.toY ?? d.y ?? 0, hit: d.hit !== false });
+      return;
+    }
+    if (abilityKey === 'mage_frost_nova') {
+      showFrostNova(this, { x: d.toX ?? d.x ?? 0, y: d.toY ?? d.y ?? 0, hit: d.hit !== false });
       return;
     }
     if (d.cls === 'warrior') this._showBashEffect(d.toX ?? d.fromX, d.toY ?? d.fromY, d.hit, abilityKey);

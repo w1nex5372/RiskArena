@@ -34,7 +34,7 @@ export const CLASS_ABILITY_ICONS = {
 
 export const CLASS_UTILITY_ICONS = {
   warrior: '/items/skills/warrior_guardbreak.png',
-  mage: '/items/skills/mage_ember_bolt.png',
+  mage: '/items/skills/class_fireball.png',
   rogue: '/items/skills/rogue_shadowstep.png',
 };
 

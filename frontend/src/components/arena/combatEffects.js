@@ -372,3 +372,135 @@ export function showBlink(scene, {
     }
   });
 }
+
+// ── Warrior: Shield Dash ──────────────────────────────────────────────────────
+export function showShieldDash(scene, { fromX, fromY, toX, toY, hit = true } = {}) {
+  if (!scene || !scene.add) return;
+  const isMobile = scene._isMobile?.();
+  const particles = isMobile ? 8 : 16;
+
+  // Departure burst — silver/blue shield energy
+  for (let i = 0; i < particles; i++) {
+    const angle = (Math.PI * 2 * i) / particles;
+    const dist = 18 + Math.random() * 22;
+    const px = fromX + Math.cos(angle) * dist;
+    const py = fromY + Math.sin(angle) * dist;
+    const p = scene.add.circle(fromX, fromY, 3 + Math.random() * 3, 0x93c5fd, 0.85).setDepth(6);
+    scene.tweens.add({ targets: p, x: px, y: py, alpha: 0, scaleX: 0.3, scaleY: 0.3, duration: 240 + Math.random() * 80, ease: 'Power2', onComplete: () => { if (p.active) p.destroy(); } });
+  }
+
+  // Dash trail line
+  const trailX = (fromX + toX) / 2;
+  const trailY = (fromY + toY) / 2;
+  const trail = scene.add.rectangle(trailX, trailY, Math.max(40, Math.abs(toX - fromX) * 0.7), 4, 0xbae6fd, 0.55).setDepth(5);
+  scene.tweens.add({ targets: trail, alpha: 0, duration: 220, ease: 'Power2', onComplete: () => { if (trail.active) trail.destroy(); } });
+
+  // Impact at target
+  if (hit) {
+    const ring = scene.add.circle(toX, toY, 14, 0x3b82f6, 0).setStrokeStyle(3, 0x93c5fd, 0.9).setDepth(6);
+    scene.tweens.add({ targets: ring, scaleX: 3.5, scaleY: 3.5, alpha: 0, duration: 320, ease: 'Power2', onComplete: () => { if (ring.active) ring.destroy(); } });
+
+    for (let i = 0; i < (isMobile ? 5 : 10); i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 20 + Math.random() * 35;
+      const sp = scene.add.circle(toX, toY, 2 + Math.random() * 3, 0x60a5fa, 0.9).setDepth(6);
+      scene.tweens.add({ targets: sp, x: toX + Math.cos(angle) * dist, y: toY + Math.sin(angle) * dist, alpha: 0, scaleX: 0.2, scaleY: 0.2, duration: 280 + Math.random() * 120, ease: 'Power2', onComplete: () => { if (sp.active) sp.destroy(); } });
+    }
+
+    scene._showCombatText?.(toX, toY - 64, 'SHIELD DASH!', '#93c5fd');
+    scene.cameras?.main?.shake(80, 0.007);
+  }
+}
+
+// ── Rogue: Execute ────────────────────────────────────────────────────────────
+export function showExecute(scene, { fromX, fromY, toX, toY, hit = true } = {}) {
+  if (!scene || !scene.add) return;
+  const isMobile = scene._isMobile?.();
+  const particles = isMobile ? 8 : 18;
+
+  // Dark energy burst at departure
+  for (let i = 0; i < (isMobile ? 4 : 8); i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const p = scene.add.circle(fromX, fromY, 2 + Math.random() * 3, 0xef4444, 0.8).setDepth(6);
+    scene.tweens.add({ targets: p, x: fromX + Math.cos(angle) * (15 + Math.random() * 20), y: fromY + Math.sin(angle) * (15 + Math.random() * 20), alpha: 0, duration: 200, ease: 'Power3', onComplete: () => { if (p.active) p.destroy(); } });
+  }
+
+  // Fast dash slash line — red/dark
+  const midX = (fromX + toX) / 2;
+  const midY = (fromY + toY) / 2;
+  const slash = scene.add.rectangle(midX, midY, Math.max(30, Math.abs(toX - fromX) * 0.8), 3, 0xef4444, 0.7).setDepth(6);
+  scene.tweens.add({ targets: slash, alpha: 0, scaleY: 3, duration: 180, ease: 'Power2', onComplete: () => { if (slash.active) slash.destroy(); } });
+
+  // Large impact burst at target
+  if (hit) {
+    // Main impact ring — dark crimson
+    const ring = scene.add.circle(toX, toY, 12, 0x7f1d1d, 0).setStrokeStyle(4, 0xef4444, 0.95).setDepth(6);
+    scene.tweens.add({ targets: ring, scaleX: 4, scaleY: 4, alpha: 0, duration: 350, ease: 'Power2', onComplete: () => { if (ring.active) ring.destroy(); } });
+
+    // Second ring — faster, lighter
+    const ring2 = scene.add.circle(toX, toY, 8, 0xfca5a5, 0).setStrokeStyle(2, 0xfca5a5, 0.7).setDepth(6);
+    scene.tweens.add({ targets: ring2, scaleX: 6, scaleY: 6, alpha: 0, duration: 250, ease: 'Power3', onComplete: () => { if (ring2.active) ring2.destroy(); } });
+
+    // Blood-red particles
+    for (let i = 0; i < particles; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 25 + Math.random() * 45;
+      const sp = scene.add.circle(toX, toY, 2 + Math.random() * 4, i % 3 === 0 ? 0xfca5a5 : 0xef4444, 0.9).setDepth(6);
+      scene.tweens.add({ targets: sp, x: toX + Math.cos(angle) * dist, y: toY + Math.sin(angle) * dist, alpha: 0, scaleX: 0.2, scaleY: 0.2, duration: 320 + Math.random() * 150, ease: 'Power2', onComplete: () => { if (sp.active) sp.destroy(); } });
+    }
+
+    // Dramatic X slash marks
+    const slashColors = [0xef4444, 0xfca5a5];
+    [[-1, -1], [1, -1]].forEach(([dx], idx) => {
+      const s = scene.add.rectangle(toX + dx * 10, toY - 5, 18, 3, slashColors[idx], 0.9).setDepth(7);
+      s.setRotation(dx * 0.6);
+      scene.tweens.add({ targets: s, scaleX: 0.1, alpha: 0, duration: 280, delay: 30, ease: 'Power2', onComplete: () => { if (s.active) s.destroy(); } });
+    });
+
+    scene._showCombatText?.(toX, toY - 72, 'EXECUTE!', '#ef4444');
+    scene.cameras?.main?.shake(110, 0.011);
+  }
+}
+
+// ── Mage: Frost Nova ──────────────────────────────────────────────────────────
+export function showFrostNova(scene, { x, y, hit = true } = {}) {
+  if (!scene || !scene.add) return;
+  const isMobile = scene._isMobile?.();
+  const particles = isMobile ? 10 : 20;
+
+  // Expanding icy rings from caster position
+  [0, 60, 120].forEach((delay) => {
+    const ring = scene.add.circle(x, y, 10, 0x93c5fd, 0).setStrokeStyle(2, 0xbae6fd, 0.9).setDepth(6);
+    scene.tweens.add({
+      targets: ring,
+      scaleX: 4.5, scaleY: 4.5, alpha: 0,
+      duration: 480, delay,
+      ease: 'Power2',
+      onComplete: () => { if (ring.active) ring.destroy(); },
+    });
+  });
+
+  // Ice crystal particles bursting outward
+  for (let i = 0; i < particles; i++) {
+    const angle = (Math.PI * 2 * i) / particles + (Math.random() - 0.5) * 0.4;
+    const dist = 30 + Math.random() * 50;
+    const size = 2 + Math.random() * 3;
+    const color = [0x93c5fd, 0xbae6fd, 0xe0f2fe][Math.floor(Math.random() * 3)];
+    const p = scene.add.rectangle(x, y, size, size * 2, color, 0.9).setDepth(6);
+    p.setRotation(angle);
+    scene.tweens.add({
+      targets: p,
+      x: x + Math.cos(angle) * dist,
+      y: y + Math.sin(angle) * dist,
+      alpha: 0, scaleX: 0.2, scaleY: 0.2,
+      duration: 400 + Math.random() * 150,
+      ease: 'Power2',
+      onComplete: () => { if (p.active) p.destroy(); },
+    });
+  }
+
+  if (hit) {
+    scene._showCombatText?.(x, y - 70, 'FROST NOVA!', '#93c5fd');
+    scene.cameras?.main?.shake(70, 0.005);
+  }
+}
