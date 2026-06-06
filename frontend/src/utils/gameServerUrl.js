@@ -5,10 +5,8 @@ export function resolveGameServerUrl() {
   const override = new URLSearchParams(window.location.search).get('gameServerUrl');
   if (override) return override;
 
-  const { hostname, protocol, origin } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return `${protocol}//${hostname}:2567`;
-  }
-
-  return `${origin}/colyseus`;
+  // Always use the /colyseus proxy path — setupProxy.js forwards it to :2567 in dev,
+  // and the production reverse proxy handles it the same way. This keeps localhost and
+  // TG/production on the same code path so both can be tested identically.
+  return `${window.location.origin}/colyseus`;
 }
