@@ -856,13 +856,18 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
     });
   }, [inventory, activeTab]);
 
+  const TIER_SCORE = { legendary: 5, epic: 4, rare: 3, uncommon: 2, common: 1 };
+
   const allItemsSorted = useMemo(() => {
     return [...(inventory || [])].sort((a, b) => {
-      const tierDelta = TIER_ORDER.indexOf(getTierKey(b)) - TIER_ORDER.indexOf(getTierKey(a));
+      const aEquipped = equippedInventoryIds.has(a.inventory_id) || Boolean(a.equipped) ? 1 : 0;
+      const bEquipped = equippedInventoryIds.has(b.inventory_id) || Boolean(b.equipped) ? 1 : 0;
+      if (bEquipped !== aEquipped) return bEquipped - aEquipped;
+      const tierDelta = (TIER_SCORE[getTierKey(b)] || 0) - (TIER_SCORE[getTierKey(a)] || 0);
       if (tierDelta !== 0) return tierDelta;
-      return new Date(b.acquired_at || 0).getTime() - new Date(a.acquired_at || 0).getTime();
+      return Number(b.enchant_level || 0) - Number(a.enchant_level || 0);
     });
-  }, [inventory]);
+  }, [inventory, equippedInventoryIds]);
 
   const displayedItems = filterSlot === 'all'
     ? allItemsSorted
@@ -1052,6 +1057,24 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                         }}>
                           {item.name}
                         </p>
+                        {(() => {
+                          const topStat = getItemStatRows(item)?.[0];
+                          return topStat ? (
+                            <p style={{
+                              fontSize: 9,
+                              color: '#94a3b8',
+                              fontWeight: 700,
+                              margin: 0,
+                              maxWidth: '100%',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              textAlign: 'center',
+                            }}>
+                              {topStat.label}
+                            </p>
+                          ) : null;
+                        })()}
                         {tierDot && (
                           <div style={{
                             width: 6,

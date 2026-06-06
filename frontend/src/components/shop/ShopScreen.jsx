@@ -102,6 +102,8 @@ function MetaChip({ children, style }) {
 export default function ShopScreen({ user, onInventoryChanged }) {
   const [items, setItems] = useState(null);
   const [ownedCounts, setOwnedCounts] = useState({});
+  // Map of type_key (or name) -> count in inventory; used for "Owned" badge
+  const [ownedTypeKeys, setOwnedTypeKeys] = useState(new Map());
   const [buying, setBuying] = useState(null);
   const [balance, setBalance] = useState(user?.token_balance || 0);
   const [tierFilter, setTierFilter] = useState('common');
@@ -124,15 +126,28 @@ export default function ShopScreen({ user, onInventoryChanged }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    apiClient.get('/inventory')
+      .then((r) => {
+        const inv = Array.isArray(r.data) ? r.data : (r.data?.items || []);
+        const keyCounts = new Map();
+        inv.forEach((item) => {
+          const key = item.type_key || item.name;
+          if (key) keyCounts.set(key, (keyCounts.get(key) || 0) + 1);
+        });
+        setOwnedTypeKeys(keyCounts);
+      })
+      .catch(() => {});
+  }, []);
+
   const visibleItems = useMemo(() => (items || []).filter((item) => {
     const catalogId = item.item_id || item.id;
-    if (ownedCounts[catalogId] > 0) return false;
     if (getTierKey(item) !== tierFilter) return false;
     const itemClass = getClassKey(item);
     // Class-agnostic items (e.g., helmets with class_name='any') show regardless of class filter
     if (itemClass === 'any') return true;
     return classFilter === 'all' || itemClass === classFilter;
-  }), [items, tierFilter, classFilter, ownedCounts]);
+  }), [items, tierFilter, classFilter]);
 
   const userClass = String(user?.class_name || '').trim().toLowerCase();
 
@@ -253,6 +268,7 @@ export default function ShopScreen({ user, onInventoryChanged }) {
             const slot = getSlotKey(item);
             const classTheme = CLASS_THEME[itemClass] || { bg: 'rgba(255,255,255,0.06)', color: '#94a3b8' };
             const ownedCount = ownedCounts[item.item_id] || 0;
+            const ownedBadgeCount = ownedTypeKeys.get(item.type_key || item.name) || 0;
             const price = Number(item.price || 0);
             const canAfford = balance >= price;
             const isBuying = buying === item.id;
@@ -260,6 +276,7 @@ export default function ShopScreen({ user, onInventoryChanged }) {
 
             return (
               <article key={item.id} className={rarityCardClass(item)} style={{
+                position: 'relative',
                 borderRadius: 16,
                 background: 'linear-gradient(135deg, rgba(12,16,32,0.98), rgba(22,26,46,0.96))',
                 border: `1px solid ${theme.border}`,
@@ -267,6 +284,27 @@ export default function ShopScreen({ user, onInventoryChanged }) {
               }}>
                 {/* Thin tier accent bar */}
                 <div style={{ height: 3, background: `linear-gradient(90deg, ${theme.color}, transparent)` }} />
+
+                {/* Owned badge — top-right overlay */}
+                {ownedBadgeCount > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 10,
+                    background: 'rgba(34,197,94,0.18)',
+                    border: '1px solid rgba(34,197,94,0.35)',
+                    color: '#86efac',
+                    fontSize: 9,
+                    fontWeight: 900,
+                    padding: '2px 6px',
+                    borderRadius: 999,
+                    lineHeight: 1.4,
+                    pointerEvents: 'none',
+                    zIndex: 2,
+                  }}>
+                    {ownedBadgeCount > 1 ? `Owned ×${ownedBadgeCount}` : 'Owned'}
+                  </div>
+                )}
 
                 <div style={{ padding: '12px 12px 10px' }}>
                   {/* Top row: image + info */}
