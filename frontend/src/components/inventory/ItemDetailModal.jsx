@@ -217,7 +217,7 @@ export default function ItemDetailModal({
   const tierLabel = getTierLabel(item);
   const slotKey = getSlotKey(item);
   const classKey = getClassKey(item);
-  const slotLabel = formatSlotLabel(slotKey);
+  const slotLabel = slotKey === 'ability' ? 'Ability Item' : formatSlotLabel(slotKey);
   const classLabel = formatClassLabel(classKey);
   const passiveText = getPassiveText(item);
 
@@ -233,7 +233,9 @@ export default function ItemDetailModal({
     (equippedInventoryIds instanceof Set && equippedInventoryIds.has(String(item.inventory_id))) ||
     !!item.equipped;
 
-  const isWrongClass = !!(userClass && classKey && userClass !== classKey);
+  // Helmets (slot=helmet) and class_name='any' items are universal — any class can equip.
+  const isUniversalItem = classKey === 'any' || slotKey === 'helmet';
+  const isWrongClass = !!(userClass && classKey && !isUniversalItem && userClass !== classKey);
 
   const enchantLevel = Number(item.enchant_level || 0);
 
@@ -412,7 +414,7 @@ export default function ItemDetailModal({
 
           {abilityBattleRows.length > 0 && (
             <div style={{ marginBottom: 14 }}>
-              <SectionLabel color="#60a5fa">Battle Ability</SectionLabel>
+              <SectionLabel color="#60a5fa">Item Skill</SectionLabel>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {abilityBattleRows.map((row) => (
                   <StatChip key={row.key} color="#93c5fd">

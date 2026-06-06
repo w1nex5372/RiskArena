@@ -5,7 +5,7 @@ import { BossRaidState, RaidPlayer } from "../schemas/BossRaidState";
 // Shared combat rules — single source of truth (also used by ArenaRoom)
 import { classMaxHp, resolveDamage } from "../shared/combat";
 // Shared class metadata (battle_classes.json) — per-class HP/greitis/žala/block
-import { classGuard, classMoveSpeed, classBasicAttack } from "../shared/classes";
+import { classDefaultAbilityKey, classGuard, classMoveSpeed, classBasicAttack, classUtilityAbilityKey } from "../shared/classes";
 // Shared ability metadata helpers — single source of truth (also used by ArenaRoom)
 import { abilityMeta, abilityNumber, abilityCooldownMs, abilityAllowedForClass } from "../shared/abilities";
 // Shared boss metadata (boss_definitions.json) — BOSS REGISTRY: atakos/dažnis/range/targets per boss
@@ -204,6 +204,10 @@ export class BossRaidRoom extends Room<BossRaidState> {
     // move_speed json'e yra units/tick (Arena 66ms tick); px/s = units * (1000/66)
     p.moveSpeed = Math.round(classMoveSpeed(p.characterClass) * (1000 / 66));
 
+    this.fetchAndApplyLoadout(p).catch((err) => {
+      console.warn(`[BossRaidRoom] loadout setup failed for ${p.username}: ${err?.message}`);
+    });
+
     // Anti-exploit: jei žaidėjas buvo nokautuotas ir išėjo — grįžęs lieka nokautuotas
     // su LIKUSIU laiku (negali apeiti death timer'io išėjęs/atėjęs).
     const reviveAt = DOWNED_UNTIL.get(p.userId);
@@ -220,6 +224,21 @@ export class BossRaidRoom extends Room<BossRaidState> {
     this.state.playerCount = this.state.players.size;
 
     console.log(`[BossRaidRoom] ${p.username} joined (${this.state.playerCount} online)`);
+  }
+
+  private async fetchAndApplyLoadout(player: RaidPlayer) {
+    if (!INTERNAL_SECRET) {
+      console.warn("[BossRaidRoom] INTERNAL_SECRET is not configured; skipping loadout fetch");
+      return;
+    }
+    const res = await axios.get(
+      `${FASTAPI_URL}/api/internal/user-loadout/${player.userId}`,
+      { headers: { "x-internal-secret": INTERNAL_SECRET }, timeout: 3000 },
+    );
+    const d = res.data || {};
+    player.defendReduction = Number(d.defend_reduction ?? player.defendReduction ?? 0) || 0;
+    player.activeAbilityKey = String(d.active_ability_key || "");
+    player.spritesheetPath = String(d.battle_spritesheet_path || player.spritesheetPath || "");
   }
 
   // ── Žaidėjas išeina ──────────────────────────────────────────────────────────
@@ -272,6 +291,11 @@ export class BossRaidRoom extends Room<BossRaidState> {
     if (!this.inBossRange(player, ba.range)) {
       // Whiff — mostas parodomas, bet bosui žalos nedaro (reikia prieiti arčiau)
       if (player.state !== STATE.HIT) { player.state = STATE.ATTACKING; player.stateUntil = now + ATTACK_STATE_MS; }
+      client.send("attack_whiff", {
+        reason: "out_of_range",
+        distance: Math.round(Math.abs(bossHitX(this.bossKind) - player.x)),
+        range: ba.range,
+      });
       return;
     }
     const damage = ba.damage_min + Math.floor(Math.random() * Math.max(1, ba.damage_max - ba.damage_min + 1));
@@ -325,6 +349,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
     let abilityKey = String(msg?.abilityKey || "");
     if (!abilityKey) abilityKey = `${player.characterClass}_default`;
     if (!abilityAllowedForClass(player.characterClass, abilityKey)) return;
+    if (!this.isAbilityAvailableToPlayer(player, abilityKey)) return;
 
     // Per-ability server-side cooldown PAGAL KEY — klasės ir item ability nepriklausomi
     // (anti-cheat; klientas negali spam'inti). Naudoja shared metadata cooldown_ms.
@@ -336,12 +361,43 @@ export class BossRaidRoom extends Room<BossRaidState> {
     // Žala TIK iš metadata — be fallback. Blink/mobility (type: "blink") neturi "damage"
     // lauko → 0 → jokios žalos bosui (teleportas vyksta client-side per move).
     const meta   = abilityMeta(abilityKey);
+    const abilityType = String(meta?.type || "");
+    if (abilityType === "guard_boost") {
+      const restore = abilityNumber(meta, "guard_restore", 40);
+      player.guard = Math.min(player.maxGuard, player.guard + restore);
+      player.guardBroken = false;
+      player.guardBrokenUntil = 0;
+      player.guardRegenPausedUntil = 0;
+      if (player.state !== STATE.HIT) {
+        player.state = STATE.ATTACKING;
+        player.stateUntil = now + ATTACK_STATE_MS;
+      }
+      return;
+    }
+    if (abilityType === "phase_step" || abilityType === "smoke_veil") {
+      const offset = abilityNumber(meta, "offset", abilityType === "phase_step" ? 96 : 74);
+      player.x = Math.max(MOVE_MIN_X, Math.min(MOVE_MAX_X, player.x - offset));
+      player.facingRight = true;
+      if (player.state !== STATE.HIT) {
+        player.state = STATE.ATTACKING;
+        player.stateUntil = now + ATTACK_STATE_MS;
+      }
+      return;
+    }
     const damage = abilityNumber(meta, "damage", 0);
     const range  = abilityNumber(meta, "range", 9999);
 
     // Ne-žalos ability (blink) ARBA per toli (melee bash reikia prieiti; projectile range 800)
     // → naudojimas užskaitytas (cooldown), bet bosui žalos nedaro.
-    if (damage <= 0 || !this.inBossRange(player, range)) return;
+    if (damage <= 0) return;
+    if (!this.inBossRange(player, range)) {
+      client.send("attack_whiff", {
+        reason: "out_of_range",
+        distance: Math.round(Math.abs(bossHitX(this.bossKind) - player.x)),
+        range,
+      });
+      return;
+    }
 
     // Taikome HP — tiksliai kaip handleAttack
     const newHp    = Math.max(0, this.state.currentHp - damage);
@@ -365,6 +421,15 @@ export class BossRaidRoom extends Room<BossRaidState> {
     this.persistDamage(player.userId, damage).catch((err) =>
       console.warn("[BossRaidRoom] Failed to persist damage:", err?.message)
     );
+  }
+
+  private isAbilityAvailableToPlayer(player: RaidPlayer, abilityKey: string): boolean {
+    const key = String(abilityKey || "");
+    if (!key) return false;
+    return key === classDefaultAbilityKey(player.characterClass)
+      || key === `${player.characterClass}_default`
+      || key === classUtilityAbilityKey(player.characterClass)
+      || key === player.activeAbilityKey;
   }
 
   // Ar žaidėjas pakankamai arti boso konkrečios atakos/ability range'ui

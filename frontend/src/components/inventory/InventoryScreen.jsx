@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Backpack, BatteryCharging, Gem, HardHat, Shield, ShoppingBag, Sparkles, Sword } from 'lucide-react';
+import { AlertTriangle, Backpack, BatteryCharging, Check, Gem, HardHat, Shield, ShoppingBag, Sparkles, Sword } from 'lucide-react';
 import ItemDetailModal from './ItemDetailModal';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
@@ -7,6 +7,7 @@ import ShopScreen from '../shop/ShopScreen';
 import apiClient from '../../api/client';
 import { CLASS_INFO, CLASS_MODIFIERS } from '../../utils/characters';
 import CharacterPortrait from '../arena/CharacterPortrait';
+import BattleSkillLoadout from '../arena/BattleSkillLoadout';
 import {
   CLASS_THEME,
   TIER_ORDER,
@@ -53,7 +54,7 @@ const LOADOUT_SLOTS = [
   { key: 'weapon', label: 'Weapon', Icon: Sword },
   { key: 'helmet', label: 'Helmet', Icon: HardHat },
   { key: 'armor', label: 'Armor', Icon: Shield },
-  { key: 'ability', label: 'Ability', Icon: Sparkles },
+  { key: 'ability', label: 'Item Skill', Icon: Sparkles },
 ];
 
 const SCROLL_OPTIONS = [
@@ -71,25 +72,25 @@ const SCROLL_OPTIONS = [
   },
 ];
 
-function GridItemImage({ src, item, FallbackIcon, theme, ringClass }) {
+function GridItemImage({ src, item, FallbackIcon, theme, ringClass, size = 48 }) {
   const [failed, setFailed] = useState(false);
   const imagePath = item?.image_path;
   const slot = getSlotKey(item);
   if (slot === 'weapon' && imagePath && !failed) {
-    return <WeaponIcon imagePath={imagePath} size={54} borderRadius={10} enchantLevel={item?.enchant_level || 0} />;
+    return <WeaponIcon imagePath={imagePath} size={size} borderRadius={8} enchantLevel={item?.enchant_level || 0} />;
   }
   if ((slot === 'armor' || slot === 'helmet') && imagePath && !failed) {
-    return <ArmorIcon imagePath={imagePath} size={54} borderRadius={10} />;
+    return <ArmorIcon imagePath={imagePath} size={size} borderRadius={8} />;
   }
   if (!src || failed) {
-    return <FallbackIcon style={{ width: '40%', height: '40%', color: theme.color }} />;
+    return <FallbackIcon style={{ width: '46%', height: '46%', color: theme.color }} />;
   }
   return (
     <img
       src={src}
       alt={item.name}
       className={ringClass}
-      style={{ width: '80%', height: '80%', objectFit: 'contain', imageRendering: 'pixelated', borderRadius: 10 }}
+      style={{ width: '78%', height: '78%', objectFit: 'contain', imageRendering: 'pixelated', borderRadius: 8 }}
       onError={() => setFailed(true)}
     />
   );
@@ -1090,6 +1091,20 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
             </div>
           </div>
 
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c9a84c', margin: '0 0 8px' }}>
+              BATTLE SKILLS
+            </p>
+            <BattleSkillLoadout
+              className={user?.class_name}
+              equippedAbility={equippedBySlot.ability}
+              onItemClick={() => {
+                if (equippedBySlot.ability) setSelectedItem(equippedBySlot.ability);
+                else jumpToInventorySlot('Ability');
+              }}
+            />
+          </div>
+
           <div style={{ marginTop: 16 }} ref={inventoryListRef}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <p style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c9a84c', margin: 0 }}>
@@ -1145,13 +1160,13 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
               })}
             </div>
             {inventory === null ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))', gap: 8 }}>
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((index) => (
                   <div
                     key={index}
                     style={{
-                      borderRadius: 14,
-                      paddingTop: '100%',
+                      aspectRatio: '1 / 1',
+                      borderRadius: 12,
                       background: 'rgba(26,26,46,0.6)',
                       border: '1px solid rgba(201,168,76,0.1)',
                       animation: 'pulse 1.5s ease-in-out infinite',
@@ -1170,7 +1185,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                 <p style={{ color: '#64748b', fontSize: 13, fontWeight: 700, margin: 0 }}>No items yet</p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(64px, 1fr))', gap: 8 }}>
                 {displayedItems.map((item) => {
                   const theme = getTierTheme(item);
                   const isEquipped = equippedInventoryIds.has(item.inventory_id) || Boolean(item.equipped);
@@ -1178,26 +1193,33 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                   const slot = getSlotKey(item);
                   const FallbackIcon = TAB_ICON[formatSlotLabel(slot)] || Sword;
                   const src = getItemImageSrc(item);
+                  const duplicateInfo = duplicateIndexByInventoryId.get(item.inventory_id);
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={item.inventory_id}
                       onClick={() => setSelectedItem(item)}
+                      title={item.name}
+                      aria-label={`${item.name}${isEquipped ? ', equipped' : ''}`}
                       style={{
                         position: 'relative',
-                        minHeight: 126,
-                        borderRadius: 16,
+                        aspectRatio: '1 / 1',
+                        borderRadius: 12,
                         overflow: 'hidden',
                         cursor: 'pointer',
-                        padding: 7,
+                        padding: 5,
                         background: `linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(10,14,28,0.98) 100%)`,
                         border: isEquipped ? '1.5px solid rgba(201,168,76,0.76)' : `1px solid ${theme.border}`,
                         boxShadow: isEquipped ? '0 0 18px rgba(201,168,76,0.28)' : `0 0 12px ${theme.glow}`,
+                        color: 'inherit',
+                        appearance: 'none',
                       }}
                     >
                       <div style={{
-                        height: 76,
+                        width: '100%',
+                        height: '100%',
                         position: 'relative',
-                        borderRadius: 12,
+                        borderRadius: 10,
                         border: `1px solid ${theme.border}`,
                         background: `radial-gradient(circle at 50% 30%, ${theme.soft} 0%, rgba(8,12,24,0.95) 62%)`,
                         display: 'flex',
@@ -1205,45 +1227,44 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                         justifyContent: 'center',
                         overflow: 'hidden',
                       }}>
-                        <GridItemImage src={src} item={item} FallbackIcon={FallbackIcon} theme={theme} ringClass={rarityRingClass(item)} />
+                        <GridItemImage src={src} item={item} FallbackIcon={FallbackIcon} theme={theme} ringClass={rarityRingClass(item)} size={46} />
                         <div style={{
                           position: 'absolute',
-                          left: 6,
-                          top: 6,
-                          fontSize: 8,
-                          fontWeight: 900,
+                          left: 5,
+                          top: 5,
+                          width: 8,
+                          height: 8,
                           color: theme.color,
-                          background: 'rgba(0,0,0,0.48)',
-                          border: `1px solid ${theme.border}`,
+                          background: theme.color,
+                          border: '1px solid rgba(0,0,0,0.45)',
                           borderRadius: 999,
-                          padding: '2px 6px',
-                          lineHeight: 1,
-                          textTransform: 'uppercase',
+                          boxShadow: `0 0 8px ${theme.glow}`,
                         }}>
-                          {getTierLabel(item)}
                         </div>
                         {isEquipped && (
                           <div style={{
                             position: 'absolute',
-                            bottom: 6,
-                            left: 6,
-                            fontSize: 9,
+                            bottom: 5,
+                            left: 5,
+                            width: 18,
+                            height: 18,
                             fontWeight: 900,
                             color: '#c9a84c',
                             background: 'rgba(0,0,0,0.58)',
                             border: '1px solid rgba(201,168,76,0.32)',
                             borderRadius: 999,
-                            padding: '2px 6px',
-                            lineHeight: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                           }}>
-                            E
+                            <Check style={{ width: 11, height: 11 }} />
                           </div>
                         )}
                         {enchantLevel > 0 && (
                           <div style={{
                             position: 'absolute',
-                            top: 6,
-                            right: 6,
+                            top: 5,
+                            right: 5,
                             fontSize: 10,
                             fontWeight: 900,
                             color: '#c9a84c',
@@ -1256,35 +1277,41 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                             +{enchantLevel}
                           </div>
                         )}
-                      </div>
-                      <div style={{ padding: '7px 2px 0' }}>
                         <div style={{
-                          color: '#f8fafc',
-                          fontSize: 10,
-                          fontWeight: 850,
-                          lineHeight: 1.15,
-                          textAlign: 'center',
-                          minHeight: 23,
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
+                          position: 'absolute',
+                          right: 5,
+                          bottom: 5,
+                          width: 18,
+                          height: 18,
+                          borderRadius: 999,
+                          background: 'rgba(0,0,0,0.46)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}>
-                          {item.name}
+                          <FallbackIcon style={{ width: 10, height: 10, color: '#94a3b8' }} />
                         </div>
-                        <div style={{
-                          marginTop: 5,
-                          color: '#64748b',
-                          fontSize: 8,
-                          fontWeight: 900,
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                          textAlign: 'center',
-                        }}>
-                          {formatSlotLabel(slot)}
-                        </div>
+                        {duplicateInfo?.total > 1 && (
+                          <div style={{
+                            position: 'absolute',
+                            left: '50%',
+                            bottom: 5,
+                            transform: 'translateX(-50%)',
+                            fontSize: 9,
+                            fontWeight: 900,
+                            color: '#cbd5e1',
+                            background: 'rgba(0,0,0,0.58)',
+                            border: '1px solid rgba(255,255,255,0.10)',
+                            borderRadius: 999,
+                            padding: '2px 5px',
+                            lineHeight: 1,
+                          }}>
+                            {duplicateInfo.index}/{duplicateInfo.total}
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>

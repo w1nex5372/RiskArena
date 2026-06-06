@@ -3011,7 +3011,7 @@ function App() {
 
             {/* Admin Panel Tab */}
             {activeTab === 'admin' && (user?.is_admin || user?.is_owner) && (
-              <AdminPanel API={API} rooms={rooms} isMobile={isMobile} onRoomsRefresh={loadRooms} socket={socket} />
+              <AdminPanel API={API} rooms={rooms} isMobile={isMobile} onRoomsRefresh={loadRooms} socket={socket} user={user} />
             )}
 
             {/* History Tab */}

@@ -44,6 +44,7 @@ export class RaidPlayer extends Schema {
   // Per-ability cooldown PAGAL KEY (klasės ir item ability turi atskirus cooldown'us).
   // { abilityKey: paskutinio panaudojimo Date.now() } — server-side anti-cheat.
   abilityCooldowns: Record<string, number> = {};
+  activeAbilityKey: string = "";
   // Kada transient būsena (attacking/hit) turi grįžti į idle (Date.now() ms). 0 = nėra deadline.
   stateUntil: number = 0;
   // Paskutinio "move" žinutės laikas (server-side throttle, anti-spam)

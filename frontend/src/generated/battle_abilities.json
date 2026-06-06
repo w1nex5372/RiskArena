@@ -14,14 +14,15 @@
     },
     "warrior_bash": {
       "class": "warrior",
-      "role": "control",
-      "type": "bash",
-      "label": "Bash",
-      "damage": 20,
-      "ability_power_scale": 0.7,
-      "stun_ms": 1500,
-      "range": 120,
-      "cooldown_ms": 8000
+      "role": "cleave",
+      "type": "cleave",
+      "label": "Cleave",
+      "damage": 17,
+      "ability_power_scale": 0.6,
+      "knockback": 70,
+      "blocked_knockback_mult": 0.25,
+      "range": 130,
+      "cooldown_ms": 6200
     },
     "warrior_guardbreak": {
       "class": "warrior",
@@ -37,14 +38,24 @@
     },
     "warrior_titan_bash": {
       "class": "warrior",
-      "role": "control",
-      "type": "bash",
-      "label": "Titan Bash",
-      "damage": 27,
-      "ability_power_scale": 0.7,
-      "stun_ms": 1900,
-      "range": 130,
-      "cooldown_ms": 9000
+      "role": "slam",
+      "type": "slam",
+      "label": "Titan Slam",
+      "damage": 25,
+      "ability_power_scale": 0.65,
+      "stun_ms": 850,
+      "knockback": 115,
+      "blocked_knockback_mult": 0.4,
+      "range": 145,
+      "cooldown_ms": 9200
+    },
+    "warrior_fortify": {
+      "class": "warrior",
+      "role": "defense",
+      "type": "guard_boost",
+      "label": "Fortify",
+      "guard_restore": 46,
+      "cooldown_ms": 11000
     },
     "mage_default": {
       "class": "mage",
@@ -62,13 +73,13 @@
       "class": "mage",
       "role": "ranged_burst",
       "type": "projectile",
-      "label": "Fireball",
-      "damage": 20,
-      "ability_power_scale": 0.45,
-      "knockback": 145,
-      "blocked_knockback_mult": 0.25,
+      "label": "Flare Bolt",
+      "damage": 16,
+      "ability_power_scale": 0.4,
+      "knockback": 55,
+      "blocked_knockback_mult": 0.35,
       "range": 800,
-      "cooldown_ms": 6500
+      "cooldown_ms": 4800
     },
     "mage_ember_bolt": {
       "class": "mage",
@@ -94,6 +105,14 @@
       "range": 800,
       "cooldown_ms": 8500
     },
+    "mage_phase_step": {
+      "class": "mage",
+      "role": "defense",
+      "type": "phase_step",
+      "label": "Phase Step",
+      "offset": 96,
+      "cooldown_ms": 10500
+    },
     "rogue_default": {
       "class": "rogue",
       "role": "mobility",
@@ -105,12 +124,14 @@
     },
     "rogue_blink": {
       "class": "rogue",
-      "role": "mobility",
-      "type": "blink",
-      "label": "Blink",
-      "offset": 80,
-      "range": 80,
-      "cooldown_ms": 5000
+      "role": "dash_strike",
+      "type": "dash_strike",
+      "label": "Quickstep",
+      "damage": 14,
+      "ability_power_scale": 0.35,
+      "offset": 58,
+      "range": 150,
+      "cooldown_ms": 5200
     },
     "rogue_shadowstep": {
       "class": "rogue",
@@ -123,12 +144,23 @@
     },
     "rogue_nightfall": {
       "class": "rogue",
-      "role": "mobility",
-      "type": "blink",
+      "role": "ambush",
+      "type": "ambush",
       "label": "Nightfall",
-      "offset": 140,
-      "range": 140,
-      "cooldown_ms": 6000
+      "damage": 18,
+      "ability_power_scale": 0.45,
+      "offset": 118,
+      "range": 210,
+      "cooldown_ms": 6800
+    },
+    "rogue_smoke_veil": {
+      "class": "rogue",
+      "role": "defense",
+      "type": "smoke_veil",
+      "label": "Smoke Veil",
+      "offset": 74,
+      "backstab_window_ms": 850,
+      "cooldown_ms": 12000
     }
   }
 }

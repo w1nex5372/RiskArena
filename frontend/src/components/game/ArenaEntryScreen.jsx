@@ -5,6 +5,7 @@ import { useUser } from '../../context/UserContext';
 import { CLASS_INFO } from '../../utils/characters';
 import { getItemImageSrc, getItemStatRows, getPassiveText, getStatEntries, getTierKey, getTierTheme } from '../../utils/itemPresentation';
 import CharacterPortrait from '../arena/CharacterPortrait';
+import BattleSkillLoadout from '../arena/BattleSkillLoadout';
 import ClassStatRow from '../character/ClassStatRow';
 import WeaponIcon from '../WeaponIcon';
 
@@ -52,7 +53,7 @@ function SlotImage({ item, FallbackIcon, size = 44 }) {
 const LOADOUT_SLOTS = [
   { key: 'weapon',    label: 'WEAPON',  Icon: Sword },
   { key: 'armor',     label: 'ARMOR',   Icon: Shield },
-  { key: 'ability',   label: 'ABILITY', Icon: Sparkles },
+  { key: 'ability',   label: 'ITEM SKILL', Icon: Sparkles },
 ];
 
 function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
@@ -401,6 +402,15 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInv
             );
           })}
         </div>
+        <p style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.1em', color: '#64748b', textTransform: 'uppercase', margin: '9px 0 5px' }}>
+          Battle Skills
+        </p>
+        <BattleSkillLoadout
+          className={selectedClass}
+          equippedAbility={equipped?.ability || null}
+          onItemClick={onNavigateInventory}
+          compact
+        />
       </div>
 
       {/* ── Real-Time Battle Button (Colyseus) ─────────────────── */}

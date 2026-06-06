@@ -7,15 +7,13 @@ import Phaser from 'phaser';
 import BossRaidScene from '../arena/scenes/BossRaidScene';
 import WeaponIcon from '../WeaponIcon';
 import ArmorIcon from '../ArmorIcon';
-import { BattleControlsOverlay, CLASS_COOLDOWNS } from '../arena/BattleControls';
+import { BattleControlsOverlay, CLASS_COOLDOWNS, CLASS_DEFAULT_ABILITY_KEYS, CLASS_UTILITY_ABILITY_KEYS, UTILITY_COOLDOWNS } from '../arena/BattleControls';
+import BattleSkillLoadout from '../arena/BattleSkillLoadout';
 import { getStoredSessionToken } from '../../utils/storage';
+import { resolveGameServerUrl } from '../../utils/gameServerUrl';
 import { toast } from 'sonner';
 
-const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
-  const override = new URLSearchParams(window.location.search).get('gameServerUrl');
-  if (override) return override;
-  return `${window.location.origin}/colyseus`;
-})();
+const GAME_SERVER_URL = resolveGameServerUrl();
 
 const ATTACK_ANIM_LOCK = 600;  // ms — button locked only during animation
 const RESPAWN_SECONDS  = 60;   // must match gameserver REVIVE_MS (BossRaidRoom.ts)
@@ -72,6 +70,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [view,            setView]            = useState('lobby');
   viewRef.current = view;                                       // latest-value (skaitomas tik async socket callback'uose)
   const [attackLocked,    setAttackLocked]    = useState(false);
+  const [raidRoomReady,   setRaidRoomReady]   = useState(false);
+  const [raidConnectionError, setRaidConnectionError] = useState(false);
   const [myDamage,        setMyDamage]        = useState(0);
   const [topDealers,      setTopDealers]      = useState([]);
   const [raidTimer,       setRaidTimer]       = useState(null);
@@ -87,11 +87,13 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [equipped,         setEquipped]         = useState({ weapon: null, armor: null, ability: null });
   const [equippedSheet,    setEquippedSheet]    = useState('');
   const [abilityReady,     setAbilityReady]     = useState(true);
+  const [utilityAbilityReady, setUtilityAbilityReady] = useState(true);
   const [itemAbilityReady, setItemAbilityReady] = useState(true);
   const playerClass = (user?.class_name || 'warrior').toLowerCase();
 
   const attackLockTimer    = useRef(null);
   const abilityCdTimer     = useRef(null);
+  const utilityAbilityCdTimer = useRef(null);
   const itemAbilityCdTimer = useRef(null);
   const raidInterval       = useRef(null);
   const respawnTimerRef    = useRef(null); // death overlay countdown interval
@@ -205,16 +207,21 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     if (view !== 'battle' || !bossState) return;
 
     let cancelled = false;
+    let retryTimer = null;
 
     const token  = user?.session_token || getStoredSessionToken();
     const client = new Colyseus.Client(GAME_SERVER_URL);
     let reconnectToken = null;
+    setRaidRoomReady(false);
+    setRaidConnectionError(false);
 
     // Attaches all live handlers to a room — reused for the initial join AND after a
     // reconnect, so a network drop transparently resumes the SAME raid session (the
     // server holds the seat ~20s: HP/damage/downed preserved, no "disconnect = heal").
     function wireRoom(room) {
       reconnectToken = room.reconnectionToken;
+      setRaidRoomReady(true);
+      setRaidConnectionError(false);
 
         // HP / phase / playerCount — live from Colyseus delta-sync
         room.state.onChange(() => {
@@ -331,6 +338,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           }
         });
 
+        room.onMessage('attack_whiff', (data) => {
+          if (data?.reason === 'out_of_range') sceneRef.current?.showOutOfRange?.();
+        });
+
         // raid_finished — broadcast by BossRaidRoom.ts after FastAPI settles rewards
         room.onMessage('raid_finished', (data) => {
           setRaidEnded(true);
@@ -354,6 +365,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       // a network drop → try to reconnect within the server's hold window.
       room.onLeave((code) => {
         colyseusRoomRef.current = null;
+        setRaidRoomReady(false);
         if (cancelled || code === 1000) return;
         attemptReconnect();
       });
@@ -369,11 +381,22 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         toast.success('Reconnected to the raid', { id: 'raid-reconnect', duration: 2000 });
       } catch (err) {
         console.warn('[BossRaid] reconnect failed:', err?.message);
+        setRaidConnectionError(true);
         toast.error('Lost connection to the raid', { id: 'raid-reconnect-fail', duration: 3000 });
+        scheduleConnect();
       }
     }
 
+    function scheduleConnect() {
+      if (cancelled || retryTimer) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        connectBossRoom();
+      }, 1500);
+    }
+
     async function connectBossRoom() {
+      if (cancelled || colyseusRoomRef.current) return;
       try {
         const room = await client.joinOrCreate('boss_raid_room', {
           sessionToken: token,
@@ -384,6 +407,9 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         wireRoom(room);
       } catch (err) {
         console.warn('[BossRaid] Colyseus connect failed:', err?.message);
+        setRaidRoomReady(false);
+        setRaidConnectionError(true);
+        scheduleConnect();
       }
     }
 
@@ -391,8 +417,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
     return () => {
       cancelled = true;
+      clearTimeout(retryTimer);
       colyseusRoomRef.current?.leave();
       colyseusRoomRef.current = null;
+      setRaidRoomReady(false);
     };
   }, [view === 'battle']); // eslint-disable-line
 
@@ -422,6 +450,9 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       socket.off('boss_spawned', onBossSpawned);
       socket.off('boss_defeated', onBossDefeated);
       clearTimeout(attackLockTimer.current);
+      clearTimeout(abilityCdTimer.current);
+      clearTimeout(utilityAbilityCdTimer.current);
+      clearTimeout(itemAbilityCdTimer.current);
       clearInterval(raidInterval.current);
     };
   }, [socket]); // eslint-disable-line
@@ -476,7 +507,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   };
 
   const handleAttack = () => {
-    if (attackLocked || raidEnded || !bossState) return;
+    if (attackLocked || raidEnded || !bossState || !raidRoomReady) return;
     sceneRef.current?.triggerPlayerAttack();
     setAttackLocked(true);
     clearTimeout(attackLockTimer.current);
@@ -491,8 +522,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   }, []);
 
   const handleAbility = useCallback(() => {
-    if (!abilityReady || raidEnded) return;
-    const abilityKey = `${playerClass}_default`;
+    if (!abilityReady || raidEnded || !raidRoomReady) return;
+    const abilityKey = CLASS_DEFAULT_ABILITY_KEYS[playerClass] || `${playerClass}_default`;
     sceneRef.current?.triggerAbility(playerClass, abilityKey);
     // Serveris pritaiko žalą bosui (server-authoritative — žala/cooldown iš shared metadata)
     colyseusRoomRef.current?.send('ability', { abilityKey });
@@ -500,10 +531,22 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     clearTimeout(abilityCdTimer.current);
     const cd = CLASS_COOLDOWNS[playerClass] ?? 6000;
     abilityCdTimer.current = setTimeout(() => setAbilityReady(true), cd);
-  }, [abilityReady, raidEnded, playerClass]);
+  }, [abilityReady, raidEnded, raidRoomReady, playerClass]);
+
+  const handleUtilityAbility = useCallback(() => {
+    if (!utilityAbilityReady || raidEnded || !raidRoomReady) return;
+    const abilityKey = CLASS_UTILITY_ABILITY_KEYS[playerClass] || '';
+    if (!abilityKey) return;
+    sceneRef.current?.triggerAbility(playerClass, abilityKey);
+    colyseusRoomRef.current?.send('ability', { abilityKey });
+    setUtilityAbilityReady(false);
+    clearTimeout(utilityAbilityCdTimer.current);
+    const cd = UTILITY_COOLDOWNS[playerClass] ?? 10000;
+    utilityAbilityCdTimer.current = setTimeout(() => setUtilityAbilityReady(true), cd);
+  }, [utilityAbilityReady, raidEnded, raidRoomReady, playerClass]);
 
   const handleItemAbility = useCallback(() => {
-    if (!itemAbilityReady || raidEnded) return;
+    if (!itemAbilityReady || raidEnded || !raidRoomReady) return;
     const abilityKey = equipped?.ability?.ability_key || equipped?.ability?.key || `${playerClass}_default`;
     sceneRef.current?.triggerAbility(playerClass, abilityKey);
     // Serveris pritaiko žalą bosui (server-authoritative — žala/cooldown iš shared metadata)
@@ -517,7 +560,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       6000
     );
     itemAbilityCdTimer.current = setTimeout(() => setItemAbilityReady(true), cd);
-  }, [itemAbilityReady, raidEnded, equipped?.ability, playerClass]);
+  }, [itemAbilityReady, raidEnded, raidRoomReady, equipped?.ability, playerClass]);
 
   // ── Error / loading states ────────────────────────────────────────────────
   if (loadError === 'no_raid') {
@@ -681,7 +724,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     const loadoutSlots = [
       { icon: '🗡️', label: 'WEAPON',  item: equipped.weapon  },
       { icon: '🛡️', label: 'ARMOR',   item: equipped.armor   },
-      { icon: '✨', label: 'ABILITY', item: equipped.ability },
+      { icon: '✨', label: 'ITEM SKILL', item: equipped.ability },
     ];
     return (
       <div className="space-y-4" style={{ color: '#e8e0d0' }}>
@@ -784,6 +827,10 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
               </div>
             ))}
           </div>
+          <p style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.1em', color: '#64748b', textTransform: 'uppercase', margin: '10px 0 6px' }}>
+            Battle Skills
+          </p>
+          <BattleSkillLoadout className={playerClass} equippedAbility={equipped?.ability || null} compact />
         </section>
 
         {/* Loot table */}
@@ -870,7 +917,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   }
 
   // ── BATTLE VIEW — full-screen ─────────────────────────────────────────────
-  const canAttack = !attackLocked && !raidEnded;
+  const canAttack = raidRoomReady && !attackLocked && !raidEnded;
 
   return (
     <div style={{
@@ -1000,16 +1047,33 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           </div>
         )}
 
+        {!raidRoomReady && (
+          <div style={{
+            position: 'absolute', left: '50%', bottom: 118, zIndex: 45,
+            transform: 'translateX(-50%)',
+            padding: '7px 12px', borderRadius: 6,
+            border: '1px solid rgba(251,191,36,0.45)',
+            background: 'rgba(8,8,20,0.92)',
+            color: raidConnectionError ? '#fca5a5' : '#fbbf24',
+            fontSize: 11, fontWeight: 900, fontFamily: 'monospace',
+            letterSpacing: '0.08em', whiteSpace: 'nowrap',
+          }}>
+            {raidConnectionError ? 'RECONNECTING TO RAID...' : 'CONNECTING TO RAID...'}
+          </div>
+        )}
+
         <BattleControlsOverlay
           showBlock={true}
           playerClass={playerClass}
           abilityReady={abilityReady}
+          utilityAbilityReady={utilityAbilityReady}
           itemAbilityReady={itemAbilityReady}
           equippedAbility={equipped?.ability || null}
           canAttack={canAttack}
           onJoystick={handleJoystick}
           onAttack={handleAttack}
           onAbility={handleAbility}
+          onUtilityAbility={handleUtilityAbility}
           onItemAbility={handleItemAbility}
           onBlockDown={() => { sceneRef.current?.setBlock(true);  colyseusRoomRef.current?.send('block', { down: true }); }}
           onBlockUp={() =>   { sceneRef.current?.setBlock(false); colyseusRoomRef.current?.send('block', { down: false }); }}

@@ -6,6 +6,7 @@ from datetime import datetime, time, timedelta, timezone
 from typing import Dict, List, Optional
 
 from database import get_pool
+from event_effects import boosted_amount
 
 QUESTS: List[Dict] = [
     {
@@ -188,8 +189,8 @@ async def claim_quest_in_transaction(conn, user_id: str, quest_key: str) -> Dict
     if not claim_row:
         await _raise_claim_error(conn, user_id, quest_key, today)
 
-    coins = int(quest["reward_coins"])
-    xp = int(quest["reward_xp"])
+    coins = await boosted_amount(conn, int(quest["reward_coins"]), "coin_multiplier")
+    xp = await boosted_amount(conn, int(quest["reward_xp"]), "xp_multiplier")
     updated_user = await _award_daily_quest_reward(conn, user_id, coins, xp)
     if not updated_user:
         raise ValueError("User not found")

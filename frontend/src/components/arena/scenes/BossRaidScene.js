@@ -10,7 +10,7 @@ import {
 // Shared movement/jump tuning — same feel as Arena (single source of truth)
 import { MOVE_SPEED_PX_S, JUMP_HEIGHT_PX, JUMP_RISE_MS, JUMP_EASE, JUMP_COOLDOWN_MS } from '../combatTuning';
 // Shared skill VFX — identical animations to Arena (single source of truth)
-import { showGuardBreak, showBash, showFireball, showBlink } from '../combatEffects';
+import { showGuardBreak, showBash, showFireball, showBlink, showFortify, showPhaseStep, showSmokeVeil } from '../combatEffects';
 
 // ── Enchant FX ────────────────────────────────────────────────────────────────
 const ENCHANT_FX = [
@@ -639,6 +639,26 @@ export default class BossRaidScene extends Phaser.Scene {
     });
   }
 
+  showOutOfRange() {
+    if (!this._sceneReady) return;
+    const txt = this.add.text(this._myPlayerX, (FLOOR_Y + FOOT_OFFSET) - SPRITE_HEIGHT - 44, 'OUT OF RANGE', {
+      fontSize: '12px',
+      fontFamily: 'monospace',
+      fontStyle: 'bold',
+      color: '#fbbf24',
+      stroke: '#000000',
+      strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(22);
+    this.tweens.add({
+      targets: txt,
+      y: txt.y - 24,
+      alpha: 0,
+      duration: 850,
+      ease: 'Power1',
+      onComplete: () => { if (txt.active) txt.destroy(); },
+    });
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // ABILITY EFFECTS (ported from BattleScene)
   // ─────────────────────────────────────────────────────────────────────────
@@ -671,7 +691,10 @@ export default class BossRaidScene extends Phaser.Scene {
 
     const x = this._myPlayerX;
     const y = FLOOR_Y + FOOT_OFFSET;
-    if      (key === 'warrior_guardbreak') this._showGuardBreakEffect(x, y);
+    if      (key === 'warrior_fortify')    showFortify(this, { x, y });
+    else if (key === 'mage_phase_step')    this._showPhaseStepEffect(x, y);
+    else if (key === 'rogue_smoke_veil')   this._showSmokeVeilEffect(x, y);
+    else if (key === 'warrior_guardbreak') this._showGuardBreakEffect(x, y);
     else if (cls === 'warrior')            this._showBashEffect(x, y, key);
     else if (cls === 'mage')               this._showFireballEffect(x, y, key);
     else if (cls === 'rogue')              this._showBlinkEffect(x, y, key);
@@ -698,6 +721,22 @@ export default class BossRaidScene extends Phaser.Scene {
     // Pozicijos sync iškart — cast animacija užrakina update() judėjimą, todėl be šito
     // sprite'as persikeltų tik po anim pabaigos (vizualus blink delay)
     this._syncMyPlayerVisuals(false);
+  }
+
+  _showPhaseStepEffect(fromX, fromY) {
+    const toX = Math.max(30, fromX - 96);
+    showPhaseStep(this, { fromX, fromY, toX });
+    this._myPlayerX = toX;
+    this._syncMyPlayerVisuals(false);
+    this._moveSendCb?.({ x: this._myPlayerX, facingRight: true });
+  }
+
+  _showSmokeVeilEffect(fromX, fromY) {
+    const toX = Math.max(30, fromX - 74);
+    showSmokeVeil(this, { fromX, fromY, toX, backstabReady: true });
+    this._myPlayerX = toX;
+    this._syncMyPlayerVisuals(false);
+    this._moveSendCb?.({ x: this._myPlayerX, facingRight: true });
   }
 
   // ─────────────────────────────────────────────────────────────────────────

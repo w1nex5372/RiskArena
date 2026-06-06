@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 from database import get_pool
 from boss_domain import compute_attack_damage, compute_phase, compute_rewards
 import progression as _prog
+import event_effects
 import daily_quests as _daily_quests
 from itemization import aggregate_item_modifiers, tier_to_rarity
 
@@ -71,8 +72,8 @@ async def _grant_boss_item_drop_tx(conn, user_id: str, tier: Optional[str], rng:
     # Two-stage roll: first pick the pool (class-specific 90% / shared 10%), then a
     # uniform pick within the pool. Without this, a shared pool with N helmets at the
     # same tier would skew drops away from the smaller class-specific pool.
-    # At epic/legendary tiers no class-specific items exist yet, so the shared pool is
-    # the only option there.
+    # Class-specific weapon/armor/ability pieces form the boss sets. Shared helmets
+    # stay in a separate 10% pool so each class has a fair chance at the common piece.
     class_items = await conn.fetch(
         "SELECT * FROM items WHERE class_name = $1 AND tier = $2",
         class_name,
@@ -317,28 +318,51 @@ async def _settle_raid_tx(conn, raid_id: str) -> List[Dict]:
     now = datetime.now(timezone.utc)
     reward_dicts: List[Dict] = []
 
+    xp_multiplier = await event_effects.multiplier(conn, "xp_multiplier")
+    coin_multiplier = await event_effects.multiplier(conn, "coin_multiplier")
+    legendary_multiplier = max(1.0, await event_effects.multiplier(conn, "legendary_drop_multiplier"))
     for r in rewards:
-        granted_item = await _grant_boss_item_drop_tx(conn, r.user_id, r.item_drop_tier, rng)
+        reward_coins = round(r.coins * coin_multiplier)
+        reward_xp = round(r.xp * xp_multiplier)
+        item_drop_tier = r.item_drop_tier
+        if item_drop_tier != "legendary" and legendary_multiplier > 1:
+            if rng.random() < min(1.0, 0.005 * (legendary_multiplier - 1)):
+                item_drop_tier = "legendary"
+        granted_item = await _grant_boss_item_drop_tx(conn, r.user_id, item_drop_tier, rng)
+        scroll_drop = r.scroll_drop
+        if scroll_drop:
+            await conn.execute(
+                """
+                INSERT INTO item_scrolls (user_id, scroll_type, quantity, updated_at)
+                VALUES ($1, $2, 1, NOW())
+                ON CONFLICT (user_id, scroll_type) DO UPDATE
+                    SET quantity = item_scrolls.quantity + 1,
+                        updated_at = NOW()
+                """,
+                r.user_id,
+                scroll_drop,
+            )
         await conn.execute(
             """
-            INSERT INTO boss_raid_rewards (raid_id, user_id, coins, xp, item_drop, claimed_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO boss_raid_rewards (raid_id, user_id, coins, xp, item_drop, scroll_drop, claimed_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
             raid_id,
             r.user_id,
-            r.coins,
-            r.xp,
+            reward_coins,
+            reward_xp,
             granted_item["name"] if granted_item else r.item_drop,
+            scroll_drop,
             now,
         )
         await conn.execute(
             "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
             r.user_id,
-            r.coins,
+            reward_coins,
         )
         xp_row = await conn.fetchrow("SELECT xp FROM users WHERE id = $1", r.user_id)
         cur_xp = int(xp_row["xp"]) if xp_row else 0
-        xp_res = _prog.award_xp_result(cur_xp, r.xp)
+        xp_res = _prog.award_xp_result(cur_xp, reward_xp)
         await conn.execute(
             "UPDATE users SET xp = $2, level = $3 WHERE id = $1",
             r.user_id,
@@ -347,10 +371,11 @@ async def _settle_raid_tx(conn, raid_id: str) -> List[Dict]:
         )
         reward_dicts.append({
             "user_id": r.user_id,
-            "coins": r.coins,
-            "xp": r.xp,
+            "coins": reward_coins,
+            "xp": reward_xp,
             "item_drop": granted_item["name"] if granted_item else r.item_drop,
-            "item_drop_tier": r.item_drop_tier,
+            "item_drop_tier": item_drop_tier,
+            "scroll_drop": scroll_drop,
             "leveled_up": xp_res["leveled_up"],
             "new_level": xp_res["new_level"],
         })
@@ -542,7 +567,7 @@ async def get_raid_result(raid_id: str) -> Optional[Dict]:
         if not raid:
             return None
         reward_rows = await conn.fetch(
-            "SELECT user_id, coins, xp, item_drop FROM boss_raid_rewards WHERE raid_id = $1",
+            "SELECT user_id, coins, xp, item_drop, scroll_drop FROM boss_raid_rewards WHERE raid_id = $1",
             raid_id,
         )
     return {
@@ -554,6 +579,7 @@ async def get_raid_result(raid_id: str) -> Optional[Dict]:
                 "coins": r["coins"],
                 "xp": r["xp"],
                 "item_drop": r["item_drop"],
+                "scroll_drop": r["scroll_drop"],
             }
             for r in reward_rows
         ],

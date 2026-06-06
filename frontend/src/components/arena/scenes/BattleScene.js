@@ -8,7 +8,7 @@ import {
   WEAPON_SHEET_COLS, WEAPON_ANIM_ROWS, HELD_WEAPON_POSE,
 } from '../combatSprites';
 // Shared skill VFX — single source of truth (also used by BossRaidScene)
-import { showGuardBreak, showBash, showFireball, showBlink } from '../combatEffects';
+import { showGuardBreak, showBash, showFireball, showBlink, showFortify, showPhaseStep, showSmokeVeil } from '../combatEffects';
 
 const WEAPON_DEBUG_STATES = ['idle', 'walk', 'attack', 'hurt', 'dead', 'jump'];
 const ARENA_CAMERA_Y = 72;
@@ -2273,6 +2273,25 @@ export default class BattleScene extends Phaser.Scene {
   showAbilityEffect(d) {
     this._playSound('ability');
     const abilityKey = String(d.abilityKey || d.ability_key || '');
+    if (abilityKey === 'warrior_fortify') {
+      showFortify(this, { x: d.fromX, y: d.fromY });
+      return;
+    }
+    if (abilityKey === 'mage_phase_step') {
+      showPhaseStep(this, { fromX: d.fromX, fromY: d.fromY, toX: d.toX });
+      return;
+    }
+    if (abilityKey === 'rogue_smoke_veil') {
+      showSmokeVeil(this, {
+        fromX: d.fromX,
+        fromY: d.fromY,
+        toX: d.toX,
+        targetX: d.targetX,
+        targetY: d.targetY,
+        backstabReady: d.backstabReady,
+      });
+      return;
+    }
     if (abilityKey === 'warrior_guardbreak') {
       this._showGuardBreakEffect(d.fromX, d.fromY, d.toX, d.toY, d.hit);
       if (d.brokeBlock) {

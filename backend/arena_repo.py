@@ -9,6 +9,7 @@ from typing import Dict, Optional
 
 from database import get_pool
 import progression as _prog
+import event_effects
 import daily_quests as _daily_quests
 
 _STREAK_MILESTONES = {3: 50, 5: 100, 7: 200}
@@ -581,6 +582,8 @@ async def resolve_current_round_tx(conn, match_id: str, default_missing: bool) -
 
 async def finish_match_tx(conn, match, result) -> None:
     now = datetime.now(timezone.utc)
+    xp_multiplier = await event_effects.multiplier(conn, "xp_multiplier")
+    coin_multiplier = await event_effects.multiplier(conn, "coin_multiplier")
     try:
         raw_meta = match["metadata"]
         metadata = json.loads(raw_meta) if isinstance(raw_meta, str) else (raw_meta or {})
@@ -595,7 +598,7 @@ async def finish_match_tx(conn, match, result) -> None:
         for uid in (p1_id, p2_id):
             xp_row = await conn.fetchrow("SELECT xp FROM users WHERE id = $1", uid)
             cur_xp = int(xp_row["xp"]) if xp_row else 0
-            xp_res = _prog.award_xp_result(cur_xp, _prog.XP_DRAW)
+            xp_res = _prog.award_xp_result(cur_xp, round(_prog.XP_DRAW * xp_multiplier))
             xp_results[str(uid)] = xp_res
             await conn.execute(
                 "UPDATE users SET xp = $2, level = $3 WHERE id = $1",
@@ -609,7 +612,7 @@ async def finish_match_tx(conn, match, result) -> None:
         ):
             xp_row = await conn.fetchrow("SELECT xp FROM users WHERE id = $1", uid)
             cur_xp = int(xp_row["xp"]) if xp_row else 0
-            xp_res = _prog.award_xp_result(cur_xp, amount)
+            xp_res = _prog.award_xp_result(cur_xp, round(amount * xp_multiplier))
             xp_results[str(uid)] = xp_res
             await conn.execute(
                 "UPDATE users SET xp = $2, level = $3 WHERE id = $1",
@@ -634,7 +637,7 @@ async def finish_match_tx(conn, match, result) -> None:
             result.winner_user_id,
         )
         new_streak = winner_row["current_win_streak"]
-        streak_bonus = _STREAK_MILESTONES.get(new_streak, 0)
+        streak_bonus = round(_STREAK_MILESTONES.get(new_streak, 0) * coin_multiplier)
         if streak_bonus > 0:
             await conn.execute(
                 "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",

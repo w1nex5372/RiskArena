@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Shield, Sparkles, Sword } from 'lucide-react';
 import CharacterPortrait from '../arena/CharacterPortrait';
+import BattleSkillLoadout from '../arena/BattleSkillLoadout';
 import { getClassInfo, normalizeCharacterClass } from '../../utils/characters';
 import { getEnchantColor, getItemStatRows, getPassiveText } from '../../utils/itemPresentation';
 
@@ -15,7 +16,7 @@ function getDisplayName(player, isYou) {
 function getLoadoutSummary(player) {
   return [
     { key: 'weapon', label: 'Weapon', gear: player?.weapon || null, value: player?.weapon?.name || 'None', Icon: Sword, color: '#60a5fa' },
-    { key: 'ability', label: 'Ability', gear: player?.ability || null, value: player?.ability?.name || 'None', Icon: Sparkles, color: '#c084fc' },
+    { key: 'ability', label: 'Item Skill', gear: player?.ability || null, value: player?.ability?.name || 'None', Icon: Sparkles, color: '#c084fc' },
     { key: 'armor', label: 'Armor', gear: player?.armor || null, value: player?.armor?.name || 'None', Icon: Shield, color: '#fbbf24' },
   ];
 }
@@ -183,6 +184,9 @@ function CharacterCard({ player, label, isYou, ready }) {
             {loadout.map((item) => (
               <LoadoutRow key={item.key} item={item} />
             ))}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <BattleSkillLoadout className={className} equippedAbility={player?.ability || null} compact />
           </div>
         </div>
       </div>

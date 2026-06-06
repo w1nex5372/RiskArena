@@ -12,6 +12,51 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { W, H, FLOOR_Y, SPRITE_HEIGHT } from './combatSprites';
 
+export function showFortify(scene, { x, y } = {}) {
+  const cx = Number.isFinite(Number(x)) ? Number(x) : W / 2;
+  const cy = Number.isFinite(Number(y)) ? Number(y) - 42 : FLOOR_Y - 42;
+  const shield = scene.add.graphics().setDepth(10);
+  shield.lineStyle(4, 0x60a5fa, 0.92);
+  shield.fillStyle(0x1d4ed8, 0.14);
+  shield.beginPath();
+  shield.moveTo(cx, cy - 44);
+  shield.lineTo(cx + 36, cy - 22);
+  shield.lineTo(cx + 28, cy + 28);
+  shield.lineTo(cx, cy + 48);
+  shield.lineTo(cx - 28, cy + 28);
+  shield.lineTo(cx - 36, cy - 22);
+  shield.closePath();
+  shield.fillPath();
+  shield.strokePath();
+  scene.tweens.add({
+    targets: shield,
+    alpha: 0,
+    scaleX: 1.35,
+    scaleY: 1.35,
+    duration: 520,
+    ease: 'Power2',
+    onComplete: () => { if (shield.active) shield.destroy(); },
+  });
+  scene._showCombatText?.(cx, cy - 58, 'FORTIFY', '#93c5fd', '16px');
+}
+
+export function showPhaseStep(scene, { fromX, fromY, toX } = {}) {
+  showBlink(scene, { fromX, fromY, toX, abilityKey: 'mage_phase_step', mode: 'phase_step' });
+}
+
+export function showSmokeVeil(scene, { fromX, fromY, toX, targetX, targetY, backstabReady = false } = {}) {
+  showBlink(scene, {
+    fromX,
+    fromY,
+    toX,
+    targetX,
+    targetY,
+    abilityKey: 'rogue_smoke_veil',
+    mode: 'smoke_veil',
+    backstabReady,
+  });
+}
+
 // ── Warrior: Guardbreak ───────────────────────────────────────────────────────
 export function showGuardBreak(scene, { fromX, fromY, toX, toY, hit } = {}) {
   const asNumber = (value, fallback) => {
@@ -72,8 +117,8 @@ export function showGuardBreak(scene, { fromX, fromY, toX, toY, hit } = {}) {
 // ── Warrior: Bash ─────────────────────────────────────────────────────────────
 export function showBash(scene, { x, y, hit = true, abilityKey = '' } = {}) {
   const variant = {
-    warrior_titan_bash: { label: 'TITAN BASH!', text: '#facc15', stroke: 0xfacc15, flash: 0xfacc15, sx: 13, sy: 6.4, shake: 0.013 },
-    warrior_bash:    { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 },
+    warrior_titan_bash: { label: 'TITAN SLAM!', text: '#facc15', stroke: 0xfacc15, flash: 0xfacc15, sx: 14, sy: 7.0, shake: 0.014 },
+    warrior_bash:    { label: 'CLEAVE!', text: '#f97316', stroke: 0xfb923c, flash: 0xf97316, sx: 8, sy: 3.4, shake: 0.006 },
     warrior_default: { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 },
   }[abilityKey] || { label: 'BASH!', text: '#ff6600', stroke: 0xff4400, flash: 0xff4400, sx: 10, sy: 5, shake: 0.009 };
   const ring = scene.add.circle(x, y, 10, 0xff6600, 0).setDepth(8);
@@ -87,6 +132,48 @@ export function showBash(scene, { x, y, hit = true, abilityKey = '' } = {}) {
     targets: ring, scaleX: variant.sx, scaleY: variant.sy, alpha: 0,
     duration: 400, ease: 'Power2', onComplete: () => ring.destroy(),
   });
+  if (abilityKey === 'warrior_bash') {
+    const slash = scene.add.graphics().setDepth(9);
+    slash.lineStyle(7, 0xf97316, 0.92);
+    slash.beginPath();
+    slash.moveTo(x - 46, y - 42);
+    slash.lineTo(x + 48, y + 8);
+    slash.strokePath();
+    slash.lineStyle(3, 0xfef3c7, 0.88);
+    slash.beginPath();
+    slash.moveTo(x - 34, y - 50);
+    slash.lineTo(x + 58, y - 2);
+    slash.strokePath();
+    scene.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scaleX: 1.25,
+      scaleY: 1.25,
+      duration: 280,
+      ease: 'Power2',
+      onComplete: () => { if (slash.active) slash.destroy(); },
+    });
+  }
+  if (abilityKey === 'warrior_titan_bash') {
+    const crack = scene.add.graphics().setDepth(9);
+    crack.lineStyle(4, 0xfacc15, 0.9);
+    for (let i = -2; i <= 2; i += 1) {
+      const startX = x + i * 18;
+      crack.beginPath();
+      crack.moveTo(startX, y + 8);
+      crack.lineTo(startX + i * 10, y + 34);
+      crack.lineTo(startX + i * 18, y + 48);
+      crack.strokePath();
+    }
+    scene.tweens.add({
+      targets: crack,
+      alpha: 0,
+      scaleY: 1.25,
+      duration: 420,
+      ease: 'Power2',
+      onComplete: () => { if (crack.active) crack.destroy(); },
+    });
+  }
   const flash = scene.add.rectangle(W / 2, H / 2, W, H, variant.flash, abilityKey === 'warrior_titan_bash' ? 0.16 : 0.1).setDepth(7);
   scene.tweens.add({ targets: flash, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
   scene._showCombatText?.(x, y - 34, hit ? 'HIT' : 'MISS', hit ? '#facc15' : '#94a3b8');
@@ -98,7 +185,7 @@ export function showFireball(scene, { fromX, fromY, toX, toY, hit = true, abilit
   const variant = {
     mage_inferno_blast: { label: 'INFERNO!', color: '#fb7185', ball: 0xdc2626, core: 0xfef08a, tints: [0xdc2626, 0xfb7185, 0xfef08a], radius: 15, blast: 1.9, shake: 0.008 },
     mage_ember_bolt: { label: 'EMBER!', color: '#f97316', ball: 0xf97316, core: 0xffee00, tints: [0xf97316, 0xffaa00, 0xffee00], radius: 9, blast: 1.25, shake: 0.004 },
-    mage_fireball: { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 },
+    mage_fireball: { label: 'FLARE!', color: '#fbbf24', ball: 0xf59e0b, core: 0xfef3c7, tints: [0xfbbf24, 0xf97316, 0xfef3c7], radius: 8, blast: 1.12, shake: 0.003 },
     mage_default: { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 },
   }[abilityKey] || { label: 'FIREBALL!', color: '#ff4400', ball: 0xff4400, core: 0xffee00, tints: [0xff6600, 0xff2200, 0xffee00], radius: 11, blast: 1.5, shake: 0.005 };
   const ball = scene.add.circle(fromX, fromY - 30, variant.radius, variant.ball).setDepth(9);
@@ -173,9 +260,11 @@ export function showBlink(scene, {
   abilityKey = '',
 } = {}) {
   const variant = {
-    rogue_nightfall: { label: 'NIGHTFALL!', color: '#a855f7', fill: 0xa855f7, tints: [0xa855f7, 0x6366f1, 0xf0abfc], qty: 22, scale: 1.9 },
+    mage_phase_step: { label: 'PHASE STEP!', color: '#93c5fd', fill: 0x60a5fa, tints: [0x60a5fa, 0x38bdf8, 0xdbeafe], qty: 14, scale: 1.45 },
+    rogue_smoke_veil: { label: 'SMOKE VEIL!', color: '#cbd5e1', fill: 0x64748b, tints: [0x64748b, 0x0f172a, 0xe2e8f0], qty: 20, scale: 1.8 },
+    rogue_nightfall: { label: 'AMBUSH!', color: '#f472b6', fill: 0xc026d3, tints: [0xc026d3, 0x581c87, 0xf0abfc], qty: 24, scale: 2.05 },
     rogue_shadowstep: { label: 'SHADOWSTEP!', color: '#38bdf8', fill: 0x38bdf8, tints: [0x38bdf8, 0x0f172a, 0xa5f3fc], qty: 16, scale: 1.6 },
-    rogue_blink: { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 },
+    rogue_blink: { label: 'QUICKSTEP!', color: '#fb7185', fill: 0xfb7185, tints: [0xfb7185, 0xf43f5e, 0xfecdd3], qty: 10, scale: 1.2 },
     rogue_default: { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 },
   }[abilityKey] || { label: 'BLINK!', color: '#00ffcc', fill: 0x00ffcc, tints: [0x00ffcc, 0x00ccaa, 0xaaffee], qty: 12, scale: 1.4 };
   const centerY = fromY - SPRITE_HEIGHT / 2;
@@ -233,6 +322,29 @@ export function showBlink(scene, {
     }
     const flash = scene.add.circle(toX, fromY - 30, 22, variant.fill, 0.8).setDepth(6);
     scene.tweens.add({ targets: flash, scaleX: 4.5, scaleY: 4.5, alpha: 0, duration: 320, ease: 'Power2', onComplete: () => { if (flash.active) flash.destroy(); } });
+
+    if (abilityKey === 'rogue_blink' || abilityKey === 'rogue_nightfall') {
+      const slash = scene.add.graphics().setDepth(10);
+      slash.lineStyle(abilityKey === 'rogue_nightfall' ? 6 : 4, variant.fill, 0.92);
+      slash.beginPath();
+      slash.moveTo(toX - 28, fromY - 54);
+      slash.lineTo(toX + 30, fromY - 18);
+      slash.strokePath();
+      slash.lineStyle(2, 0xffffff, 0.65);
+      slash.beginPath();
+      slash.moveTo(toX - 20, fromY - 62);
+      slash.lineTo(toX + 38, fromY - 26);
+      slash.strokePath();
+      scene.tweens.add({
+        targets: slash,
+        alpha: 0,
+        scaleX: abilityKey === 'rogue_nightfall' ? 1.55 : 1.25,
+        scaleY: abilityKey === 'rogue_nightfall' ? 1.55 : 1.25,
+        duration: abilityKey === 'rogue_nightfall' ? 420 : 280,
+        ease: 'Power2',
+        onComplete: () => { if (slash.active) slash.destroy(); },
+      });
+    }
 
     if (backstabReady && Number.isFinite(Number(targetX))) {
       const markX = Number(targetX);

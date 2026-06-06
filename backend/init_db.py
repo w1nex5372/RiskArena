@@ -77,6 +77,35 @@ CREATE TABLE IF NOT EXISTS promo_uses (
     UNIQUE(code, telegram_id)
 );
 
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id             BIGSERIAL PRIMARY KEY,
+    actor_user_id  VARCHAR(36),
+    target_user_id VARCHAR(36),
+    action         VARCHAR(100) NOT NULL,
+    reason         TEXT NOT NULL DEFAULT '',
+    before_data    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    after_data     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit_log(target_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS game_events (
+    id          VARCHAR(36) PRIMARY KEY,
+    name        VARCHAR(120) NOT NULL,
+    event_type  VARCHAR(60) NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    config      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    starts_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ends_at     TIMESTAMPTZ,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by  VARCHAR(36),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_game_events_active ON game_events(is_active, starts_at, ends_at);
+
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id       ON users(telegram_id);
 CREATE INDEX IF NOT EXISTS idx_users_telegram_username ON users(telegram_username);
 CREATE INDEX IF NOT EXISTS idx_users_token_balance     ON users(token_balance DESC);
@@ -628,6 +657,223 @@ async def init():
             seed_rows(),
         )
         await conn.execute("""
+            WITH renames(class_name, tier, old_name, new_name) AS (
+                VALUES
+                    ('warrior', 'common',    'Bash Sigil',          'Cleave Sigil'),
+                    ('warrior', 'rare',      'Titan Bash Sigil',    'Titan Slam Sigil'),
+                    ('warrior', 'epic',      'Colossus Bash Sigil', 'Colossus Slam Sigil'),
+                    ('mage',    'common',    'Fireball Rune',       'Flare Bolt Rune'),
+                    ('rogue',   'common',    'Blink Charm',         'Quickstep Charm')
+            ),
+            pairs AS (
+                SELECT old_i.id AS old_id, new_i.id AS new_id, new_i.name AS new_name
+                FROM renames r
+                JOIN items old_i
+                  ON old_i.class_name = r.class_name
+                 AND old_i.slot = 'ability'
+                 AND old_i.tier = r.tier
+                 AND old_i.name = r.old_name
+                JOIN items new_i
+                  ON new_i.class_name = r.class_name
+                 AND new_i.slot = 'ability'
+                 AND new_i.tier = r.tier
+                 AND new_i.name = r.new_name
+            )
+            UPDATE inventory inv
+            SET item_id = pairs.new_id,
+                item_name = pairs.new_name
+            FROM pairs
+            WHERE inv.item_id = pairs.old_id;
+
+            WITH renames(class_name, tier, old_name, new_name) AS (
+                VALUES
+                    ('warrior', 'common',    'Bash Sigil',          'Cleave Sigil'),
+                    ('warrior', 'rare',      'Titan Bash Sigil',    'Titan Slam Sigil'),
+                    ('warrior', 'epic',      'Colossus Bash Sigil', 'Colossus Slam Sigil'),
+                    ('mage',    'common',    'Fireball Rune',       'Flare Bolt Rune'),
+                    ('rogue',   'common',    'Blink Charm',         'Quickstep Charm')
+            ),
+            pairs AS (
+                SELECT old_i.id AS old_id, new_i.id AS new_id
+                FROM renames r
+                JOIN items old_i
+                  ON old_i.class_name = r.class_name
+                 AND old_i.slot = 'ability'
+                 AND old_i.tier = r.tier
+                 AND old_i.name = r.old_name
+                JOIN items new_i
+                  ON new_i.class_name = r.class_name
+                 AND new_i.slot = 'ability'
+                 AND new_i.tier = r.tier
+                 AND new_i.name = r.new_name
+            )
+            UPDATE equipped_items ei
+            SET item_id = pairs.new_id
+            FROM pairs
+            WHERE ei.item_id = pairs.old_id;
+
+            WITH renames(class_name, tier, old_name, new_name) AS (
+                VALUES
+                    ('warrior', 'common',    'Bash Sigil',          'Cleave Sigil'),
+                    ('warrior', 'rare',      'Titan Bash Sigil',    'Titan Slam Sigil'),
+                    ('warrior', 'epic',      'Colossus Bash Sigil', 'Colossus Slam Sigil'),
+                    ('mage',    'common',    'Fireball Rune',       'Flare Bolt Rune'),
+                    ('rogue',   'common',    'Blink Charm',         'Quickstep Charm')
+            ),
+            pairs AS (
+                SELECT old_i.id AS old_id, new_i.id AS new_id
+                FROM renames r
+                JOIN items old_i
+                  ON old_i.class_name = r.class_name
+                 AND old_i.slot = 'ability'
+                 AND old_i.tier = r.tier
+                 AND old_i.name = r.old_name
+                JOIN items new_i
+                  ON new_i.class_name = r.class_name
+                 AND new_i.slot = 'ability'
+                 AND new_i.tier = r.tier
+                 AND new_i.name = r.new_name
+            )
+            UPDATE daily_chest_claims dcc
+            SET item_id = pairs.new_id
+            FROM pairs
+            WHERE dcc.item_id = pairs.old_id;
+
+            WITH renames(class_name, tier, old_name, new_name) AS (
+                VALUES
+                    ('warrior', 'common',    'Bash Sigil',          'Cleave Sigil'),
+                    ('warrior', 'rare',      'Titan Bash Sigil',    'Titan Slam Sigil'),
+                    ('warrior', 'epic',      'Colossus Bash Sigil', 'Colossus Slam Sigil'),
+                    ('mage',    'common',    'Fireball Rune',       'Flare Bolt Rune'),
+                    ('rogue',   'common',    'Blink Charm',         'Quickstep Charm')
+            ),
+            pairs AS (
+                SELECT old_i.id AS old_id
+                FROM renames r
+                JOIN items old_i
+                  ON old_i.class_name = r.class_name
+                 AND old_i.slot = 'ability'
+                 AND old_i.tier = r.tier
+                 AND old_i.name = r.old_name
+                JOIN items new_i
+                  ON new_i.class_name = r.class_name
+                 AND new_i.slot = 'ability'
+                 AND new_i.tier = r.tier
+                 AND new_i.name = r.new_name
+            )
+            DELETE FROM items i
+            USING pairs
+            WHERE i.id = pairs.old_id;
+        """)
+        await conn.execute("""
+            WITH renames(class_name, tier, old_name, new_name) AS (
+                VALUES
+                    ('warrior', 'common',    'Bash Sigil',          'Cleave Sigil'),
+                    ('warrior', 'rare',      'Titan Bash Sigil',    'Titan Slam Sigil'),
+                    ('warrior', 'epic',      'Colossus Bash Sigil', 'Colossus Slam Sigil'),
+                    ('mage',    'common',    'Fireball Rune',       'Flare Bolt Rune'),
+                    ('rogue',   'common',    'Blink Charm',         'Quickstep Charm')
+            ),
+            pairs AS (
+                SELECT old_i.id AS old_id, new_i.id AS new_id
+                FROM renames r
+                JOIN items old_i
+                  ON old_i.class_name = r.class_name
+                 AND old_i.slot = 'ability'
+                 AND old_i.tier = r.tier
+                 AND old_i.name = r.old_name
+                JOIN items new_i
+                  ON new_i.class_name = r.class_name
+                 AND new_i.slot = 'ability'
+                 AND new_i.tier = r.tier
+                 AND new_i.name = r.new_name
+            )
+            UPDATE equipped_items ei
+            SET item_id = pairs.new_id
+            FROM pairs
+            WHERE ei.item_id = pairs.old_id;
+        """)
+        await conn.execute("""
+            WITH renames(class_name, tier, old_name, new_name) AS (
+                VALUES
+                    ('warrior', 'common',    'Bash Sigil',          'Cleave Sigil'),
+                    ('warrior', 'rare',      'Titan Bash Sigil',    'Titan Slam Sigil'),
+                    ('warrior', 'epic',      'Colossus Bash Sigil', 'Colossus Slam Sigil'),
+                    ('mage',    'common',    'Fireball Rune',       'Flare Bolt Rune'),
+                    ('rogue',   'common',    'Blink Charm',         'Quickstep Charm')
+            ),
+            pairs AS (
+                SELECT old_i.id AS old_id, new_i.id AS new_id
+                FROM renames r
+                JOIN items old_i
+                  ON old_i.class_name = r.class_name
+                 AND old_i.slot = 'ability'
+                 AND old_i.tier = r.tier
+                 AND old_i.name = r.old_name
+                JOIN items new_i
+                  ON new_i.class_name = r.class_name
+                 AND new_i.slot = 'ability'
+                 AND new_i.tier = r.tier
+                 AND new_i.name = r.new_name
+            )
+            UPDATE daily_chest_claims dcc
+            SET item_id = pairs.new_id
+            FROM pairs
+            WHERE dcc.item_id = pairs.old_id;
+        """)
+        await conn.execute("""
+            WITH renames(class_name, tier, old_name, new_name) AS (
+                VALUES
+                    ('warrior', 'common',    'Bash Sigil',          'Cleave Sigil'),
+                    ('warrior', 'rare',      'Titan Bash Sigil',    'Titan Slam Sigil'),
+                    ('warrior', 'epic',      'Colossus Bash Sigil', 'Colossus Slam Sigil'),
+                    ('mage',    'common',    'Fireball Rune',       'Flare Bolt Rune'),
+                    ('rogue',   'common',    'Blink Charm',         'Quickstep Charm')
+            ),
+            pairs AS (
+                SELECT old_i.id AS old_id
+                FROM renames r
+                JOIN items old_i
+                  ON old_i.class_name = r.class_name
+                 AND old_i.slot = 'ability'
+                 AND old_i.tier = r.tier
+                 AND old_i.name = r.old_name
+                JOIN items new_i
+                  ON new_i.class_name = r.class_name
+                 AND new_i.slot = 'ability'
+                 AND new_i.tier = r.tier
+                 AND new_i.name = r.new_name
+            )
+            DELETE FROM items i
+            USING pairs
+            WHERE i.id = pairs.old_id;
+        """)
+        await conn.execute("""
+            WITH renames(class_name, tier, old_name, new_name) AS (
+                VALUES
+                    ('warrior', 'common',    'Bash Sigil',          'Cleave Sigil'),
+                    ('warrior', 'rare',      'Titan Bash Sigil',    'Titan Slam Sigil'),
+                    ('warrior', 'epic',      'Colossus Bash Sigil', 'Colossus Slam Sigil'),
+                    ('mage',    'common',    'Fireball Rune',       'Flare Bolt Rune'),
+                    ('rogue',   'common',    'Blink Charm',         'Quickstep Charm')
+            )
+            UPDATE items i
+            SET name = r.new_name
+            FROM renames r
+            WHERE i.class_name = r.class_name
+              AND i.slot = 'ability'
+              AND i.tier = r.tier
+              AND i.name = r.old_name
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM items existing
+                  WHERE existing.class_name = r.class_name
+                    AND existing.slot = 'ability'
+                    AND existing.tier = r.tier
+                    AND existing.name = r.new_name
+              );
+        """)
+        await conn.execute("""
             UPDATE items SET image_path = '/items/warrior_sword.png'
             WHERE class_name = 'warrior' AND slot = 'weapon' AND image_path = '/items/warrior_weapon.png';
             UPDATE items SET image_path = '/items/mage_staff.png'
@@ -675,6 +921,25 @@ async def init():
                     );
                     ALTER TABLE equipped_items DROP CONSTRAINT IF EXISTS equipped_items_pkey;
                     ALTER TABLE equipped_items ADD PRIMARY KEY (user_id, slot, class_name);
+                END IF;
+            END;
+            $$;
+        """)
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'boss_raid_rewards' AND column_name = 'scroll_drop'
+                ) THEN
+                    ALTER TABLE boss_raid_rewards ADD COLUMN scroll_drop VARCHAR(20);
+                END IF;
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = 'daily_chest_claims' AND column_name = 'scroll_type'
+                ) THEN
+                    ALTER TABLE daily_chest_claims ADD COLUMN scroll_type TEXT
+                        CHECK (scroll_type IS NULL OR scroll_type IN ('normal_scroll', 'blessed_scroll'));
                 END IF;
             END;
             $$;

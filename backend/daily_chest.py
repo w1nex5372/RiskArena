@@ -7,6 +7,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from itemization import tier_to_rarity
+from event_effects import active_event_config
 
 ITEM_DROP_CHANCES = (
     ("common", 0.35),
@@ -14,6 +15,12 @@ ITEM_DROP_CHANCES = (
     ("rare", 0.05),
     ("epic", 0.02),
     ("legendary", 0.003),
+)
+# Scroll drop chances (independent roll, separate from item tier)
+# 20% normal_scroll, 4% blessed_scroll
+SCROLL_CHANCES = (
+    ("normal_scroll", 0.20),
+    ("blessed_scroll", 0.04),
 )
 COIN_MIN = 20
 COIN_MAX = 80
@@ -58,12 +65,22 @@ def roll_item_tier(roll: float) -> Optional[str]:
     return None
 
 
+def roll_scroll_type(roll: float) -> Optional[str]:
+    cursor = 0.0
+    for scroll_type, chance in SCROLL_CHANCES:
+        cursor += chance
+        if roll < round(cursor, 10):
+            return scroll_type
+    return None
+
+
 def roll_daily_chest_reward(rng: Optional[Any] = None) -> Dict[str, Any]:
     rng = rng or random.SystemRandom()
     return {
         "coins": int(rng.randint(COIN_MIN, COIN_MAX)),
         "xp": int(rng.randint(XP_MIN, XP_MAX)),
         "item_tier": roll_item_tier(float(rng.random())),
+        "scroll_type": roll_scroll_type(float(rng.random())),
     }
 
 
@@ -87,7 +104,7 @@ async def get_daily_chest_state(conn, user_id: str, now: Optional[datetime] = No
     timing = chest_timing(now)
     row = await conn.fetchrow(
         """
-        SELECT claimed_at, reward_coins, reward_xp, item_tier, item_id, inventory_id
+        SELECT claimed_at, reward_coins, reward_xp, item_tier, item_id, inventory_id, scroll_type
         FROM daily_chest_claims
         WHERE user_id = $1 AND claim_date = $2::date
         """,
@@ -103,6 +120,7 @@ async def get_daily_chest_state(conn, user_id: str, now: Optional[datetime] = No
             "item_tier": row["item_tier"],
             "item_id": int(row["item_id"]) if row["item_id"] is not None else None,
             "inventory_id": row["inventory_id"],
+            "scroll_type": row["scroll_type"],
             "claimed_at": row["claimed_at"].isoformat().replace("+00:00", "Z") if row["claimed_at"] else None,
         }
     return {
@@ -159,6 +177,14 @@ async def claim_daily_chest_in_transaction(
         raise ValueError("Daily chest already claimed")
 
     reward = roll_daily_chest_reward(rng)
+    event_config = await active_event_config(conn)
+    reward["coins"] = max(0, round(reward["coins"] * float(event_config.get("coin_multiplier", 1) or 1)))
+    reward["xp"] = max(0, round(reward["xp"] * float(event_config.get("xp_multiplier", 1) or 1)))
+    legendary_multiplier = max(1.0, float(event_config.get("legendary_drop_multiplier", 1) or 1))
+    if reward["item_tier"] != "legendary" and legendary_multiplier > 1:
+        event_rng = rng or random.SystemRandom()
+        if float(event_rng.random()) < min(1.0, 0.003 * (legendary_multiplier - 1)):
+            reward["item_tier"] = "legendary"
     user_row = await conn.fetchrow(
         """
         UPDATE users
@@ -201,6 +227,20 @@ async def claim_daily_chest_in_transaction(
                 item["id"],
             )
 
+    scroll_type = reward.get("scroll_type")
+    if scroll_type:
+        await conn.execute(
+            """
+            INSERT INTO item_scrolls (user_id, scroll_type, quantity, updated_at)
+            VALUES ($1, $2, 1, NOW())
+            ON CONFLICT (user_id, scroll_type) DO UPDATE
+                SET quantity = item_scrolls.quantity + 1,
+                    updated_at = NOW()
+            """,
+            user_id,
+            scroll_type,
+        )
+
     await conn.execute(
         """
         UPDATE daily_chest_claims
@@ -208,7 +248,8 @@ async def claim_daily_chest_in_transaction(
             reward_xp = $4,
             item_tier = $5,
             item_id = $6,
-            inventory_id = $7
+            inventory_id = $7,
+            scroll_type = $8
         WHERE user_id = $1 AND claim_date = $2::date
         """,
         user_id,
@@ -218,6 +259,7 @@ async def claim_daily_chest_in_transaction(
         reward["item_tier"],
         item["id"] if item else None,
         inventory_id,
+        scroll_type,
     )
 
     timing = chest_timing(now)
@@ -228,6 +270,7 @@ async def claim_daily_chest_in_transaction(
         "reward_xp": reward["xp"],
         "item_drop": item_drop,
         "inventory_id": inventory_id,
+        "scroll_drop": scroll_type,
         "new_balance": int(user_row["token_balance"]),
         "new_xp": int(user_row["xp"]),
         "new_level": int(user_row["level"]),

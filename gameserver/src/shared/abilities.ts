@@ -17,6 +17,7 @@ export type AbilityMeta = {
   offset?: number;
   cooldown_ms?: number;
   ignore_block?: boolean;
+  [key: string]: any;
 };
 
 // Reikšmingas: kelias toks pat kaip ArenaRoom naudojo anksčiau — iš src/shared/ ir

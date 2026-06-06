@@ -12,6 +12,7 @@
       "base_hp": 165,
       "move_speed": 7.6,
       "default_ability_key": "warrior_guardbreak",
+      "utility_ability_key": "warrior_fortify",
       "basic_attack": {
         "kind": "melee",
         "range": 86,
@@ -56,6 +57,7 @@
       "base_hp": 95,
       "move_speed": 7,
       "default_ability_key": "mage_default",
+      "utility_ability_key": "mage_phase_step",
       "basic_attack": {
         "kind": "projectile",
         "range": 150,
@@ -100,6 +102,7 @@
       "base_hp": 105,
       "move_speed": 9.4,
       "default_ability_key": "rogue_default",
+      "utility_ability_key": "rogue_smoke_veil",
       "basic_attack": {
         "kind": "melee",
         "range": 76,

@@ -9,13 +9,10 @@ import { getStoredSessionToken } from '../../utils/storage';
 import WeaponIcon from '../WeaponIcon';
 import ArmorIcon from '../ArmorIcon';
 import { BattleControlsOverlay, ABILITY_NAMES } from './BattleControls';
+import BattleSkillLoadout from './BattleSkillLoadout';
+import { resolveGameServerUrl } from '../../utils/gameServerUrl';
 
-const GAME_SERVER_URL = process.env.REACT_APP_GAME_SERVER_URL || (() => {
-  const override = new URLSearchParams(window.location.search).get('gameServerUrl');
-  if (override) return override;
-
-  return `${window.location.origin}/colyseus`;
-})();
+const GAME_SERVER_URL = resolveGameServerUrl();
 
 function formatConnectionError(err) {
   if (!err) return 'Could not connect to game server';
@@ -67,7 +64,7 @@ function buildResultPayload(room) {
 // Game world dimensions
 const GAME_W = 800;
 const GAME_H = 420;
-const EMPTY_INPUT = { left: false, right: false, attack: false, ability: false, itemAbility: false, up: false, block: false };
+const EMPTY_INPUT = { left: false, right: false, attack: false, ability: false, utilityAbility: false, itemAbility: false, up: false, block: false };
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -88,8 +85,10 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const [result, setResult] = useState(null);
   const [dotCount, setDotCount] = useState(1);
   const [abilityReady, setAbilityReady] = useState(true);
+  const [utilityAbilityReady, setUtilityAbilityReady] = useState(true);
   const [itemAbilityReady, setItemAbilityReady] = useState(true);
   const [abilityCooldownUntil, setAbilityCooldownUntil] = useState(0);
+  const [utilityAbilityCooldownUntil, setUtilityAbilityCooldownUntil] = useState(0);
   const [itemAbilityCooldownUntil, setItemAbilityCooldownUntil] = useState(0);
   const [playerClass, setPlayerClass] = useState('warrior');
   const [activeAbilityKey, setActiveAbilityKey] = useState('');
@@ -147,13 +146,6 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
     if (tg) {
       safeTelegramCall(() => tg.expand?.());
       safeTelegramCall(() => tg.enableClosingConfirmation?.());
-      safeTelegramCall(() => tg.requestFullscreen?.());
-    }
-    try {
-      const lockResult = window.screen?.orientation?.lock?.('landscape');
-      lockResult?.catch?.(() => {});
-    } catch {
-      // Orientation lock is best-effort only; desktop/local browsers often reject it.
     }
 
     const onResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
@@ -162,13 +154,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
     return () => {
       if (tg) {
-        safeTelegramCall(() => tg.exitFullscreen?.());
         safeTelegramCall(() => tg.disableClosingConfirmation?.());
-      }
-      try {
-        window.screen?.orientation?.unlock?.();
-      } catch {
-        // Ignore unsupported orientation APIs during cleanup.
       }
       window.removeEventListener('resize', onResize);
       window.removeEventListener('orientationchange', onResize);
@@ -243,15 +229,19 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         const myPlayer = room.state.players.get(room.sessionId);
         if (myPlayer) {
           setAbilityReady(myPlayer.abilityCharges > 0);
+          setUtilityAbilityReady((myPlayer.utilityAbilityCharges ?? 1) > 0);
           setItemAbilityReady((myPlayer.itemAbilityCharges ?? 1) > 0);
           setAbilityCooldownUntil(Number(myPlayer.abilityCooldownUntil || 0));
+          setUtilityAbilityCooldownUntil(Number(myPlayer.utilityAbilityCooldownUntil || 0));
           setItemAbilityCooldownUntil(Number(myPlayer.itemAbilityCooldownUntil || 0));
           setPlayerClass(myPlayer.characterClass || 'warrior');
           setActiveAbilityKey(String(myPlayer.activeAbilityKey || ''));
           myPlayer.onChange(() => {
             setAbilityReady(myPlayer.abilityCharges > 0);
+            setUtilityAbilityReady((myPlayer.utilityAbilityCharges ?? 1) > 0);
             setItemAbilityReady((myPlayer.itemAbilityCharges ?? 1) > 0);
             setAbilityCooldownUntil(Number(myPlayer.abilityCooldownUntil || 0));
+            setUtilityAbilityCooldownUntil(Number(myPlayer.utilityAbilityCooldownUntil || 0));
             setItemAbilityCooldownUntil(Number(myPlayer.itemAbilityCooldownUntil || 0));
             setActiveAbilityKey(String(myPlayer.activeAbilityKey || ''));
           });
@@ -310,15 +300,19 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         room.state.players.onAdd((player, sid) => {
           if (sid === room.sessionId) {
             setAbilityReady(player.abilityCharges > 0);
+            setUtilityAbilityReady((player.utilityAbilityCharges ?? 1) > 0);
             setItemAbilityReady((player.itemAbilityCharges ?? 1) > 0);
             setAbilityCooldownUntil(Number(player.abilityCooldownUntil || 0));
+            setUtilityAbilityCooldownUntil(Number(player.utilityAbilityCooldownUntil || 0));
             setItemAbilityCooldownUntil(Number(player.itemAbilityCooldownUntil || 0));
             setPlayerClass(player.characterClass || 'warrior');
             setActiveAbilityKey(String(player.activeAbilityKey || ''));
             player.onChange(() => {
               setAbilityReady(player.abilityCharges > 0);
+              setUtilityAbilityReady((player.utilityAbilityCharges ?? 1) > 0);
               setItemAbilityReady((player.itemAbilityCharges ?? 1) > 0);
               setAbilityCooldownUntil(Number(player.abilityCooldownUntil || 0));
+              setUtilityAbilityCooldownUntil(Number(player.utilityAbilityCooldownUntil || 0));
               setItemAbilityCooldownUntil(Number(player.itemAbilityCooldownUntil || 0));
               setActiveAbilityKey(String(player.activeAbilityKey || ''));
             });
@@ -461,6 +455,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', true);
       if (e.key === ' ' || e.key === 'z') setKey('attack', true);
       if (e.key === 'x') setKey('ability', true);
+      if (e.key === 'b') setKey('utilityAbility', true);
       if (e.key === 'v' && equipped?.ability?.ability_key && activeAbilityKey) setKey('itemAbility', true);
       if (e.key === 'Shift' || e.key === 'c') setKey('block', true);
     };
@@ -471,6 +466,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', false);
       if (e.key === ' ' || e.key === 'z') setKey('attack', false);
       if (e.key === 'x') setKey('ability', false);
+      if (e.key === 'b') setKey('utilityAbility', false);
       if (e.key === 'v') setKey('itemAbility', false);
       if (e.key === 'Shift' || e.key === 'c') setKey('block', false);
     };
@@ -688,7 +684,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         const loadoutSlots = [
           { icon: '🗡️', label: 'WEAPON', item: equipped.weapon },
           { icon: '🛡️', label: 'ARMOR',  item: equipped.armor  },
-          { icon: '✨', label: 'ABILITY', item: equipped.ability },
+          { icon: '✨', label: 'ITEM SKILL', item: equipped.ability },
         ];
 
         const classStats = info.stats || {};
@@ -803,6 +799,10 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
                   </div>
                 ))}
               </div>
+              <p style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.1em', color: '#64748b', textTransform: 'uppercase', margin: '8px 0 5px' }}>
+                Battle Skills
+              </p>
+              <BattleSkillLoadout className={cls} equippedAbility={equipped?.ability || null} compact />
             </div>
 
             {/* Leave */}
@@ -822,14 +822,17 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
           showBlock={true}
           playerClass={playerClass}
           abilityReady={abilityReady}
+          utilityAbilityReady={utilityAbilityReady}
           itemAbilityReady={itemAbilityReady}
           abilityCooldownUntil={abilityCooldownUntil}
+          utilityAbilityCooldownUntil={utilityAbilityCooldownUntil}
           itemAbilityCooldownUntil={itemAbilityCooldownUntil}
           equippedAbility={hasEquippedAbility ? equippedAbility : null}
           canAttack={true}
           onJoystick={setDirectionalInput}
           onAttack={() => pulseKey('attack')}
           onAbility={() => pulseKey('ability')}
+          onUtilityAbility={() => pulseKey('utilityAbility')}
           onItemAbility={() => pulseKey('itemAbility')}
           onBlockDown={() => setKey('block', true)}
           onBlockUp={() => setKey('block', false)}

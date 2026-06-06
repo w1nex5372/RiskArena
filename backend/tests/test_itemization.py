@@ -49,6 +49,23 @@ def test_shop_and_drop_rules_match_locked_design():
             assert item["price"] == 0
 
 
+def test_each_class_has_complete_epic_and_legendary_boss_sets():
+    for class_name in ("warrior", "mage", "rogue"):
+        for tier in ("epic", "legendary"):
+            class_slots = {
+                item["slot"]
+                for item in FULL_ITEM_CATALOG
+                if item["class_name"] == class_name and item["tier"] == tier
+            }
+            shared_slots = {
+                item["slot"]
+                for item in FULL_ITEM_CATALOG
+                if item["class_name"] == ANY_CLASS and item["tier"] == tier
+            }
+            assert {"weapon", "armor", "ability"} <= class_slots
+            assert "helmet" in shared_slots
+
+
 def test_passives_follow_current_armor_design():
     # Armor and helmet carry a passive at EVERY tier. Weapon and ability carry a passive
     # ONLY at the drop-only epic/legendary tiers (the boss-set pieces); common/uncommon/

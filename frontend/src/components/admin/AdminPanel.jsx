@@ -4,8 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
+import { toast } from 'sonner';
+import GameMasterPanel from './GameMasterPanel';
 
-function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
+function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket, user }) {
   const [tgId, setTgId] = React.useState('');
   const [tokenAmount, setTokenAmount] = React.useState('');
   const [userInfo, setUserInfo] = React.useState(null);
@@ -411,6 +413,7 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket }) {
         <h2 className="text-xl font-bold text-red-400">🛡️ Admin Panel</h2>
         <p className="text-xs text-slate-500">Only visible to admins</p>
       </div>
+      {(user?.is_owner || user?.role === 'owner') && <GameMasterPanel />}
 
       {/* Live Stats + Maintenance */}
       <div className={card}>

@@ -30,6 +30,7 @@ type ClassMeta = {
   base_hp: number;
   move_speed: number;
   default_ability_key: string;
+  utility_ability_key?: string;
   basic_attack: BasicAttackMeta;
   guard: GuardMeta;
   passives?: string[];
@@ -71,6 +72,7 @@ export function classMeta(className: string): ClassMeta {
     base_hp: Number(meta.base_hp ?? 100),
     move_speed: Number(meta.move_speed ?? 8),
     default_ability_key: String(meta.default_ability_key || `${key}_default`),
+    utility_ability_key: String(meta.utility_ability_key || ""),
     basic_attack: {
       ...DEFAULT_BASIC_ATTACK,
       ...(meta.basic_attack || {}),
@@ -92,6 +94,10 @@ export function classMoveSpeed(className: string): number {
 
 export function classDefaultAbilityKey(className: string): string {
   return classMeta(className).default_ability_key;
+}
+
+export function classUtilityAbilityKey(className: string): string {
+  return classMeta(className).utility_ability_key || "";
 }
 
 export function classBasicAttack(className: string): BasicAttackMeta {

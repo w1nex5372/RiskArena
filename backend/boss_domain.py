@@ -26,6 +26,14 @@ _LOOT_TIERS = [
     (0.005, "legendary"),
 ]
 
+# Scroll drop probabilities (independent roll per participant)
+# 55% none, 35% normal_scroll, 10% blessed_scroll
+_SCROLL_DROPS = [
+    (0.55, None),
+    (0.35, "normal_scroll"),
+    (0.10, "blessed_scroll"),
+]
+
 
 def _roll_loot_tier(rng: random.Random) -> Optional[str]:
     """Roll a single loot tier for one participant. Returns tier string or None."""
@@ -36,6 +44,17 @@ def _roll_loot_tier(rng: random.Random) -> Optional[str]:
         if roll < cumulative:
             return tier
     return None  # fallback (floating-point safety)
+
+
+def _roll_scroll_drop(rng: random.Random) -> Optional[str]:
+    """Independent scroll roll per participant. Returns scroll_type string or None."""
+    roll = rng.random()
+    cumulative = 0.0
+    for prob, scroll_type in _SCROLL_DROPS:
+        cumulative += prob
+        if roll < cumulative:
+            return scroll_type
+    return None
 
 
 
@@ -70,6 +89,7 @@ class ParticipantReward:
     xp: int
     item_drop: Optional[str]
     item_drop_tier: Optional[str] = None
+    scroll_drop: Optional[str] = None
 
 
 def compute_rewards(
@@ -97,6 +117,7 @@ def compute_rewards(
         item_drop_tier: Optional[str] = None
 
         item_drop_tier = _roll_loot_tier(rng)
+        scroll_drop = _roll_scroll_drop(rng)
 
         if user_id == top_user_id:
             coins = int(coins * (1 + TOP_DAMAGE_COINS_BONUS))
@@ -107,6 +128,7 @@ def compute_rewards(
             xp=xp,
             item_drop=item_drop,
             item_drop_tier=item_drop_tier,
+            scroll_drop=scroll_drop,
         ))
 
     return rewards

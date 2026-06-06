@@ -10,6 +10,7 @@ import {
   classGuard,
   classMoveSpeed,
   classPassiveEffects,
+  classUtilityAbilityKey,
 } from "../shared/classes";
 // Shared ability metadata helpers — single source of truth (also used by BossRaidRoom)
 import {
@@ -74,7 +75,7 @@ export class ArenaRoom extends Room<ArenaState> {
 
     // Client sends its current input state (held keys)
     this.onMessage("input", (client, data: {
-      left: boolean; right: boolean; attack: boolean; ability: boolean; itemAbility?: boolean; up: boolean; block?: boolean
+      left: boolean; right: boolean; attack: boolean; ability: boolean; utilityAbility?: boolean; itemAbility?: boolean; up: boolean; block?: boolean
     }) => {
       const player = this.state.players.get(client.sessionId);
       if (player && this.state.phase === "battle") {
@@ -83,6 +84,7 @@ export class ArenaRoom extends Room<ArenaState> {
           right: !!data.right,
           attack: !!data.attack,
           ability: !!data.ability,
+          utilityAbility: !!data.utilityAbility,
           itemAbility: !!data.itemAbility,
           up: !!data.up,
           block: !!data.block,
@@ -285,6 +287,9 @@ export class ArenaRoom extends Room<ArenaState> {
       if (player.abilityCharges === 0 && now >= player.abilityCooldownUntil) {
         player.abilityCharges = 1;
       }
+      if (player.utilityAbilityCharges === 0 && now >= player.utilityAbilityCooldownUntil) {
+        player.utilityAbilityCharges = 1;
+      }
       if (player.itemAbilityCharges === 0 && now >= player.itemAbilityCooldownUntil) {
         player.itemAbilityCharges = 1;
       }
@@ -297,6 +302,7 @@ export class ArenaRoom extends Room<ArenaState> {
       const input = player.inputState;
       const attackPressed = input.attack && !player.previousInputState.attack;
       const abilityPressed = input.ability && !player.previousInputState.ability;
+      const utilityAbilityPressed = input.utilityAbility && !player.previousInputState.utilityAbility;
       const itemAbilityPressed = input.itemAbility && !player.previousInputState.itemAbility;
 
       if (player.isStunned) {
@@ -453,6 +459,15 @@ export class ArenaRoom extends Room<ArenaState> {
           }
         }
 
+        if (!actionLocked && player.state !== "attacking" && !player.isBlocking && utilityAbilityPressed && player.utilityAbilityCharges > 0) {
+          const abilityKey = classUtilityAbilityKey(player.characterClass);
+          if (!this.executeAbility(sessionId, player, abilityKey, now, "utility")) {
+            player.utilityAbilityCharges = 1;
+            player.state = "idle";
+            player.attackUntil = 0;
+          }
+        }
+
         if (!actionLocked && player.state !== "attacking" && !player.isBlocking && itemAbilityPressed && player.itemAbilityCharges > 0 && this.isItemAbilityAllowedForClass(player.characterClass, player.activeAbilityKey)) {
           if (!this.executeAbility(sessionId, player, player.activeAbilityKey, now, "item")) {
             player.itemAbilityCharges = 1;
@@ -477,6 +492,7 @@ export class ArenaRoom extends Room<ArenaState> {
       player.previousInputState = {
         attack: input.attack,
         ability: input.ability,
+        utilityAbility: input.utilityAbility,
         itemAbility: input.itemAbility,
       };
     });
@@ -489,7 +505,7 @@ export class ArenaRoom extends Room<ArenaState> {
     player: Player,
     abilityKey: string,
     now: number,
-    slot: "class" | "item",
+    slot: "class" | "utility" | "item",
   ): boolean {
     const meta = abilityMeta(abilityKey);
     const abilityType = String(meta?.type || "");
@@ -504,6 +520,9 @@ export class ArenaRoom extends Room<ArenaState> {
     if (slot === "class") {
       player.abilityCharges = 0;
       player.abilityCooldownUntil = now + cooldownMs;
+    } else if (slot === "utility") {
+      player.utilityAbilityCharges = 0;
+      player.utilityAbilityCooldownUntil = now + cooldownMs;
     } else {
       player.itemAbilityCharges = 0;
       player.itemAbilityCooldownUntil = now + this.itemAbilityCooldownMs(player, cooldownMs);
@@ -512,6 +531,7 @@ export class ArenaRoom extends Room<ArenaState> {
     player.attackUntil = now + ATTACK_ANIM_MS;
     player.skillUses += 1;
     if (slot === "class") player.classSkillUses += 1;
+    if (slot === "utility") player.classSkillUses += 1;
     if (slot === "item") player.itemSkillUses += 1;
     this.broadcast("weapon_swing", { sessionId, cls });
     this.broadcast("ability_cast", {
@@ -526,6 +546,57 @@ export class ArenaRoom extends Room<ArenaState> {
       range: this.abilityFallbackRange(abilityType, meta),
       cooldownMs,
     });
+
+    if (abilityType === "guard_boost") {
+      const restore = abilityNumber(meta, "guard_restore", 40);
+      const before = player.guard;
+      player.guard = Math.min(player.maxGuard, player.guard + restore);
+      player.guardBroken = false;
+      player.guardBrokenUntil = 0;
+      player.guardRegenPausedUntil = 0;
+      this.broadcast("ability_used", {
+        sessionId, cls, abilityKey, slot,
+        fromX: player.x, fromY: player.y, toX: player.x, toY: player.y,
+        hit: true, guardBefore: before, guardAfter: player.guard, restore, cooldownMs,
+      });
+      return true;
+    }
+
+    if (abilityType === "phase_step" || abilityType === "smoke_veil") {
+      const offset = abilityNumber(meta, "offset", abilityType === "phase_step" ? 96 : 74);
+      const oldX = player.x;
+      let dir = player.facingRight ? -1 : 1;
+      let nearest: Player | null = null;
+      let nearestSid = "";
+      this.state.players.forEach((opp, oppSid) => {
+        if (oppSid === sessionId || opp.state === "dead") return;
+        if (!nearest || Math.abs(player.x - opp.x) < Math.abs(player.x - nearest.x)) {
+          nearest = opp;
+          nearestSid = oppSid;
+        }
+      });
+      if (nearest) {
+        dir = player.x < nearest.x ? -1 : 1;
+      }
+      player.x = Math.max(40, Math.min(ARENA_WIDTH - 40, player.x + dir * offset));
+      if (nearest) player.facingRight = player.x < nearest.x;
+      const backstabWindowMs = abilityType === "smoke_veil"
+        ? abilityNumber(meta, "backstab_window_ms", this.rogueBackstabWindowMs(player))
+        : 0;
+      player.backstabWindowUntil = backstabWindowMs > 0 ? now + backstabWindowMs : 0;
+      player.backstabTargetSid = backstabWindowMs > 0 ? nearestSid : "";
+      this.broadcast("ability_used", {
+        sessionId, cls, abilityKey, slot,
+        fromX: oldX, fromY: player.y, toX: player.x, toY: player.y,
+        hit: true, mode: abilityType, offset, cooldownMs,
+        targetSid: nearestSid,
+        targetX: nearest ? nearest.x : player.x,
+        targetY: nearest ? nearest.y : player.y,
+        backstabReady: backstabWindowMs > 0,
+        backstabWindowMs,
+      });
+      return true;
+    }
 
     if (abilityType === "guardbreak") {
       const range = abilityNumber(meta, "range", GUARDBREAK_RANGE);
@@ -604,6 +675,51 @@ export class ArenaRoom extends Room<ArenaState> {
       return true;
     }
 
+    if (abilityType === "cleave" || abilityType === "slam") {
+      const range = abilityNumber(meta, "range", BASH_RANGE);
+      const damage = abilityNumber(meta, "damage", BASH_DMG);
+      const effectiveDamage = abilityDamage(damage);
+      const knockback = abilityNumber(meta, "knockback", abilityType === "slam" ? 115 : 70);
+      const blockedKnockbackMult = this.clampNumber(abilityNumber(meta, "blocked_knockback_mult", 1), 0, 1, 1);
+      const stunMs = abilityType === "slam" ? abilityNumber(meta, "stun_ms", 0) : 0;
+      let hit = false;
+      let targetX = player.x + (player.facingRight ? range : -range);
+      let targetY = player.y;
+      this.state.players.forEach((opp, oppSid) => {
+        if (oppSid === sessionId || opp.state === "dead") return;
+        const dist  = Math.abs(player.x - opp.x);
+        const yDist = Math.abs(player.y - opp.y);
+        if (dist <= range && this.isTargetInFront(player, opp) && !(opp.isGrounded === false && yDist > 40)) {
+          hit = true;
+          targetX = opp.x;
+          targetY = opp.y;
+          const blockedKnockback = Boolean(!meta.ignore_block && opp.isBlocking && this.isAttackerInFront(opp, player));
+          const appliedKnockback = Math.round(knockback * (blockedKnockback ? blockedKnockbackMult : 1));
+          const dir = opp.x > player.x ? 1 : -1;
+          if (stunMs > 0) {
+            opp.stunUntil = now + stunMs;
+            opp.isStunned = true;
+          }
+          this.dealDamage(sessionId, opp, oppSid, effectiveDamage, now, {
+            source: slot === "class" ? "classAbility" : "itemAbility",
+          });
+          if (opp.state !== "dead") {
+            opp.x = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x + dir * appliedKnockback));
+          }
+        }
+      });
+      if (!hit) {
+        player.misses += 1;
+        this.broadcastCombatFeedback("miss", player, sessionId, "MISS", targetX, targetY);
+      }
+      this.broadcast("ability_used", {
+        sessionId, cls, abilityKey, slot,
+        fromX: player.x, fromY: player.y, toX: targetX, toY: targetY,
+        hit, damage, effectiveDamage, stunMs, knockback, range, cooldownMs,
+      });
+      return true;
+    }
+
     if (abilityType === "projectile") {
       const damage = abilityNumber(meta, "damage", FIREBALL_DMG);
       const effectiveDamage = abilityDamage(damage);
@@ -638,6 +754,58 @@ export class ArenaRoom extends Room<ArenaState> {
           }
         }
       });
+      return true;
+    }
+
+    if (abilityType === "dash_strike" || abilityType === "ambush") {
+      const offset = abilityNumber(meta, "offset", abilityType === "ambush" ? 118 : 58);
+      const range = abilityNumber(meta, "range", offset + 90);
+      const damage = abilityNumber(meta, "damage", abilityType === "ambush" ? 18 : 14);
+      const effectiveDamage = abilityDamage(damage);
+      let used = false;
+      let hit = false;
+      this.state.players.forEach((opp, oppSid) => {
+        if (used) return;
+        if (oppSid === sessionId || opp.state === "dead") return;
+        const dist = Math.abs(player.x - opp.x);
+        if (dist > range + 60) return;
+        const dir = opp.x > player.x ? 1 : -1;
+        const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, opp.x - dir * Math.max(34, offset)));
+        const oldX = player.x;
+        player.x = newX;
+        player.facingRight = player.x < opp.x;
+        hit = dist <= range && Math.abs(player.y - opp.y) <= 52;
+        if (hit) {
+          this.dealDamage(sessionId, opp, oppSid, effectiveDamage, now, {
+            source: slot === "class" ? "classAbility" : "itemAbility",
+          });
+          if (abilityType === "ambush") {
+            player.backstabWindowUntil = now + this.rogueBackstabWindowMs(player);
+            player.backstabTargetSid = oppSid;
+          }
+        }
+        this.broadcast("ability_used", {
+          sessionId, cls, abilityKey, slot,
+          fromX: oldX, fromY: player.y, toX: player.x, toY: player.y,
+          hit, mode: abilityType, targetSid: oppSid, targetX: opp.x, targetY: opp.y,
+          damage, effectiveDamage, range, offset, cooldownMs,
+          backstabReady: abilityType === "ambush" && hit,
+          backstabWindowMs: abilityType === "ambush" && hit ? this.rogueBackstabWindowMs(player) : 0,
+        });
+        used = true;
+      });
+      if (!used) {
+        const dir = player.facingRight ? 1 : -1;
+        const oldX = player.x;
+        const newX = Math.max(40, Math.min(ARENA_WIDTH - 40, player.x + dir * offset));
+        player.x = newX;
+        this.broadcast("ability_used", {
+          sessionId, cls, abilityKey, slot,
+          fromX: oldX, fromY: player.y, toX: newX, toY: player.y,
+          hit: false, mode: abilityType, damage, effectiveDamage, range, offset, cooldownMs,
+        });
+        player.misses += 1;
+      }
       return true;
     }
 
@@ -897,17 +1065,31 @@ export class ArenaRoom extends Room<ArenaState> {
 
   private abilityFallbackCooldownMs(abilityType: string, configuredCooldownMs: number) {
     if (configuredCooldownMs > 0) return configuredCooldownMs;
+    if (abilityType === "guard_boost") return 11000;
+    if (abilityType === "phase_step") return 10500;
+    if (abilityType === "smoke_veil") return 12000;
     if (abilityType === "guardbreak") return GUARDBREAK_COOLDOWN_MS;
     if (abilityType === "bash") return BASH_COOLDOWN_MS;
+    if (abilityType === "cleave") return 6200;
+    if (abilityType === "slam") return 9200;
     if (abilityType === "projectile") return FIREBALL_COOLDOWN_MS;
+    if (abilityType === "dash_strike") return 5200;
+    if (abilityType === "ambush") return 6800;
     if (abilityType === "blink") return BLINK_COOLDOWN_MS;
     return 0;
   }
 
   private abilityFallbackRange(abilityType: string, meta: any) {
     if (abilityType === "guardbreak") return abilityNumber(meta, "range", GUARDBREAK_RANGE);
+    if (abilityType === "guard_boost") return 0;
+    if (abilityType === "phase_step") return abilityNumber(meta, "offset", 96);
+    if (abilityType === "smoke_veil") return abilityNumber(meta, "offset", 74);
     if (abilityType === "bash") return abilityNumber(meta, "range", BASH_RANGE);
+    if (abilityType === "cleave") return abilityNumber(meta, "range", 130);
+    if (abilityType === "slam") return abilityNumber(meta, "range", 145);
     if (abilityType === "projectile") return abilityNumber(meta, "range", ARENA_WIDTH);
+    if (abilityType === "dash_strike") return abilityNumber(meta, "range", 150);
+    if (abilityType === "ambush") return abilityNumber(meta, "range", 210);
     if (abilityType === "blink") return abilityNumber(meta, "range", abilityNumber(meta, "offset", BLINK_OFFSET)) + 120;
     return abilityNumber(meta, "range", 0);
   }

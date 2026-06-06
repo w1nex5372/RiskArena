@@ -49,6 +49,8 @@ from rpc_monitor import rpc_alert_system
 from manual_credit_logger import credit_tokens_manually, ManualCreditLogger
 import socket_rooms
 import arena_repo
+import admin_gm
+import event_effects
 import progression as _progression
 import daily_quests as _daily_quests
 import daily_chest as _daily_chest
@@ -734,12 +736,14 @@ async def _get_and_regen_energy(user_id: str, conn) -> dict:
         last_regen = last_regen.replace(tzinfo=timezone.utc)
 
     max_energy = 10
+    regen_multiplier = max(0.1, await event_effects.multiplier(conn, "energy_regen_multiplier"))
+    regen_interval_seconds = 3600 / regen_multiplier
     if stored < max_energy:
-        hours_passed = int((now - last_regen).total_seconds() // 3600)
-        regen = min(max_energy - stored, hours_passed)
+        intervals_passed = int((now - last_regen).total_seconds() // regen_interval_seconds)
+        regen = min(max_energy - stored, intervals_passed)
         if regen > 0:
             stored += regen
-            last_regen = last_regen + timedelta(hours=regen)
+            last_regen = last_regen + timedelta(seconds=regen * regen_interval_seconds)
             await conn.execute(
                 "UPDATE users SET energy = $1, energy_last_regen = $2 WHERE id = $3",
                 stored, last_regen, user_id
@@ -747,7 +751,7 @@ async def _get_and_regen_energy(user_id: str, conn) -> dict:
 
     next_energy_at = None
     if stored < max_energy:
-        next_energy_at = (last_regen + timedelta(hours=1)).isoformat()
+        next_energy_at = (last_regen + timedelta(seconds=regen_interval_seconds)).isoformat()
 
     return {"energy": stored, "max_energy": max_energy, "next_energy_at": next_energy_at}
 
@@ -2352,8 +2356,9 @@ async def telegram_auth(user_data: UserCreate, response: Response):
         gave_daily_xp = False
         if last_login_raw is None or last_login_raw.date() < now_utc.date():
             cur_xp = int(existing_user.get('xp') or 0)
-            xp_res = _progression.award_xp_result(cur_xp, _progression.XP_DAILY_LOGIN)
             async with get_pool().acquire() as _conn:
+                daily_xp = round(_progression.XP_DAILY_LOGIN * await event_effects.multiplier(_conn, "xp_multiplier"))
+                xp_res = _progression.award_xp_result(cur_xp, daily_xp)
                 await _conn.execute(
                     "UPDATE users SET xp = $2, level = $3, last_login = $4 WHERE telegram_id = $1",
                     telegram_data.id, xp_res["new_xp"], xp_res["new_level"], now_utc,
@@ -5378,6 +5383,12 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
 
         async with get_pool().acquire() as conn:
             async with conn.transaction():
+                xp_multiplier = await event_effects.multiplier(conn, "xp_multiplier")
+                coin_multiplier = await event_effects.multiplier(conn, "coin_multiplier")
+                winner_coins = round(RT_WINNER_COINS * coin_multiplier)
+                loser_coins = round(RT_LOSER_COINS * coin_multiplier)
+                winner_xp = round(RT_WINNER_XP * xp_multiplier)
+                loser_xp = round(RT_LOSER_XP * xp_multiplier)
                 participant_rows = await conn.fetch(
                     "SELECT id, xp FROM users WHERE id = ANY($1::text[]) FOR UPDATE",
                     [winner_id, loser_id],
@@ -5387,7 +5398,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                     raise HTTPException(status_code=404, detail="Match participant not found")
 
                 w_row = participants[winner_id]
-                w_xp_res = _progression.award_xp_result(int(w_row["xp"]), RT_WINNER_XP)
+                w_xp_res = _progression.award_xp_result(int(w_row["xp"]), winner_xp)
                 await conn.execute(
                     """UPDATE users
                        SET token_balance = token_balance + $2,
@@ -5396,7 +5407,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                            wins          = wins + 1
                        WHERE id = $1""",
                     winner_id,
-                    RT_WINNER_COINS,
+                    winner_coins,
                     w_xp_res["new_xp"],
                     w_xp_res["new_level"],
                 )
@@ -5410,7 +5421,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                     winner_id,
                 )
                 new_streak = streak_row["current_win_streak"] if streak_row else 0
-                streak_bonus = _RT_STREAK_MILESTONES.get(new_streak, 0)
+                streak_bonus = round(_RT_STREAK_MILESTONES.get(new_streak, 0) * coin_multiplier)
                 if streak_bonus:
                     await conn.execute(
                         "UPDATE users SET token_balance = token_balance + $2 WHERE id = $1",
@@ -5418,7 +5429,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                     )
 
                 l_row = participants[loser_id]
-                l_xp_res = _progression.award_xp_result(int(l_row["xp"]), RT_LOSER_XP)
+                l_xp_res = _progression.award_xp_result(int(l_row["xp"]), loser_xp)
                 await conn.execute(
                     """UPDATE users
                        SET token_balance      = token_balance + $2,
@@ -5428,7 +5439,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
                            current_win_streak = 0
                        WHERE id = $1""",
                     loser_id,
-                    RT_LOSER_COINS,
+                    loser_coins,
                     l_xp_res["new_xp"],
                     l_xp_res["new_level"],
                 )
@@ -5445,8 +5456,8 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
 
     return {
         "ok": True,
-        "winner_coins": RT_WINNER_COINS,
-        "winner_xp": RT_WINNER_XP,
+        "winner_coins": winner_coins,
+        "winner_xp": winner_xp,
         "winner_level": w_xp_res["new_level"],
         "winner_leveled_up": w_xp_res["leveled_up"],
         "winner_streak": new_streak,
@@ -5514,6 +5525,23 @@ GENERATED_ASSET_ROOT.mkdir(parents=True, exist_ok=True)
 app.mount("/generated", StaticFiles(directory=str(GENERATED_ASSET_ROOT)), name="generated")
 
 # Include the router
+@api_router.get("/events")
+async def get_active_events():
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, name, event_type, description, config, starts_at, ends_at
+            FROM game_events
+            WHERE is_active = TRUE
+              AND starts_at <= NOW()
+              AND (ends_at IS NULL OR ends_at > NOW())
+            ORDER BY starts_at DESC
+            """
+        )
+    return {"events": [json.loads(json.dumps(dict(row), default=str)) for row in rows]}
+
+
+api_router.include_router(admin_gm.router)
 app.include_router(api_router)
 
 # Create Socket.IO ASGI app with custom path
