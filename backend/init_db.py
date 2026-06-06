@@ -944,6 +944,19 @@ async def init():
             END;
             $$;
         """)
+        # Clean up invalid class_name entries (e.g. legacy 'bishop' or test data).
+        # equipped_items rows for unknown classes are orphaned — users can't see or
+        # unequip them, and they block item sales. Wipe them before nulling users.
+        await conn.execute("""
+            DELETE FROM equipped_items
+            WHERE class_name NOT IN ('warrior', 'mage', 'rogue', '');
+        """)
+        await conn.execute("""
+            UPDATE users
+            SET class_name = NULL
+            WHERE class_name IS NOT NULL
+              AND class_name NOT IN ('warrior', 'mage', 'rogue');
+        """)
     finally:
         await conn.close()
 

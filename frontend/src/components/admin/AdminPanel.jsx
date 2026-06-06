@@ -196,6 +196,38 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket, user }) {
     }
   };
 
+  // ── Grant specific item ────────────────────────────────────────────────────
+  const [itemCatalog, setItemCatalog] = React.useState([]);
+  const [selectedItemId, setSelectedItemId] = React.useState('');
+  const [grantingItem, setGrantingItem] = React.useState(false);
+
+  const loadItemCatalog = async () => {
+    try {
+      const r = await apiClient.get('/admin/items-catalog');
+      setItemCatalog(r.data || []);
+    } catch (e) {
+      toast.error('Failed to load item catalog');
+    }
+  };
+
+  const grantItem = async () => {
+    if (!tgId) return toast.error('Enter Telegram ID first');
+    if (!selectedItemId) return toast.error('Select an item first');
+    setGrantingItem(true);
+    try {
+      const r = await apiClient.post('/admin/grant-item', null, {
+        params: { telegram_id: tgId, item_id: selectedItemId },
+      });
+      toast.success(`✅ Granted "${r.data.item_name}" (${r.data.item_tier}) to user ${tgId}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to grant item');
+    } finally {
+      setGrantingItem(false);
+    }
+  };
+
+  React.useEffect(() => { loadItemCatalog(); }, []);
+
   const addFakePlayer = async () => {
     if (!fakeBet) return toast.error('Enter bet amount');
     try {
@@ -531,6 +563,43 @@ function AdminPanel({ API, rooms, isMobile, onRoomsRefresh, socket, user }) {
             className="col-span-2 bg-yellow-900/60 hover:bg-yellow-800 border border-yellow-500/40 text-yellow-300 text-xs py-2 rounded-lg font-semibold disabled:opacity-50"
           >
             {givingItems ? '⏳ Giving items...' : '🎁 Give All Items (all tiers)'}
+          </button>
+        </div>
+      </div>
+
+      {/* Grant Specific Item */}
+      <div className={card}>
+        <h3 className="text-yellow-400 font-bold text-sm flex items-center gap-2">
+          <span>🎁</span> Grant Specific Item
+        </h3>
+        <p className="text-slate-400 text-xs">Select an item and grant it to the user above (by Telegram ID).</p>
+        <div className="flex gap-2 items-center">
+          <select
+            value={selectedItemId}
+            onChange={e => setSelectedItemId(e.target.value)}
+            className={`flex-1 ${inp}`}
+          >
+            <option value="">— select item —</option>
+            {['legendary','epic','rare','uncommon','common'].map(tier => {
+              const tierItems = itemCatalog.filter(i => i.tier === tier);
+              if (!tierItems.length) return null;
+              return (
+                <optgroup key={tier} label={`${tier.toUpperCase()} (${tierItems.length})`}>
+                  {tierItems.map(item => (
+                    <option key={item.id} value={item.id}>
+                      [{item.class_name === 'any' ? 'all' : item.class_name}] {item.name} ({item.slot})
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
+          </select>
+          <button
+            onClick={grantItem}
+            disabled={grantingItem || !selectedItemId || !tgId}
+            className="bg-yellow-700 hover:bg-yellow-600 disabled:opacity-40 text-white text-xs font-bold py-2 px-3 rounded-lg whitespace-nowrap"
+          >
+            {grantingItem ? '⏳' : 'Grant →'}
           </button>
         </div>
       </div>

@@ -84,7 +84,7 @@ CORS_ORIGINS = [
     "https://riskarena.vercel.app",
     "https://www.riskarena.vercel.app",
     "http://localhost:3000",
-    # Telegram WebApp origins â€” required for Mini App preflight requests
+    # Telegram WebApp origins  required for Mini App preflight requests
     "https://web.telegram.org",
     "https://telegram.org",
 ]
@@ -148,7 +148,7 @@ class SolanaWalletDerivation:
                 # Create master keypair from base58 private key
                 private_key_bytes = base58.b58decode(master_private_key_base58)
                 self.master_keypair = Keypair.from_bytes(private_key_bytes)
-                logging.info(f"ðŸ”‘ Master wallet initialized: {self.master_keypair.pubkey()}")
+                logging.info(f" Master wallet initialized: {self.master_keypair.pubkey()}")
             except Exception as e:
                 logging.error(f"Error initializing master wallet: {e}")
                 self.master_keypair = None
@@ -171,7 +171,7 @@ class SolanaWalletDerivation:
             
             # For demo purposes, we'll track this address but won't need the private key
             # In production, you'd use proper Solana keypair derivation libraries
-            logging.info(f"ðŸŽ¯ Derived address for user {telegram_id}: {derived_address}")
+            logging.info(f" Derived address for user {telegram_id}: {derived_address}")
             
             return {
                 "address": derived_address,
@@ -216,7 +216,7 @@ class SolanaWalletDerivation:
                 )
             )
             
-            logging.info(f"ðŸ’¸ Would sweep {sweep_amount} lamports from {derived_keypair.pubkey()} to {self.master_keypair.pubkey()}")
+            logging.info(f" Would sweep {sweep_amount} lamports from {derived_keypair.pubkey()} to {self.master_keypair.pubkey()}")
             # TODO: Implement actual transaction signing and sending
             
             return True
@@ -760,7 +760,7 @@ async def _get_and_regen_energy(user_id: str, conn) -> dict:
 active_rooms: Dict[str, GameRoom] = {}
 room_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
-# Maintenance mode â€” blocks new room joins (resets on restart)
+# Maintenance mode  blocks new room joins (resets on restart)
 maintenance_mode: bool = False
 
 # Free Roll room global config
@@ -912,16 +912,16 @@ async def send_prize_notification(telegram_id: int, username: str, room_type: st
     """Send prize notification with claim button to Telegram user"""
     try:
         # Format the message
-        message = f"ðŸŽ‰ <b>Congratulations {username}!</b>\n\n"
+        message = f" <b>Congratulations {username}!</b>\n\n"
         message += f"You won the {room_type.title()} Room battle!\n\n"
-        message += "ðŸ† <b>You have a prize waiting!</b>\n"
+        message += " <b>You have a prize waiting!</b>\n"
         message += "Click the button below to claim your prize:"
         
         # Create inline keyboard with claim button
         reply_markup = {
             "inline_keyboard": [[
                 {
-                    "text": "ðŸŽ Claim Your Prize",
+                    "text": " Claim Your Prize",
                     "url": prize_link
                 }
             ]]
@@ -942,12 +942,12 @@ class PriceOracle:
         self.cache_duration = 60  # Cache for 60 seconds
         
     async def get_sol_eur_price(self) -> float:
-        """Get current SOL price in EUR â€” Binance primary, CoinGecko fallback"""
+        """Get current SOL price in EUR  Binance primary, CoinGecko fallback"""
         current_time = time.time()
         if self.cached_price and (current_time - self.last_update) < self.cache_duration:
             return self.cached_price
 
-        # 1) Binance â€” no key needed, direct SOL/EUR pair
+        # 1) Binance  no key needed, direct SOL/EUR pair
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -960,7 +960,7 @@ class PriceOracle:
                         price = float(data["price"])
                         self.cached_price = price
                         self.last_update = current_time
-                        logging.info(f"ðŸ’° SOL/EUR (Binance): {price}")
+                        logging.info(f" SOL/EUR (Binance): {price}")
                         return price
                     logging.warning(f"Binance returned {resp.status}, trying CoinGecko...")
         except Exception as e:
@@ -979,7 +979,7 @@ class PriceOracle:
                         price = float(data["solana"]["eur"])
                         self.cached_price = price
                         self.last_update = current_time
-                        logging.info(f"ðŸ’° SOL/EUR (CoinGecko): {price}")
+                        logging.info(f" SOL/EUR (CoinGecko): {price}")
                         return price
         except Exception as e:
             logging.error(f"CoinGecko price fetch failed: {e}")
@@ -989,11 +989,11 @@ class PriceOracle:
     
     def calculate_tokens_from_sol(self, sol_amount: float, sol_eur_price: float) -> int:
         """Calculate tokens from SOL amount using real-time EUR price"""
-        # SOL â†’ EUR â†’ Tokens (1 EUR = 100 tokens)
+        # SOL  EUR  Tokens (1 EUR = 100 tokens)
         eur_value = sol_amount * sol_eur_price
         tokens = int(eur_value * 100)
         
-        logging.info(f"ðŸ’± Conversion: {sol_amount} SOL Ã— {sol_eur_price} EUR/SOL = {eur_value:.4f} EUR = {tokens} tokens")
+        logging.info(f" Conversion: {sol_amount} SOL  {sol_eur_price} EUR/SOL = {eur_value:.4f} EUR = {tokens} tokens")
         return tokens
 
 # Initialize price oracle
@@ -1062,7 +1062,7 @@ async def get_or_create_derived_address(user_id: str, telegram_id: int) -> dict:
             }
         )
         
-        logging.info(f"âœ… Created derived address for user {telegram_id}: {derived_info['address']}")
+        logging.info(f" Created derived address for user {telegram_id}: {derived_info['address']}")
         return {"address": derived_info["address"], "user_id": user_id, "telegram_id": telegram_id}
         
     except Exception as e:
@@ -1083,7 +1083,7 @@ class PaymentMonitor:
             return
             
         self.monitoring = True
-        logging.info(f"ðŸš€ Starting payment monitoring for derived addresses")
+        logging.info(f" Starting payment monitoring for derived addresses")
         
         # Load existing derived addresses
         await self._load_derived_addresses()
@@ -1101,7 +1101,7 @@ class PaymentMonitor:
                 if address:
                     self.monitored_addresses.add(address)
             
-            logging.info(f"ðŸ“ Monitoring {len(self.monitored_addresses)} derived addresses")
+            logging.info(f" Monitoring {len(self.monitored_addresses)} derived addresses")
             
         except Exception as e:
             logging.error(f"Error loading derived addresses: {e}")
@@ -1109,7 +1109,7 @@ class PaymentMonitor:
     async def add_address_to_monitor(self, address: str):
         """Add a new derived address to monitoring"""
         self.monitored_addresses.add(address)
-        logging.info(f"âž• Added derived address to monitoring: {address}")
+        logging.info(f" Added derived address to monitoring: {address}")
     
     async def _monitor_payments(self):
         """Monitor all derived addresses for incoming payments"""
@@ -1207,7 +1207,7 @@ class PaymentMonitor:
                 if balance_change > 0:  # Received SOL
                     sol_amount = balance_change / 1_000_000_000  # Convert lamports to SOL
                     
-                    logging.info(f"ðŸ’° Received {sol_amount} SOL in transaction {signature} to derived address {receiving_address}")
+                    logging.info(f" Received {sol_amount} SOL in transaction {signature} to derived address {receiving_address}")
                     
                     # Credit tokens to user who owns this derived address
                     await self._credit_tokens_for_derived_address(signature, sol_amount, receiving_address)
@@ -1223,7 +1223,7 @@ class PaymentMonitor:
             user = next((u for u in all_users if u.get('derived_solana_address') == derived_address), None)
             
             if not user:
-                logging.error(f"âŒ No user found for derived address {derived_address}! Payment of {sol_amount} SOL lost!")
+                logging.error(f" No user found for derived address {derived_address}! Payment of {sol_amount} SOL lost!")
                 return
             
             # Calculate tokens using real-time EUR price
@@ -1260,7 +1260,7 @@ class PaymentMonitor:
             user = await dbq.get_user_by_telegram_id(telegram_id)
 
             if not user:
-                logging.error(f"âŒ No user found for telegram_id {telegram_id}! Payment of {sol_amount} SOL lost!")
+                logging.error(f" No user found for telegram_id {telegram_id}! Payment of {sol_amount} SOL lost!")
                 return
 
             # Production: Check for duplicate transactions (payment_history field not in PG schema; skip)
@@ -1269,7 +1269,7 @@ class PaymentMonitor:
             result = await dbq.increment_user_tokens_by_telegram_id(telegram_id, tokens_to_credit)
 
             if result:
-                logging.info(f"âœ… Credited {tokens_to_credit} tokens to user {user['first_name']} for {sol_amount} SOL (â‚¬{sol_amount * sol_eur_price:.2f})")
+                logging.info(f" Credited {tokens_to_credit} tokens to user {user['first_name']} for {sol_amount} SOL ({sol_amount * sol_eur_price:.2f})")
                 
                 # Send notification to user
                 if user.get('telegram_id'):
@@ -1298,16 +1298,16 @@ class PaymentMonitor:
         try:
             eur_value = sol_amount * sol_eur_price
             
-            message = "ðŸ’° <b>Payment Confirmed!</b>\n\n"
+            message = " <b>Payment Confirmed!</b>\n\n"
             message += f"Hello {username}!\n\n"
-            message += f"âœ… Received: <b>{sol_amount} SOL</b>\n"
-            message += f"ðŸ’¶ EUR Value: <b>â‚¬{eur_value:.2f}</b> (1 SOL = â‚¬{sol_eur_price:.4f})\n"
-            message += f"ðŸŽ° Credited: <b>{tokens_credited:,} RiskArena Tokens</b>\n\n"
-            message += f"ðŸ’¡ <i>Rate: 1 EUR = 100 tokens</i>\n\n"
-            message += "Your tokens are ready for battle! Good luck! ðŸŽ¯"
+            message += f" Received: <b>{sol_amount} SOL</b>\n"
+            message += f" EUR Value: <b>{eur_value:.2f}</b> (1 SOL = {sol_eur_price:.4f})\n"
+            message += f" Credited: <b>{tokens_credited:,} RiskArena Tokens</b>\n\n"
+            message += f" <i>Rate: 1 EUR = 100 tokens</i>\n\n"
+            message += "Your tokens are ready for battle! Good luck! "
             
             await send_telegram_message(telegram_id, message)
-            logging.info(f"ðŸ“¨ Payment confirmation sent to {username}")
+            logging.info(f" Payment confirmation sent to {username}")
             
         except Exception as e:
             logging.error(f"Error sending payment confirmation: {e}")
@@ -1322,7 +1322,7 @@ socket_to_user: Dict[str, str] = {}  # sid -> user_id
 # Socket.IO events
 @sio.event
 async def connect(sid, environ, auth=None):
-    logging.info(f"ðŸ”ŒðŸ”ŒðŸ”Œ NEW CLIENT CONNECTED ðŸ”ŒðŸ”ŒðŸ”Œ")
+    logging.info(f" NEW CLIENT CONNECTED ")
     logging.info(f"Socket ID: {sid}")
     logging.info(f"Remote Address: {environ.get('REMOTE_ADDR', 'unknown')}")
     logging.info(f"User Agent: {environ.get('HTTP_USER_AGENT', 'unknown')}")
@@ -1351,11 +1351,11 @@ async def connect(sid, environ, auth=None):
         'platform': platform,
         'authenticated': bool(authenticated_user_id),
     }, room=sid)
-    logging.info(f"âœ… Sent 'connected' confirmation to {sid} ({platform})")
+    logging.info(f" Sent 'connected' confirmation to {sid} ({platform})")
 
 @sio.event
 async def disconnect(sid):
-    logging.info(f"ðŸ”Œ Client {sid} disconnected")
+    logging.info(f" Client {sid} disconnected")
     
     # Get user_id before cleanup
     user_id = socket_to_user.get(sid)
@@ -1372,7 +1372,7 @@ async def disconnect(sid):
     # DON'T immediately clean up user mapping or remove from game room
     # Give user 30 seconds to reconnect (Telegram browser often disconnects temporarily)
     # User mapping and room removal will be handled on reconnect timeout or manual leave
-    logging.info(f"â³ User {user_id} disconnected, keeping in room for potential reconnect")
+    logging.info(f" User {user_id} disconnected, keeping in room for potential reconnect")
     
     # DO NOT remove from active_rooms.players - let them stay in the game
     # They can still receive events when they reconnect
@@ -1381,7 +1381,7 @@ async def disconnect(sid):
 async def register_user(sid, data):
     """Register user_id to socket_id mapping for room-specific events"""
     try:
-        logging.info(f"ðŸ“¥ðŸ“¥ðŸ“¥ REGISTER_USER EVENT RECEIVED ðŸ“¥ðŸ“¥ðŸ“¥")
+        logging.info(f" REGISTER_USER EVENT RECEIVED ")
         logging.info(f"Socket ID: {sid}")
         logging.info(f"Data: {data}")
         
@@ -1389,16 +1389,16 @@ async def register_user(sid, data):
         platform = data.get('platform', 'unknown')
         
         if not user_id:
-            logging.error(f"âŒ No user_id provided in register_user event")
+            logging.error(f" No user_id provided in register_user event")
             return
         
         # Update mappings
         user_to_socket[user_id] = sid
         socket_to_user[sid] = user_id
         
-        logging.info(f"âœ… Registered user {user_id} to socket {sid[:8]}")
-        logging.info(f"ðŸ“± Platform: {platform}")
-        logging.info(f"ðŸ“Š Total user mappings: {len(user_to_socket)}")
+        logging.info(f" Registered user {user_id} to socket {sid[:8]}")
+        logging.info(f" Platform: {platform}")
+        logging.info(f" Total user mappings: {len(user_to_socket)}")
         
         # Send confirmation
         await sio.emit('user_registered', {
@@ -1408,13 +1408,13 @@ async def register_user(sid, data):
         }, room=sid)
         
     except Exception as e:
-        logging.error(f"âŒ Error in register_user: {e}")
+        logging.error(f" Error in register_user: {e}")
 
 @sio.event
 async def join_game_room(sid, data):
     """Join a game room via Socket.IO (called after successful REST API join)"""
     try:
-        logging.info(f"ðŸ“¥ðŸ“¥ðŸ“¥ JOIN_GAME_ROOM EVENT RECEIVED ðŸ“¥ðŸ“¥ðŸ“¥")
+        logging.info(f" JOIN_GAME_ROOM EVENT RECEIVED ")
         logging.info(f"Socket ID: {sid}")
         logging.info(f"Data: {data}")
         
@@ -1423,7 +1423,7 @@ async def join_game_room(sid, data):
         platform = data.get('platform', 'unknown')
         
         if not room_id or not user_id:
-            logging.error(f"âŒ Missing room_id or user_id in join_game_room event")
+            logging.error(f" Missing room_id or user_id in join_game_room event")
             logging.error(f"Received data: {data}")
             return
         if not _user_is_in_room(room_id, user_id):
@@ -1431,7 +1431,7 @@ async def join_game_room(sid, data):
             await sio.emit('room_joined_confirmed', {'room_id': room_id, 'status': 'forbidden'}, room=sid)
             return
         
-        logging.info(f"ðŸ“¥ join_game_room: user={user_id}, room={room_id}, socket={sid[:8]}, platform={platform}")
+        logging.info(f" join_game_room: user={user_id}, room={room_id}, socket={sid[:8]}, platform={platform}")
         
         # Join the Socket.IO room
         await socket_rooms.join_socket_room(sio, sid, room_id)
@@ -1444,9 +1444,9 @@ async def join_game_room(sid, data):
         socket_count = socket_rooms.get_room_socket_count(room_id)
         sockets_in_room = socket_rooms.room_to_sockets.get(room_id, set())
         
-        logging.info(f"âœ… User {user_id} ({platform}) joined room {room_id} via socket {sid[:8]}")
-        logging.info(f"ðŸ“Š Room {room_id} now has {socket_count} socket(s) connected")
-        logging.info(f"ðŸ“‹ Socket IDs in room: {[s[:8] for s in sockets_in_room]}")
+        logging.info(f" User {user_id} ({platform}) joined room {room_id} via socket {sid[:8]}")
+        logging.info(f" Room {room_id} now has {socket_count} socket(s) connected")
+        logging.info(f" Socket IDs in room: {[s[:8] for s in sockets_in_room]}")
         
         # Send confirmation with full room info
         await sio.emit('room_joined_confirmed', {
@@ -1455,10 +1455,10 @@ async def join_game_room(sid, data):
             'socket_id': sid,
             'platform': platform
         }, room=sid)
-        logging.info(f"âœ… Sent room_joined_confirmed to {sid[:8]} ({platform})")
+        logging.info(f" Sent room_joined_confirmed to {sid[:8]} ({platform})")
         
     except Exception as e:
-        logging.error(f"âŒ Error in join_game_room: {e}")
+        logging.error(f" Error in join_game_room: {e}")
         import traceback
         logging.error(traceback.format_exc())
 
@@ -1473,14 +1473,14 @@ def calculate_win_probability(player_bet: int, total_pool: int) -> float:
     return min(base_prob + bet_bonus, 0.95)  # Cap at 95%
 
 def select_winner(players: List[RoomPlayer]) -> RoomPlayer:
-    """Select winner using cryptographically secure weighted random â€” bigger bets = better odds."""
+    """Select winner using cryptographically secure weighted random  bigger bets = better odds."""
     if not players:
         raise ValueError("No players to select from")
 
     total_pool = sum(p.bet_amount for p in players)
 
     if total_pool == 0:
-        # Free room: all equal weight â€” pick uniformly
+        # Free room: all equal weight  pick uniformly
         return players[secrets.randbelow(len(players))]
 
     # secrets.randbelow gives a secure integer in [0, total_pool)
@@ -1498,21 +1498,21 @@ def select_winner(players: List[RoomPlayer]) -> RoomPlayer:
 async def send_reaction(sid, data):
     """Broadcast an emoji reaction to all players in a room"""
     room_id = data.get('room_id')
-    emoji = data.get('emoji', 'ðŸ”¥')
+    emoji = data.get('emoji', '')
     name = data.get('name', 'Player')
     user_id = await _authenticated_socket_user_id(sid, data)
     if not room_id:
         return
     if not user_id or not _user_is_in_room(room_id, user_id):
         return
-    # Broadcast globally â€” client filters by room_id (same pattern as game events)
+    # Broadcast globally  client filters by room_id (same pattern as game events)
     await sio.emit('reaction_received', {
         'emoji': emoji,
         'name': name,
         'user_id': user_id,
         'room_id': room_id,
     })
-    logging.info(f"ðŸ’¬ Reaction {emoji} from {name} in room {room_id[:8]}")
+    logging.info(f" Reaction {emoji} from {name} in room {room_id[:8]}")
 
 
 # In-memory chat history per room (last 50 messages)
@@ -1547,7 +1547,7 @@ async def lobby_message(sid, data):
 
     payload = {'room_id': room_id, **msg}
     await sio.emit('lobby_message', payload)
-    logging.info(f"ðŸ’¬ Chat [{room_id[:8]}] {name}: {text[:40]}")
+    logging.info(f" Chat [{room_id[:8]}] {name}: {text[:40]}")
 
 
 @sio.event
@@ -1580,13 +1580,13 @@ async def reveal_identity(sid, data):
         'room_id': room_id,
         'players': serialized_players,
     })
-    logging.info(f"ðŸ”“ Player {user_id} revealed identity in room {room_id[:8]}")
+    logging.info(f" Player {user_id} revealed identity in room {room_id[:8]}")
 
 
 @sio.event
 async def catch_all(event, sid, data):
     """Catch all events for debugging"""
-    logging.info(f"ðŸŽ¯ CATCH-ALL: Event '{event}' from {sid[:8]} with data: {data}")
+    logging.info(f" CATCH-ALL: Event '{event}' from {sid[:8]} with data: {data}")
 
 async def broadcast_room_updates():
     """Broadcast current room states to all connected clients"""
@@ -1713,10 +1713,10 @@ async def start_game_round(room: GameRoom):
     # Generate unique match ID for this game
     match_id = str(uuid.uuid4())[:12]  # Short unique ID
     room.match_id = match_id  # Store on room for polling clients
-    logging.info(f"ðŸŽ® Starting game round for room {room.id}, match_id: {match_id}")
-    logging.info(f"ðŸ‘¥ Players in room: {[p.username for p in room.players]}")
+    logging.info(f" Starting game round for room {room.id}, match_id: {match_id}")
+    logging.info(f" Players in room: {[p.username for p in room.players]}")
 
-    # Set status IMMEDIATELY â€” polling clients detect this within 500ms
+    # Set status IMMEDIATELY  polling clients detect this within 500ms
     room.status = "ready"
     room.prize_pool = sum(p.bet_amount for p in room.players)
 
@@ -1728,17 +1728,17 @@ async def start_game_round(room: GameRoom):
             player_dict['joined_at'] = player_dict['joined_at'].isoformat()
         serialized_players.append(player_dict)
 
-    # Broadcast room_ready globally (socket fallback â€” polling is the primary mechanism)
+    # Broadcast room_ready globally (socket fallback  polling is the primary mechanism)
     room_ready_data = {
         'room_id': room.id,
         'room_type': room.room_type,
         'match_id': match_id,
         'players': serialized_players,
         'prize_pool': room.prize_pool,
-        'message': 'ðŸš€ GET READY FOR BATTLE!',
+        'message': ' GET READY FOR BATTLE!',
     }
     await sio.emit('room_ready', room_ready_data)
-    logging.info(f"âœ… room_ready emitted globally, match {match_id}")
+    logging.info(f" room_ready emitted globally, match {match_id}")
 
     # Wait for roulette wheel animation (8 seconds to spin + show result)
     await asyncio.sleep(8)
@@ -1768,14 +1768,14 @@ async def start_game_round(room: GameRoom):
         try:
             result = await dbq.increment_user_tokens(winner.user_id, credit_amount)
             if result:
-                logging.info(f"ðŸ’° Credited {credit_amount} tokens to winner {winner.username} (new balance: {result.get('token_balance', 0)})")
+                logging.info(f" Credited {credit_amount} tokens to winner {winner.username} (new balance: {result.get('token_balance', 0)})")
                 winner_sid = user_to_socket.get(winner.user_id)
                 if winner_sid:
                     await sio.emit('balance_updated', {'user_id': winner.user_id, 'new_balance': result.get('token_balance', 0)}, room=winner_sid)
             else:
-                logging.error(f"âŒ Winner user {winner.user_id} not found in DB â€” balance NOT credited")
+                logging.error(f" Winner user {winner.user_id} not found in DB  balance NOT credited")
         except Exception as e:
-            logging.error(f"âŒ Failed to credit winner balance: {e}")
+            logging.error(f" Failed to credit winner balance: {e}")
 
     # Get the prize link for this room type
     prize_link = PRIZE_LINKS[room.room_type]
@@ -1798,7 +1798,7 @@ async def start_game_round(room: GameRoom):
         logging.error(f"Failed to store winner prize: {e}")
     
     # EVENT 3: game_finished - Notify ROOM participants of the winner
-    logging.info(f"ðŸ“¤ Broadcasting game_finished to room {room.id}")
+    logging.info(f" Broadcasting game_finished to room {room.id}")
     
     # Serialize winner data
     winner_dict = winner.dict()
@@ -1820,19 +1820,19 @@ async def start_game_round(room: GameRoom):
     }
     # Broadcast game_finished to ALL clients - client filters by player list
     await sio.emit('game_finished', game_finished_data)
-    logging.info(f"âœ… Emitted game_finished globally, winner: {winner.username}, match_id: {match_id}")
+    logging.info(f" Emitted game_finished globally, winner: {winner.username}, match_id: {match_id}")
 
     # Wait for winner announcement screen (8 seconds so players can see it)
-    logging.info(f"â±ï¸ Waiting 8 seconds for winner announcement...")
+    logging.info(f" Waiting 8 seconds for winner announcement...")
     await asyncio.sleep(8)
 
     # EVENT 4: redirect_home - Redirect all players back to home screen
     final_sockets = socket_rooms.room_to_sockets.get(room.id, set())
     socket_count = len(final_sockets)
 
-    logging.info(f"ðŸ“¤ðŸ“¤ðŸ“¤ BROADCASTING redirect_home to room {room.id}")
-    logging.info(f"ðŸ§© Target sockets: {[sid[:8] for sid in final_sockets]}")
-    logging.info(f"ðŸ“Š Socket count: {socket_count}")
+    logging.info(f" BROADCASTING redirect_home to room {room.id}")
+    logging.info(f" Target sockets: {[sid[:8] for sid in final_sockets]}")
+    logging.info(f" Socket count: {socket_count}")
 
     redirect_home_data = {
         'room_id': room.id,
@@ -1841,7 +1841,7 @@ async def start_game_round(room: GameRoom):
     }
     # Broadcast redirect_home to ALL clients - client filters by player list
     await sio.emit('redirect_home', redirect_home_data)
-    logging.info(f"âœ… Emitted redirect_home globally for match {match_id}")
+    logging.info(f" Emitted redirect_home globally for match {match_id}")
     
     # EVENT 5: prize_won - Send prize link privately to the winner (using socket ID)
     winner_sid = user_to_socket.get(winner.user_id)
@@ -1853,9 +1853,9 @@ async def start_game_round(room: GameRoom):
             'bet_amount': winner.bet_amount,
             'total_pool': room.prize_pool
         }, room=winner_sid)
-        logging.info(f"ðŸ† Sent private prize_won event to winner {winner.username}, match_id: {match_id}")
+        logging.info(f" Sent private prize_won event to winner {winner.username}, match_id: {match_id}")
     else:
-        logging.warning(f"âš ï¸ Could not find socket for winner {winner.user_id} to send prize_won event")
+        logging.warning(f" Could not find socket for winner {winner.user_id} to send prize_won event")
     
     # Save completed game to database
     try:
@@ -1863,12 +1863,12 @@ async def start_game_round(room: GameRoom):
         # Normalize enum to plain string value
         rt = game_doc.get('room_type')
         game_doc['room_type'] = rt.value if hasattr(rt, 'value') else str(rt).split('.')[-1].lower()
-        # Keep datetimes as objects â€” insert_completed_game uses _to_dt() helper
+        # Keep datetimes as objects  insert_completed_game uses _to_dt() helper
         # (no need to call .isoformat() here; that caused the previous asyncpg bug)
         
         await dbq.insert_completed_game(game_doc)
 
-        # Save pending result for all participants â€” cleared client-side on redirect_home if they were online
+        # Save pending result for all participants  cleared client-side on redirect_home if they were online
         for participant in room.players:
             if not participant.user_id.startswith('bot_'):
                 pending_doc = {
@@ -1908,7 +1908,7 @@ async def start_game_round(room: GameRoom):
         new_room.max_players = freeroll_config['max_players']
     active_rooms[new_room.id] = new_room
 
-    logging.info(f"ðŸ†• Created new {room.room_type} room {new_room.id}, round #{new_room.round_number}")
+    logging.info(f" Created new {room.room_type} room {new_room.id}, round #{new_room.round_number}")
 
     # Notify clients about new room (global broadcast)
     await sio.emit('new_room_available', {
@@ -2104,7 +2104,7 @@ async def get_user_derived_wallet(user_id: str, http_request: Request):
             "current_sol_eur_price": sol_eur_price,
             "conversion_rate": {
                 "eur_to_tokens": 100,
-                "description": f"1 EUR = 100 tokens (1 SOL = â‚¬{sol_eur_price})"
+                "description": f"1 EUR = 100 tokens (1 SOL = {sol_eur_price})"
             },
             "instructions": f"Send SOL to YOUR personal address above. Tokens credited automatically! 1 SOL = {int(sol_eur_price * 100)} tokens"
         }
@@ -2181,7 +2181,7 @@ async def add_tokens_to_user(admin_key: str, username: str, tokens: int):
 
             new_user = {
                 "id": new_user_id,
-                "telegram_id": -(abs(hash(username)) % 999_999_999 + 1),  # Negative ID â€” never conflicts with real Telegram IDs
+                "telegram_id": -(abs(hash(username)) % 999_999_999 + 1),  # Negative ID  never conflicts with real Telegram IDs
                 "first_name": username.replace("@", "").title(),
                 "last_name": "",
                 "username": username,
@@ -2222,7 +2222,7 @@ async def add_tokens_by_telegram_id(telegram_id: int, admin_key: str, tokens: in
 
             new_balance = user_doc.get('token_balance', 0) + tokens
 
-            logging.info(f"âœ… Added {tokens} tokens to Telegram user {telegram_id}. New balance: {new_balance}")
+            logging.info(f" Added {tokens} tokens to Telegram user {telegram_id}. New balance: {new_balance}")
             
             return {
                 "status": "success",
@@ -2258,7 +2258,7 @@ async def add_diamonds_by_telegram_id(telegram_id: int, admin_key: str, diamonds
                 "telegram_id": telegram_id,
             }
         new_balance = updated.get("diamonds", 0)
-        logging.info(f"💎 Added {diamonds} diamonds to Telegram user {telegram_id}. New balance: {new_balance}")
+        logging.info(f" Added {diamonds} diamonds to Telegram user {telegram_id}. New balance: {new_balance}")
         return {
             "status": "success",
             "message": f"Added {diamonds} diamonds to Telegram user {telegram_id}",
@@ -2280,7 +2280,7 @@ async def cleanup_database_for_production(admin_key: str):
         # Clear ALL tables completely
         delete_result = await dbq.delete_all_data()
 
-        logging.info("ðŸ§¹ COMPLETE DATABASE WIPE FINISHED")
+        logging.info(" COMPLETE DATABASE WIPE FINISHED")
         logging.info(f"Deleted: {delete_result.get('users', 0)} users")
         logging.info(f"Deleted: {delete_result.get('completed_games', 0)} completed games")
         logging.info(f"Deleted: {delete_result.get('winner_prizes', 0)} winner prizes")
@@ -2328,8 +2328,8 @@ async def telegram_auth(user_data: UserCreate, response: Response):
     telegram_data = user_data.telegram_auth_data
     
     # Log the incoming data for debugging
-    logging.info(f"ðŸ” Telegram auth attempt for user ID: {telegram_data.id}")
-    logging.info(f"ðŸ“‹ Full auth data: id={telegram_data.id}, first_name={telegram_data.first_name}, username={telegram_data.username}")
+    logging.info(f" Telegram auth attempt for user ID: {telegram_data.id}")
+    logging.info(f" Full auth data: id={telegram_data.id}, first_name={telegram_data.first_name}, username={telegram_data.username}")
     
     # For Telegram Web App, be more permissive with authentication
     # Basic validation - user must have ID and first name
@@ -2339,12 +2339,12 @@ async def telegram_auth(user_data: UserCreate, response: Response):
     if not verify_telegram_auth(telegram_data.dict(), TELEGRAM_BOT_TOKEN):
         raise HTTPException(status_code=401, detail="Invalid Telegram authentication")
 
-    logging.info(f"ðŸ” Authenticating Telegram user: {telegram_data.first_name} (ID: {telegram_data.id})")
+    logging.info(f" Authenticating Telegram user: {telegram_data.first_name} (ID: {telegram_data.id})")
     
     # Check if user already exists
-    logging.info(f"ðŸ”Ž Searching for existing user with telegram_id={telegram_data.id} in database")
+    logging.info(f" Searching for existing user with telegram_id={telegram_data.id} in database")
     existing_user = await dbq.get_user_by_telegram_id(telegram_data.id)
-    logging.info(f"ðŸ”Ž Search result: {'FOUND' if existing_user else 'NOT FOUND'}")
+    logging.info(f" Search result: {'FOUND' if existing_user else 'NOT FOUND'}")
 
     if existing_user:
         now_utc = datetime.now(timezone.utc)
@@ -2378,7 +2378,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
             existing_user['last_login'] = datetime.fromisoformat(existing_user['last_login'])
 
         logging.info(
-            f"âœ… Returning existing user: {existing_user['first_name']} "
+            f" Returning existing user: {existing_user['first_name']} "
             f"balance={existing_user.get('token_balance', 0)} "
             f"xp={existing_user.get('xp', 0)} daily_xp={gave_daily_xp}"
         )
@@ -2433,7 +2433,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
             existing_user['last_login'] = datetime.fromisoformat(existing_user['last_login'])
 
         logging.info(
-            "âœ… Returning concurrently created user %s (telegram_id: %s) with balance %s",
+            " Returning concurrently created user %s (telegram_id: %s) with balance %s",
             existing_user.get('first_name', ''),
             telegram_data.id,
             existing_user.get('token_balance', 0)
@@ -2446,7 +2446,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
         user_payload2.update(await _runtime_character_sprite_payload_for_user(str(existing_user["id"])))
         return User(**user_payload2)
 
-    logging.info(f"ðŸ†• Created new user: {user.first_name} (telegram_id: {user.telegram_id})")
+    logging.info(f" Created new user: {user.first_name} (telegram_id: {user.telegram_id})")
 
     new_user_payload = attach_session(response, user.dict())
     new_user_payload.update({"energy": 10, "max_energy": 10, "next_energy_at": None})
@@ -2457,7 +2457,7 @@ async def telegram_auth(user_data: UserCreate, response: Response):
 
 @api_router.get("/auth/dev")
 async def dev_auth(response: Response, username: str = "DevUser", uid: int = 1):
-    """Local dev only — requires ALLOW_INSECURE_DEV_AUTH=true in .env"""
+    """Local dev only  requires ALLOW_INSECURE_DEV_AUTH=true in .env"""
     if not os.getenv("ALLOW_INSECURE_DEV_AUTH"):
         raise HTTPException(status_code=403, detail="Dev auth disabled")
     fake_telegram_id = 9_900_000_000 + uid
@@ -2624,8 +2624,8 @@ async def manually_process_payment(wallet_address: str, signature: str, admin_ke
         from solana_integration import get_processor
         processor = get_processor(None)
         
-        logging.info(f"ðŸ”§ [Admin] Manually processing payment for wallet {wallet_address}")
-        logging.info(f"ðŸ”§ [Admin] Transaction signature: {signature}")
+        logging.info(f" [Admin] Manually processing payment for wallet {wallet_address}")
+        logging.info(f" [Admin] Transaction signature: {signature}")
         
         # Trigger payment processing
         await processor.process_detected_payment(wallet_address, signature)
@@ -2723,7 +2723,7 @@ async def rescan_payments(admin_key: str = "", wallet_address: Optional[str] = N
         processor = get_processor(None)
         
         if wallet_address:
-            logging.info(f"ðŸ”§ [Admin] Manual rescan for wallet: {wallet_address}")
+            logging.info(f" [Admin] Manual rescan for wallet: {wallet_address}")
             
             # Get specific wallet
             wallet_doc = await dbq.get_temporary_wallet(wallet_address)
@@ -2736,15 +2736,15 @@ async def rescan_payments(admin_key: str = "", wallet_address: Optional[str] = N
             from solana.rpc.commitment import Confirmed
             from solana_integration import SOLANA_RPC_URL
             
-            logging.info(f"ðŸ”§ [Admin] Using RPC URL: {SOLANA_RPC_URL}")
-            logging.info(f"ðŸ”§ [Admin] Processor client: {processor.client._provider.endpoint_uri}")
+            logging.info(f" [Admin] Using RPC URL: {SOLANA_RPC_URL}")
+            logging.info(f" [Admin] Processor client: {processor.client._provider.endpoint_uri}")
             
             pubkey = Pubkey.from_string(wallet_address)
             balance_response = await processor.client.get_balance(pubkey, commitment=Confirmed)
             balance_lamports = balance_response.value if balance_response.value else 0
             
-            logging.info(f"ðŸ”§ [Admin] Balance response: {balance_response}")
-            logging.info(f"ðŸ”§ [Admin] Balance lamports: {balance_lamports}")
+            logging.info(f" [Admin] Balance response: {balance_response}")
+            logging.info(f" [Admin] Balance lamports: {balance_lamports}")
             
             balance_sol = Decimal(balance_lamports) / Decimal(1000000000)
             
@@ -2763,7 +2763,7 @@ async def rescan_payments(admin_key: str = "", wallet_address: Optional[str] = N
             # If payment found, process it
             tolerance = Decimal("0.001")
             if balance_sol >= (expected_sol - tolerance) and not wallet_doc.get("tokens_credited"):
-                logging.info(f"ðŸ’° [Admin] Processing payment for wallet {wallet_address}")
+                logging.info(f" [Admin] Processing payment for wallet {wallet_address}")
                 
                 # Mark as detected
                 await dbq.update_temporary_wallet(
@@ -2784,7 +2784,7 @@ async def rescan_payments(admin_key: str = "", wallet_address: Optional[str] = N
             return result
         else:
             # Scan all pending wallets
-            logging.info("ðŸ”§ [Admin] Manual rescan of all pending payments")
+            logging.info(" [Admin] Manual rescan of all pending payments")
             await processor.rescan_pending_payments()
             
             # Get stats
@@ -2813,10 +2813,10 @@ async def reset_solana_processor(admin_key: str = ""):
     try:
         from solana_integration import reset_processor, SOLANA_RPC_URL
         
-        logging.info("ðŸ”„ [Admin] Forcing processor reset...")
+        logging.info(" [Admin] Forcing processor reset...")
         reset_processor()
-        logging.info(f"âœ… [Admin] Processor reset complete")
-        logging.info(f"ðŸŒ [Admin] Current RPC URL: {SOLANA_RPC_URL}")
+        logging.info(f" [Admin] Processor reset complete")
+        logging.info(f" [Admin] Current RPC URL: {SOLANA_RPC_URL}")
         
         return {
             "status": "success",
@@ -3013,7 +3013,7 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
         raise HTTPException(status_code=403, detail="Your account has been banned.")
 
     if maintenance_mode:
-        raise HTTPException(status_code=503, detail="ðŸ”§ Maintenance in progress. Please try again later.")
+        raise HTTPException(status_code=503, detail=" Maintenance in progress. Please try again later.")
 
     logging.info(f"User balance: {user_doc.get('token_balance', 0)}, Bet amount: {request.bet_amount}")
 
@@ -3115,8 +3115,8 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
     if 'joined_at' in player_dict and isinstance(player_dict['joined_at'], datetime):
         player_dict['joined_at'] = player_dict['joined_at'].isoformat()
     
-    logging.info(f"ðŸ‘¤ Player {player.username} joined room {target_room.id} ({len(target_room.players)}/{target_room.max_players})")
-    logging.info(f"ðŸ“‹ Full participant list: {[p['username'] for p in serialized_players]}")
+    logging.info(f" Player {player.username} joined room {target_room.id} ({len(target_room.players)}/{target_room.max_players})")
+    logging.info(f" Full participant list: {[p['username'] for p in serialized_players]}")
 
     await socket_rooms.broadcast_to_room(sio, target_room.id, 'player_joined', {
         'room_id': target_room.id,
@@ -3128,14 +3128,14 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
         'room_status': 'filling' if len(target_room.players) < target_room.max_players else 'full',
         'timestamp': datetime.now(timezone.utc).isoformat()
     })
-    logging.info(f"âœ… Emitted player_joined to room {target_room.id} with {len(serialized_players)} players")
+    logging.info(f" Emitted player_joined to room {target_room.id} with {len(serialized_players)} players")
 
     # Broadcast updated room states to all clients (global lobby update)
     await broadcast_room_updates()
 
     # Check if enough players to start game
     if len(target_room.players) >= target_room.min_players:
-        logging.info(f"ðŸš€ Enough players! Room {target_room.id} has {len(target_room.players)}/{target_room.min_players} players, starting game sequence...")
+        logging.info(f" Enough players! Room {target_room.id} has {len(target_room.players)}/{target_room.min_players} players, starting game sequence...")
 
         # Emit room_full event to all participants in THIS room only
         await socket_rooms.broadcast_to_room(sio, target_room.id, 'room_full', {
@@ -3143,10 +3143,10 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             'room_type': target_room.room_type,
             'players': serialized_players,
             'players_count': len(target_room.players),
-            'message': 'ðŸš€ GAME IS STARTING! GET READY FOR THE BATTLE!',
+            'message': ' GAME IS STARTING! GET READY FOR THE BATTLE!',
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
-        logging.info(f"âœ… Emitted room_full to room {target_room.id}")
+        logging.info(f" Emitted room_full to room {target_room.id}")
 
         # Start the game sequence (will emit room_ready, game_starting, game_finished in order)
         background_tasks.add_task(start_game_round, target_room)
@@ -3212,7 +3212,7 @@ async def leave_room(request: LeaveRoomRequest, http_request: Request):
         "all_players": serialized_players,
     })
 
-    logging.info(f"ðŸ‘‹ Player {player.username or player.first_name} left room {room.id}, refunded {refund} tokens")
+    logging.info(f" Player {player.username or player.first_name} left room {room.id}, refunded {refund} tokens")
     return {"status": "left", "refund": refund, "new_balance": new_balance}
 
 @api_router.get("/pending-result/{user_id}")
@@ -3282,7 +3282,7 @@ async def post_room_chat(room_id: str, http_request: Request, text: str = ""):
         room_chat[room_id] = room_chat[room_id][-50:]
     payload = {'room_id': room_id, **msg}
     await sio.emit('lobby_message', payload)
-    logging.info(f"ðŸ’¬ REST Chat [{room_id[:8]}] {name}: {text[:40]}")
+    logging.info(f" REST Chat [{room_id[:8]}] {name}: {text[:40]}")
     return {"ok": True, "message": msg}
 
 @api_router.get("/room/{room_id}")
@@ -3720,9 +3720,9 @@ async def get_user_prizes(user_id: str, http_request: Request):
     return {"prizes": prizes}
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# 
 # Shop endpoints
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# 
 
 _TIER_ORDER = {"common": 1, "uncommon": 2, "rare": 3, "epic": 4, "legendary": 5}
 
@@ -4154,9 +4154,9 @@ async def get_my_inventory(http_request: Request):
         }
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# 
 # Equipment endpoints
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# 
 
 @api_router.get("/me/equipped")
 async def get_my_equipped(http_request: Request):
@@ -4431,13 +4431,25 @@ async def sell_item(body: SellBody, http_request: Request):
             if not row:
                 raise HTTPException(status_code=404, detail="Item not in your inventory")
 
-            # 2. Check not equipped
-            equipped = await conn.fetchval(
-                "SELECT 1 FROM equipped_items WHERE user_id = $1 AND inventory_id = $2",
+            # 2. Block sale only if equipped in current class loadout; auto-clean
+            # orphan rows from old class loadouts (users cannot unequip those via UI).
+            user_class = await conn.fetchval(
+                "SELECT class_name FROM users WHERE id = $1", user_id
+            )
+            equipped_current = await conn.fetchval(
+                "SELECT 1 FROM equipped_items"
+                " WHERE user_id = $1 AND inventory_id = $2 AND class_name = $3",
+                user_id, body.inventory_id, user_class or "",
+            )
+            if equipped_current:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot sell an equipped item - unequip it first",
+                )
+            await conn.execute(
+                "DELETE FROM equipped_items WHERE user_id = $1 AND inventory_id = $2",
                 user_id, body.inventory_id,
             )
-            if equipped:
-                raise HTTPException(status_code=400, detail="Cannot sell an equipped item â€” unequip it first")
 
             # 3. Sell price
             tier = (row["tier"] or "common").lower()
@@ -4458,9 +4470,9 @@ async def sell_item(body: SellBody, http_request: Request):
             return {"new_balance": int(new_balance or 0), "sell_price": sell_price, "item_name": row["item_name"]}
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# 
 # Admin: give items
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# 
 
 @api_router.post("/admin/give-all-items")
 async def admin_give_all_items(admin_key: str, telegram_id: int):
@@ -4492,9 +4504,46 @@ async def admin_give_all_items(admin_key: str, telegram_id: int):
         return {"added": added, "user_id": user_id, "telegram_id": telegram_id}
 
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+@api_router.post("/admin/grant-item")
+async def admin_grant_item(telegram_id: int, item_id: int, admin_key: str, http_request: Request):
+    """ADMIN: Grant a specific item (by items.id) to a user."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    async with get_pool().acquire() as conn:
+        user_row = await conn.fetchrow("SELECT id FROM users WHERE telegram_id = $1", telegram_id)
+        if not user_row:
+            raise HTTPException(status_code=404, detail="User not found")
+        item_row = await conn.fetchrow("SELECT id, slot, name, tier FROM items WHERE id = $1", item_id)
+        if not item_row:
+            raise HTTPException(status_code=404, detail="Item not found")
+        rarity_map = {"common": "Common", "uncommon": "Uncommon", "rare": "Rare",
+                      "epic": "Epic", "legendary": "Legendary"}
+        rarity = rarity_map.get((item_row["tier"] or "common").lower(), "Common")
+        inv_id = str(uuid.uuid4())
+        await conn.execute(
+            "INSERT INTO inventory (id, user_id, item_type, item_name, item_rarity, source, item_id, acquired_at) "
+            "VALUES ($1, $2, $3, $4, $5, 'admin_grant', $6, NOW())",
+            inv_id, user_row["id"], item_row["slot"], item_row["name"], rarity, item_row["id"],
+        )
+        return {"ok": True, "inventory_id": inv_id, "item_name": item_row["name"],
+                "item_tier": item_row["tier"], "telegram_id": telegram_id}
+
+
+@api_router.get("/admin/items-catalog")
+async def admin_items_catalog(admin_key: str, http_request: Request):
+    """ADMIN: Return all items for the grant-item picker."""
+    if not verify_admin_key(admin_key):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name, slot, tier, class_name FROM items ORDER BY tier, class_name, slot, name"
+        )
+    return [dict(r) for r in rows]
+
+
+#
 # Starter items
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+#
 
 @api_router.get("/me/starter-items")
 async def get_starter_items(http_request: Request):
@@ -4670,7 +4719,7 @@ async def add_fake_player(room_type: str, player_name: str, bet_amount: int, adm
             'room_type': target_room.room_type,
             'players': serialized_players,
             'players_count': len(target_room.players),
-            'message': 'ðŸš€ GAME IS STARTING! GET READY FOR THE BATTLE!',
+            'message': ' GAME IS STARTING! GET READY FOR THE BATTLE!',
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
         if background_tasks:
@@ -4768,7 +4817,7 @@ async def get_recent_games_endpoint(admin_key: str = "", limit: int = 15):
 
 @api_router.get("/admin/wallets")
 async def get_wallets(admin_key: str = "", limit: int = 10):
-    """ADMIN: View recent temporary wallets â€” public key, private key, sweep status"""
+    """ADMIN: View recent temporary wallets  public key, private key, sweep status"""
     if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
@@ -4824,16 +4873,16 @@ async def broadcast_message(message: str, admin_key: str = ""):
                         tg_err = resp.json().get("description", f"HTTP {resp.status_code}")
                         if any(s in tg_err.lower() for s in SKIP_ERRORS):
                             skipped += 1
-                            logging.info(f"ðŸ“¢ Broadcast skipped {tg_id} (unreachable): {tg_err}")
+                            logging.info(f" Broadcast skipped {tg_id} (unreachable): {tg_err}")
                         else:
                             failed += 1
                             errors.append(f"{tg_id}: {tg_err}")
-                            logging.warning(f"ðŸ“¢ Broadcast to {tg_id} failed: {tg_err}")
+                            logging.warning(f" Broadcast to {tg_id} failed: {tg_err}")
                     await asyncio.sleep(0.05)
                 except Exception as ex:
                     failed += 1
                     errors.append(f"{tg_id}: {ex}")
-        logging.info(f"ðŸ“¢ Broadcast done: sent={sent}, skipped={skipped}, failed={failed}, total={len(tg_ids)}")
+        logging.info(f" Broadcast done: sent={sent}, skipped={skipped}, failed={failed}, total={len(tg_ids)}")
         # Push in-app broadcast to all connected socket clients
         await sio.emit('admin_broadcast', {'message': message, 'ts': datetime.now(timezone.utc).isoformat()})
         return {"sent": sent, "failed": failed, "skipped": skipped, "total": len(tg_ids), "errors": errors[:5]}
@@ -4853,7 +4902,7 @@ async def force_start_room(room_type: str, admin_key: str = "", background_tasks
     if not target_room:
         raise HTTPException(status_code=404, detail=f"No waiting {room_type} room")
     if len(target_room.players) == 0:
-        raise HTTPException(status_code=400, detail="Room has no players â€” add at least one first")
+        raise HTTPException(status_code=400, detail="Room has no players  add at least one first")
     settings = ROOM_SETTINGS[room_type]
     while len(target_room.players) < target_room.min_players:
         bot_seed = str(uuid.uuid4())[:8]
@@ -4881,7 +4930,7 @@ async def toggle_maintenance(admin_key: str = ""):
     if not verify_admin_key(admin_key):
         raise HTTPException(status_code=403, detail="Unauthorized")
     maintenance_mode = not maintenance_mode
-    logging.info(f"ðŸ”§ Maintenance mode {'ON' if maintenance_mode else 'OFF'}")
+    logging.info(f" Maintenance mode {'ON' if maintenance_mode else 'OFF'}")
     # Notify all connected clients immediately
     await broadcast_room_updates()
     return {"maintenance_mode": maintenance_mode}
@@ -4944,22 +4993,22 @@ async def use_promo_code_endpoint(code: str, http_request: Request):
     return result
 
 
-# ── Early Access / Waitlist ──────────────────────────────────────────────────
+#  Early Access / Waitlist 
 
 EARLY_ACCESS_BONUS_TOKENS = int(os.environ.get("EARLY_ACCESS_BONUS_TOKENS", "500"))
 
 _WAITLIST_CONFIRM_MSG = (
-    "⚔️ <b>You're on the RiskArena waitlist!</b>\n\n"
+    " <b>You're on the RiskArena waitlist!</b>\n\n"
     "You've secured your spot as a <b>Founding Warrior</b>.\n\n"
     "What you'll receive on launch day:\n"
-    "🪙 <b>500 bonus tokens</b>\n"
-    "🛡️ <b>Founding Warrior</b> badge in your profile\n\n"
+    " <b>500 bonus tokens</b>\n"
+    " <b>Founding Warrior</b> badge in your profile\n\n"
     "We'll notify you here when the arena opens.\n"
-    "Stay ready, warrior. ⚔️"
+    "Stay ready, warrior. "
 )
 
 _WAITLIST_ALREADY_MSG = (
-    "⚔️ You're already on the waitlist, warrior!\n\n"
+    " You're already on the waitlist, warrior!\n\n"
     "Your <b>Founding Warrior</b> spot is secured. "
     "We'll message you when the arena opens."
 )
@@ -5071,9 +5120,9 @@ async def award_early_access_tokens(admin_key: str = "", tokens: int = EARLY_ACC
                 awarded += 1
 
                 launch_msg = (
-                    f"⚔️ <b>The arena is open, Founding Warrior!</b>\n\n"
-                    f"🪙 <b>{tokens} bonus tokens</b> have been added to your account.\n"
-                    f"🛡️ Your <b>Founding Warrior</b> badge is waiting in your profile.\n\n"
+                    f" <b>The arena is open, Founding Warrior!</b>\n\n"
+                    f" <b>{tokens} bonus tokens</b> have been added to your account.\n"
+                    f" Your <b>Founding Warrior</b> badge is waiting in your profile.\n\n"
                     f"Open RiskArena and claim your glory!"
                 )
                 ok = await send_telegram_message(tg_id, launch_msg)
@@ -5149,7 +5198,7 @@ async def force_close_room_endpoint(room_type: str, admin_key: str = ""):
 
 @api_router.get("/room-configs")
 async def get_public_room_configs():
-    """Public endpoint â€” no auth required. Returns current room bet limits."""
+    """Public endpoint  no auth required. Returns current room bet limits."""
     result = []
     for rt in ['free', 'bronze', 'silver', 'gold', 'freeroll']:
         cfg = room_configs.get(rt, {})
@@ -5271,7 +5320,7 @@ async def update_freeroll_config(
     return freeroll_config
 
 
-# â”€â”€ Arena energy endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+#  Arena energy endpoints 
 
 @api_router.post("/arena/energy/spend")
 async def spend_energy(request: Request):
@@ -5307,7 +5356,7 @@ async def buy_energy(request: Request):
     raise HTTPException(status_code=501, detail="Coming soon")
 
 
-# â”€â”€ Real-time arena: internal match result endpoint (called by Colyseus) â”€â”€â”€â”€â”€â”€
+#  Real-time arena: internal match result endpoint (called by Colyseus) 
 import os as _os
 
 INTERNAL_SECRET = _os.environ.get("INTERNAL_SECRET", "")
@@ -5446,7 +5495,7 @@ async def realtime_match_result(body: RealtimeMatchResultBody, http_request: Req
 
         _processed_realtime_result_rooms.add(body.room_id)
 
-    # â”€â”€ Daily quest hooks (outside transaction â€” non-fatal) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    #  Daily quest hooks (outside transaction  non-fatal) 
     await asyncio.gather(
         _daily_quests.increment_quest(body.winner_user_id, "play_match"),
         _daily_quests.increment_quest(body.loser_user_id,  "play_match"),
@@ -5481,7 +5530,7 @@ async def get_user_loadout_internal(user_id: str, request: Request):
     class_name = user_row["class_name"] if user_row else None
     character_build = _character_build_for_user_payload(dict(user_row) if user_row else {"class_name": class_name})
     battle_sprite = await _battle_spritesheet_for_loadout(user_id, class_name, equipped_rows, character_build)
-    # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slot→item
+    # aggregate_item_modifiers expects a list of row dicts; _fetch_equipped_snapshot returns a dict of slotitem
     item_list = [v for v in equipped_rows.values() if v is not None]
     stats = modifiers_to_dict(aggregate_item_modifiers(item_list))
     attack_bonus = float(stats.get("attack_bonus", 0) or 0)
@@ -5509,7 +5558,7 @@ async def get_user_loadout_internal(user_id: str, request: Request):
         "battle_spritesheet_hash": battle_sprite["hash"],
     }
 
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# 
 
 # Include Arena MVP routes before mounting the API router.
 from arena_api import router as arena_router
@@ -5574,9 +5623,9 @@ async def startup_event():
     try:
         from init_db import init as run_migrations
         await run_migrations()
-        logger.info("âœ… DB migrations applied on startup")
+        logger.info(" DB migrations applied on startup")
     except Exception as e:
-        logger.error(f"âš ï¸ DB migrations warning: {e}")
+        logger.error(f" DB migrations warning: {e}")
 
     await initialize_rooms()
 
@@ -5584,13 +5633,13 @@ async def startup_event():
     await payment_monitor.start_monitoring()
 
     # Run payment auto-recovery system (scans last 24 hours for missed payments)
-    logger.info("ðŸ”„ Running payment auto-recovery on startup...")
+    logger.info(" Running payment auto-recovery on startup...")
     try:
         processor = get_processor(None)
         recovery_result = await run_startup_recovery(None, processor)
-        logger.info(f"âœ… Auto-recovery complete: {recovery_result}")
+        logger.info(f" Auto-recovery complete: {recovery_result}")
     except Exception as e:
-        logger.error(f"âŒ Auto-recovery failed: {e}")
+        logger.error(f" Auto-recovery failed: {e}")
 
     # Start redundant payment scanner (backup detection system)
     asyncio.create_task(redundant_payment_scanner())
@@ -5609,13 +5658,13 @@ async def startup_event():
         deleted_count = 0
         logging.info("[Startup] Game history cleanup disabled")
     except Exception as e:
-        logging.error(f"âŒ [Startup] Failed to clear game history: {e}")
+        logging.error(f" [Startup] Failed to clear game history: {e}")
 
     logging.info("RiskArena API started")
-    logging.info(f"ðŸ  Active rooms: {len(active_rooms)}")
+    logging.info(f" Active rooms: {len(active_rooms)}")
     logging.info(f"Solana monitoring: {'Enabled' if RISKARENA_WALLET_ADDRESS != 'YourWalletAddressHere12345678901234567890123456789' else 'Disabled (set RISKARENA_WALLET_ADDRESS)'}")
-    logging.info("ðŸ” Redundant payment scanner: Enabled (15s interval - FAST detection)")
-    logging.info("ðŸ§¹ Wallet cleanup scheduler: Enabled (72h grace period)")
+    logging.info(" Redundant payment scanner: Enabled (15s interval - FAST detection)")
+    logging.info(" Wallet cleanup scheduler: Enabled (72h grace period)")
 
 async def redundant_payment_scanner():
     """
@@ -5628,14 +5677,14 @@ async def redundant_payment_scanner():
     # Wait a bit before starting to ensure DB is ready
     await asyncio.sleep(10)
     
-    logging.info("ðŸ” [Scanner] Redundant payment scanner started (15s interval)")
+    logging.info(" [Scanner] Redundant payment scanner started (15s interval)")
     
     while True:
         try:
             processor = get_processor(None)
             await processor.rescan_pending_payments()
         except Exception as e:
-            logging.error(f"âŒ [Scanner] Error in redundant payment scanner: {e}")
+            logging.error(f" [Scanner] Error in redundant payment scanner: {e}")
             import traceback
             logging.error(traceback.format_exc())
         
@@ -5674,14 +5723,14 @@ async def boss_raid_spawner():
         try:
             # Settle expired raids in the DB. Client notification (raid_finished) is
             # handled by the Colyseus BossRaidRoom, which detects expiry on its liveness
-            # poll and broadcasts settled rewards — no Socket.IO emit needed here (Phase 6).
+            # poll and broadcasts settled rewards  no Socket.IO emit needed here (Phase 6).
             settled = await _boss_repo.settle_expired_raids()
             for s in settled:
                 logging.info(f"[BossRaid] Settled expired raid {s['raid_id']}: {s['name']}")
 
             # Spawn a new boss if none is active AND the 1h respawn grid allows it.
             # next_spawn_at() = previous raid's created_at + RESPAWN_INTERVAL, so an early
-            # kill does NOT instantly respawn — the next boss waits for its hourly slot.
+            # kill does NOT instantly respawn  the next boss waits for its hourly slot.
             active = await _boss_repo.get_active_raid()
             if not active and datetime.now(timezone.utc) >= await _boss_repo.next_spawn_at():
                 name = random.choice(_boss_domain.BOSS_NAMES)
@@ -5720,20 +5769,20 @@ async def wallet_cleanup_scheduler():
     # Wait 1 hour after startup before first cleanup
     await asyncio.sleep(3600)
     
-    logging.info("ðŸ§¹ [Cleanup Scheduler] Wallet cleanup scheduler started (24h interval, 72h grace period)")
+    logging.info(" [Cleanup Scheduler] Wallet cleanup scheduler started (24h interval, 72h grace period)")
     
     while True:
         try:
             processor = get_processor(None)
             result = await processor.cleanup_old_wallets_with_grace_period(grace_period_hours=120)
             
-            logging.info(f"ðŸ§¹ [Cleanup Scheduler] Cleanup complete:")
+            logging.info(f" [Cleanup Scheduler] Cleanup complete:")
             logging.info(f"   Cleaned: {result.get('cleaned', 0)} wallets")
             logging.info(f"   Blocked: {result.get('blocked', 0)} wallets (funds still present)")
             logging.info(f"   Flagged: {result.get('flagged_for_review', 0)} wallets need manual review")
             
         except Exception as e:
-            logging.error(f"âŒ [Cleanup Scheduler] Error: {e}")
+            logging.error(f" [Cleanup Scheduler] Error: {e}")
             import traceback
             logging.error(traceback.format_exc())
         
@@ -5750,10 +5799,10 @@ async def cleanup_old_game_history():
         total_games = await dbq.count_completed_games()
 
         if total_games > 5:
-            logging.info(f"ðŸ—‘ï¸ [Game History] {total_games} games in history (limit 5); old entries managed by DB retention policy")
+            logging.info(f" [Game History] {total_games} games in history (limit 5); old entries managed by DB retention policy")
 
     except Exception as e:
-        logging.error(f"âŒ [Game History Cleanup] Error: {e}")
+        logging.error(f" [Game History Cleanup] Error: {e}")
     
 @app.on_event("shutdown")
 async def shutdown_event():

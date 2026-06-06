@@ -266,6 +266,66 @@
       "slot": "helmet",
       "zPos": 130,
       "pathsByBodyType": { "male": "head/helmets/greathelm/male/gold" }
+    },
+    "torso.armour.roman_legion_bronze": {
+      "slot": "torso",
+      "zPos": 60,
+      "pathsByBodyType": { "male": "torso/armour/roman_legion_bronze/male" }
+    },
+    "torso.armour.roman_legion_steel": {
+      "slot": "torso",
+      "zPos": 60,
+      "pathsByBodyType": { "male": "torso/armour/roman_legion_steel/male" }
+    },
+    "torso.armour.roman_legion_gold": {
+      "slot": "torso",
+      "zPos": 60,
+      "pathsByBodyType": { "male": "torso/armour/roman_legion_gold/male" }
+    },
+    "helmet.roman_galea1_bronze": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea1/male/bronze" }
+    },
+    "helmet.roman_galea1_steel": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea1/male/steel" }
+    },
+    "helmet.roman_galea1_gold": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea1/male/gold" }
+    },
+    "helmet.roman_galea2_bronze": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea2/male/bronze" }
+    },
+    "helmet.roman_galea2_steel": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea2/male/steel" }
+    },
+    "helmet.roman_galea2_gold": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea2/male/gold" }
+    },
+    "helmet.roman_galea3_bronze": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea3/male/bronze" }
+    },
+    "helmet.roman_galea3_steel": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea3/male/steel" }
+    },
+    "helmet.roman_galea3_gold": {
+      "slot": "helmet",
+      "zPos": 130,
+      "pathsByBodyType": { "male": "head/helmets/roman_galea3/male/gold" }
     }
   },
   "weapons": {
