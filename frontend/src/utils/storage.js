@@ -38,7 +38,19 @@ export function getStoredSessionToken() {
 }
 
 export function saveStoredUser(userData) {
-  localStorage.setItem(USER_SESSION_KEY, JSON.stringify(userData));
+  const current = getStoredUser();
+  const next = {
+    ...current,
+    ...(userData || {}),
+  };
+
+  // Profile/balance refresh endpoints intentionally do not return a new token.
+  // Keep the active session unless auth explicitly supplies a replacement.
+  if (!next.session_token && current.session_token) {
+    next.session_token = current.session_token;
+  }
+
+  localStorage.setItem(USER_SESSION_KEY, JSON.stringify(next));
 }
 
 export function clearStoredUser() {

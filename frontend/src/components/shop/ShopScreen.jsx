@@ -21,8 +21,35 @@ import WeaponIcon from '../WeaponIcon';
 import ArmorIcon from '../ArmorIcon';
 
 const SHOP_TIERS = ['common', 'uncommon', 'rare'];
-const SHOP_CLASSES = ['all', 'warrior', 'mage', 'rogue'];
-const CLASS_ICON = { all: '✦', warrior: '⚔️', mage: '🔮', rogue: '🗡️' };
+const CLASS_ORDER = ['warrior', 'mage', 'rogue'];
+const CLASS_ICON = { warrior: '⚔️', mage: '🔮', rogue: '🗡️' };
+
+// Which classes the player can use. Source of truth is the backend's
+// `unlocked_classes` if present; otherwise derived from the level rule:
+// starting class from the start, 2nd class at level 10, 3rd at level 15.
+// The player may switch the active class, so we never drop the active one.
+function getUnlockedClasses(user) {
+  const fromServer = user?.unlocked_classes;
+  if (Array.isArray(fromServer) && fromServer.length) {
+    const set = fromServer.map((c) => String(c).toLowerCase()).filter((c) => CLASS_ORDER.includes(c));
+    if (set.length) return [...new Set(set)];
+  }
+  const current = String(user?.class_name || '').trim().toLowerCase();
+  const level = Number(user?.level ?? 1);
+  const unlocked = [];
+  if (CLASS_ORDER.includes(current)) unlocked.push(current);
+  const rest = CLASS_ORDER.filter((c) => c !== current);
+  if (level >= 10 && rest[0]) unlocked.push(rest[0]);
+  if (level >= 15 && rest[1]) unlocked.push(rest[1]);
+  return unlocked.length ? unlocked : [CLASS_ORDER[0]];
+}
+
+// Active class first, remaining unlocked classes after (for the filter tabs).
+function orderedClassTabs(user) {
+  const unlocked = getUnlockedClasses(user);
+  const active = String(user?.class_name || '').trim().toLowerCase();
+  return [...new Set([active, ...unlocked].filter((c) => unlocked.includes(c)))];
+}
 
 const SLOT_ICON = { weapon: Sword, armor: Shield, helmet: HardHat, ability: Sparkles, ability_2: Sparkles };
 
@@ -278,11 +305,17 @@ export default function ShopScreen({ user, onInventoryChanged }) {
   const [buying, setBuying] = useState(null);
   const [balance, setBalance] = useState(user?.token_balance || 0);
   const [tierFilter, setTierFilter] = useState('common');
-  const [classFilter, setClassFilter] = useState('all');
+  const classTabs = useMemo(() => orderedClassTabs(user), [user?.unlocked_classes, user?.class_name, user?.level]);
+  const [classFilter, setClassFilter] = useState(() => orderedClassTabs(user)[0]);
   const [slotFilter, setSlotFilter] = useState('all'); // 'all' | 'gear' | 'skills'
   const [selected, setSelected] = useState(null);
 
   useEffect(() => { setBalance(user?.token_balance || 0); }, [user?.token_balance]);
+
+  // Keep the selected class valid as classes unlock / the active class changes.
+  useEffect(() => {
+    if (!classTabs.includes(classFilter)) setClassFilter(classTabs[0]);
+  }, [classTabs, classFilter]);
 
   useEffect(() => {
     apiClient.get('/shop/items')
@@ -312,7 +345,8 @@ export default function ShopScreen({ user, onInventoryChanged }) {
   const visibleItems = useMemo(() => (items || []).filter((item) => {
     if (getTierKey(item) !== tierFilter) return false;
     const itemClass = getClassKey(item);
-    if (itemClass !== 'any' && classFilter !== 'all' && itemClass !== classFilter) return false;
+    // Universal ('any', e.g. helmets) always show; otherwise must match the selected class.
+    if (itemClass !== 'any' && itemClass !== classFilter) return false;
     const itemSlot = item.slot;
     if (slotFilter === 'skills') {
       if (itemSlot !== 'ability' && itemSlot !== 'ability_2') return false;
@@ -392,33 +426,35 @@ export default function ShopScreen({ user, onInventoryChanged }) {
           })}
         </div>
 
-        {/* Class row */}
-        <div style={{ display: 'flex', gap: 5 }}>
-          {SHOP_CLASSES.map((cls) => {
-            const active = classFilter === cls;
-            const isYou = cls !== 'all' && cls === userClass;
-            const theme = CLASS_THEME[cls] || { bg: 'rgba(255,255,255,0.06)', color: '#cbd5e1' };
-            return (
-              <button key={cls} type="button" onClick={() => setClassFilter(cls)} style={{
-                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                borderRadius: 10, padding: '7px 4px',
-                border: active
-                  ? `1px solid ${isYou ? 'rgba(201,168,76,0.55)' : theme.color + '66'}`
-                  : '1px solid rgba(255,255,255,0.06)',
-                background: active ? (isYou ? 'rgba(201,168,76,0.12)' : theme.bg) : 'rgba(255,255,255,0.03)',
-                cursor: 'pointer', transition: 'all 0.15s ease',
-              }}>
-                <span style={{ fontSize: 14, lineHeight: 1 }}>{CLASS_ICON[cls]}</span>
-                <span style={{
-                  fontSize: 9, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase',
-                  color: active ? (isYou ? '#c9a84c' : theme.color) : '#475569',
+        {/* Class row — only unlocked classes; hidden entirely when just one is unlocked */}
+        {classTabs.length > 1 && (
+          <div style={{ display: 'flex', gap: 5 }}>
+            {classTabs.map((cls) => {
+              const active = classFilter === cls;
+              const isYou = cls === userClass;
+              const theme = CLASS_THEME[cls] || { bg: 'rgba(255,255,255,0.06)', color: '#cbd5e1' };
+              return (
+                <button key={cls} type="button" onClick={() => setClassFilter(cls)} style={{
+                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                  borderRadius: 10, padding: '7px 4px',
+                  border: active
+                    ? `1px solid ${isYou ? 'rgba(201,168,76,0.55)' : theme.color + '66'}`
+                    : '1px solid rgba(255,255,255,0.06)',
+                  background: active ? (isYou ? 'rgba(201,168,76,0.12)' : theme.bg) : 'rgba(255,255,255,0.03)',
+                  cursor: 'pointer', transition: 'all 0.15s ease',
                 }}>
-                  {cls === 'all' ? 'All' : formatClassLabel(cls)}{isYou ? ' ✓' : ''}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>{CLASS_ICON[cls]}</span>
+                  <span style={{
+                    fontSize: 9, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase',
+                    color: active ? (isYou ? '#c9a84c' : theme.color) : '#475569',
+                  }}>
+                    {formatClassLabel(cls)}{isYou ? ' ✓' : ''}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Slot filter row */}
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>

@@ -355,9 +355,7 @@ function mergeStatTotals(...statSources) {
 function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, equippedBySlot }) {
   const activeKey = String(user?.class_name || 'warrior').trim().toLowerCase();
   const info = CLASS_INFO[activeKey] || CLASS_INFO.warrior;
-  const classBonusSummary = getStatEntries(
-    mergeStatTotals(CLASS_MODIFIERS[activeKey], loadoutEffectiveStats),
-  );
+  const classBonusSummary = getStatEntries(CLASS_MODIFIERS[activeKey] || {});
   const viewedKey = activeKey;
   const isActive = true;
   const saving = false;
@@ -396,12 +394,14 @@ function ClassHeroCard({ user, loadoutEffectiveStats, loadoutPowerSummary, equip
           <CharacterPortrait
             cls={viewedKey}
             size={104}
-            badgeSize={32}
             active={isActive}
             sheetPath={isActive ? (user?.battle_spritesheet_path || user?.character_spritesheet_path) : null}
             sheetLoading={isActive && user && !user.battle_spritesheet_path && !user.character_spritesheet_path}
             armor={equippedBySlot?.armor || null}
             helmet={equippedBySlot?.helmet || null}
+            showWeaponBadge={false}
+            showArmorBadge={false}
+            showHelmetBadge={false}
             style={{
               borderRadius: 14,
               border: `1px solid ${info.color}33`,
@@ -996,123 +996,6 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
             equippedBySlot={equippedBySlot}
             onClassChange={onClassChange}
           />
-
-          <div style={{ marginTop: 12 }}>
-            <p style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c9a84c', margin: '0 0 8px' }}>
-              EQUIPPED
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'row', gap: 8 }}>
-              {LOADOUT_SLOTS.map((slot) => {
-                const item = equippedBySlot[slot.key];
-                const theme = item ? getTierTheme(item) : null;
-                const tierKey = item ? getTierKey(item) : null;
-                const tierColors = {
-                  legendary: '#c9a84c',
-                  epic: '#a855f7',
-                  rare: '#3b82f6',
-                  uncommon: '#22c55e',
-                  common: '#94a3b8',
-                };
-                const tierDot = tierKey ? (tierColors[tierKey] || '#94a3b8') : null;
-                return (
-                  <div
-                    key={slot.key}
-                    onClick={() => {
-                      if (item) {
-                        setSelectedItem(item);
-                      } else {
-                        toast.info('No item equipped');
-                      }
-                    }}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      padding: '10px 8px',
-                      borderRadius: 16,
-                      cursor: 'pointer',
-                      border: item
-                        ? `1px solid ${theme.border}`
-                        : '1px solid rgba(255,255,255,0.06)',
-                      background: item
-                        ? `linear-gradient(135deg, rgba(8,12,24,0.97), ${theme.soft})`
-                        : 'rgba(255,255,255,0.02)',
-                    }}
-                  >
-                    {item ? (
-                      <>
-                        <ItemImage item={item} size={52} />
-                        <p style={{
-                          color: '#e8e0d0',
-                          fontSize: 10,
-                          fontWeight: 800,
-                          margin: '6px 0 0',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          width: '100%',
-                          textAlign: 'center',
-                        }}>
-                          {item.name}
-                        </p>
-                        {(() => {
-                          const topStat = getItemStatRows(item)?.[0];
-                          return topStat ? (
-                            <p style={{
-                              fontSize: 9,
-                              color: '#94a3b8',
-                              fontWeight: 700,
-                              margin: 0,
-                              maxWidth: '100%',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              textAlign: 'center',
-                            }}>
-                              {topStat.label}
-                            </p>
-                          ) : null;
-                        })()}
-                        {tierDot && (
-                          <div style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            background: tierDot,
-                            marginTop: 4,
-                            flexShrink: 0,
-                          }} />
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <div style={{
-                          width: 52,
-                          height: 52,
-                          borderRadius: 14,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: 'rgba(255,255,255,0.02)',
-                          border: '1px dashed rgba(148,163,184,0.12)',
-                        }}>
-                          <slot.Icon style={{ width: 20, height: 20, color: '#2d3f55' }} />
-                        </div>
-                        <p style={{ color: '#475569', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '6px 0 0' }}>
-                          {slot.label}
-                        </p>
-                        <p style={{ color: '#2d3f55', fontSize: 8, fontWeight: 600, margin: '2px 0 0' }}>
-                          Tap to equip
-                        </p>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
 
           <div style={{ marginTop: 12 }}>
             <p style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#c9a84c', margin: '0 0 8px' }}>

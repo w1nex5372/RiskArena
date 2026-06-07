@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
+import { HardHat, Shield, Sparkles, Sword, Swords, Users } from 'lucide-react';
 import apiClient from '../../api/client';
 import { useUser } from '../../context/UserContext';
 import { CLASS_INFO } from '../../utils/characters';
@@ -51,9 +51,9 @@ function SlotImage({ item, FallbackIcon, size = 44 }) {
 }
 
 const LOADOUT_SLOTS = [
-  { key: 'weapon',    label: 'WEAPON',  Icon: Sword },
-  { key: 'armor',     label: 'ARMOR',   Icon: Shield },
-  { key: 'ability',   label: 'ITEM SKILL', Icon: Sparkles },
+  { key: 'weapon', label: 'WEAPON', Icon: Sword },
+  { key: 'armor',  label: 'ARMOR',  Icon: Shield },
+  { key: 'helmet', label: 'HELMET', Icon: HardHat },
 ];
 
 function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
@@ -61,7 +61,7 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInv
   const [history, setHistory] = useState(null);
   const [enteringRealTime, setEnteringRealTime] = useState(false);
   const [energyError, setEnergyError] = useState('');
-  const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
+  const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null, helmet: null });
   const [loadoutEffectiveStats, setLoadoutEffectiveStats] = useState({});
   const [timeToNext, setTimeToNext] = useState('');
   const [localSheetPath, setLocalSheetPath] = useState(null);
@@ -166,11 +166,7 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInv
   });
 
   const getEquipped = (slotKey) => equipped?.[slotKey] || null;
-  // Base class identity (HP / ATK / Guard / Speed) is shown in ClassStatRow.
-  // These chips surface only the bonuses contributed by equipped gear
-  // (loadout_effective_stats = aggregated item modifiers), so the two displays
-  // never duplicate the same number.
-  const gearStatChips = getStatEntries(loadoutEffectiveStats || {});
+
 
   return (
     <div style={{ background: '#1a1a2e', minHeight: '100%', paddingBottom: 100, color: '#e8e0d0' }}>
@@ -208,33 +204,9 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInv
               </div>
 
               {/* Base class identity stats (HP / ATK / Guard / Speed) */}
-              <ClassStatRow classInfo={classInfo} showNote={false} style={{ marginTop: 6 }} />
+              <ClassStatRow classInfo={classInfo} showNote={false} style={{ marginTop: 6 }} gearBonuses={loadoutEffectiveStats} />
 
-              {/* Bonuses from equipped gear (kept separate from base stats above) */}
-              {gearStatChips.length > 0 ? (
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, marginTop: 6 }}>
-                  <span style={{ color: '#64748b', fontSize: 8, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    Gear
-                  </span>
-                  {gearStatChips.slice(0, 4).map((chip) => (
-                    <span
-                      key={`${chip.key}-${chip.label}`}
-                      style={{
-                        color: '#c9a84c',
-                        background: 'rgba(201,168,76,0.1)',
-                        border: '1px solid rgba(201,168,76,0.18)',
-                        borderRadius: 999,
-                        padding: '2px 6px',
-                        fontSize: 9,
-                        fontWeight: 800,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {chip.label}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+
             </div>
 
             {/* Win / Loss pills */}
@@ -274,11 +246,13 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInv
             <CharacterPortrait
               cls={selectedClass}
               size={96}
-              badgeSize={28}
               weapon={equipped?.weapon || null}
               helmet={equipped?.helmet || null}
               sheetPath={localSheetPath || user?.battle_spritesheet_path || user?.character_spritesheet_path || null}
               armor={equipped?.armor || null}
+              showWeaponBadge={false}
+              showArmorBadge={false}
+              showHelmetBadge={false}
             />
           </div>
         </div>

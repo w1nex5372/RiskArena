@@ -389,11 +389,19 @@ export default function ItemDetailModal({
           {effectiveStatRows.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <SectionLabel color={theme.color}>Stats</SectionLabel>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                 {effectiveStatRows.map((row) => (
-                  <StatChip key={row.key} color={theme.color}>
+                  <div key={row.key} style={{
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 8,
+                    padding: '7px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: theme.color,
+                  }}>
                     {row.label}
-                  </StatChip>
+                  </div>
                 ))}
               </div>
             </div>
@@ -402,11 +410,19 @@ export default function ItemDetailModal({
           {enchantStatRows.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <SectionLabel color="#c9a84c">Enchant Bonus</SectionLabel>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                 {enchantStatRows.map((row) => (
-                  <StatChip key={row.key} color="#c9a84c">
+                  <div key={row.key} style={{
+                    background: 'rgba(201,168,76,0.06)',
+                    border: '1px solid rgba(201,168,76,0.18)',
+                    borderRadius: 8,
+                    padding: '7px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: '#c9a84c',
+                  }}>
                     {row.label}
-                  </StatChip>
+                  </div>
                 ))}
               </div>
             </div>
@@ -415,11 +431,19 @@ export default function ItemDetailModal({
           {abilityBattleRows.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <SectionLabel color="#60a5fa">Item Skill</SectionLabel>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                 {abilityBattleRows.map((row) => (
-                  <StatChip key={row.key} color="#93c5fd">
+                  <div key={row.key} style={{
+                    background: 'rgba(96,165,250,0.06)',
+                    border: '1px solid rgba(96,165,250,0.18)',
+                    borderRadius: 8,
+                    padding: '7px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: '#93c5fd',
+                  }}>
                     {row.label}
-                  </StatChip>
+                  </div>
                 ))}
               </div>
             </div>
