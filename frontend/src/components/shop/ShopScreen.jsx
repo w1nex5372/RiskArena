@@ -307,7 +307,7 @@ export default function ShopScreen({ user, onInventoryChanged }) {
   const [tierFilter, setTierFilter] = useState('common');
   const classTabs = useMemo(() => orderedClassTabs(user), [user?.unlocked_classes, user?.class_name, user?.level]);
   const [classFilter, setClassFilter] = useState(() => orderedClassTabs(user)[0]);
-  const [slotFilter, setSlotFilter] = useState('all'); // 'all' | 'gear' | 'skills'
+  const [slotFilter, setSlotFilter] = useState('all'); // 'all' | 'weapons' | 'armor' | 'skills'
   const [selected, setSelected] = useState(null);
 
   useEffect(() => { setBalance(user?.token_balance || 0); }, [user?.token_balance]);
@@ -354,8 +354,6 @@ export default function ShopScreen({ user, onInventoryChanged }) {
       if (itemSlot !== 'armor' && itemSlot !== 'helmet') return false;
     } else if (slotFilter === 'skills') {
       if (itemSlot !== 'ability' && itemSlot !== 'ability_2') return false;
-    } else if (slotFilter === 'gear') {
-      if (itemSlot !== 'weapon' && itemSlot !== 'armor' && itemSlot !== 'helmet') return false;
     }
     return true;
   }), [items, tierFilter, classFilter, slotFilter]);

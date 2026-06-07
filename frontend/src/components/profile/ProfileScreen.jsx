@@ -1,15 +1,20 @@
 import React from 'react';
+import { toast } from 'sonner';
 import TokenPurchaseHistory from '../shop/TokenPurchaseHistory';
 import { ROOM_LABELS, normalizeRoomType } from '../../utils/constants';
+import { CLASS_INFO } from '../../utils/characters';
 import apiClient from '../../api/client';
 
 const PROGRESS_TTL = 60_000;
+// The Nth class slot unlocks at this level (slot 0 = starting class, always owned).
+const CLASS_SLOT_LEVELS = [1, 10, 15];
 
 function ProfileScreen({ API, user, onUserUpdate }) {
   const [stats, setStats] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [progress, setProgress] = React.useState(null);
   const [progressLoading, setProgressLoading] = React.useState(true);
+  const [switchingClass, setSwitchingClass] = React.useState(null);
 
   React.useEffect(() => {
     if (!user?.id) return;
@@ -49,6 +54,27 @@ function ProfileScreen({ API, user, onUserUpdate }) {
   const winRatePct = stats?.win_rate ?? 0;
   const isProfit = (stats?.net_profit ?? 0) >= 0;
 
+  // ── Class slots ──────────────────────────────────────────────────────────
+  const activeClass = String(user?.class_name || '').trim().toLowerCase();
+  const unlockedClasses = (Array.isArray(user?.unlocked_classes) && user.unlocked_classes.length)
+    ? user.unlocked_classes.map((c) => String(c).toLowerCase())
+    : (activeClass ? [activeClass] : []);
+  const pendingUnlocks = user?.pending_class_unlocks || 0;
+
+  const handleSwitchClass = async (cls) => {
+    if (switchingClass || cls === activeClass) return;
+    setSwitchingClass(cls);
+    try {
+      const res = await apiClient.post('/me/class', { class_name: cls });
+      onUserUpdate?.(res.data);
+      toast.success(`Now playing as ${CLASS_INFO[cls]?.name || cls}`);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to switch class');
+    } finally {
+      setSwitchingClass(null);
+    }
+  };
+
   const StatCard = ({ label, value, sub, color, icon }) => (
     <div style={{ background: 'rgba(26,26,46,0.7)', border: '1px solid rgba(201,168,76,0.12)', borderRadius: 12, padding: '12px 10px', textAlign: 'center' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginBottom: 4 }}>
@@ -85,6 +111,84 @@ function ProfileScreen({ API, user, onUserUpdate }) {
           </div>
         </div>
       ) : null}
+
+      {/* 2. Class slots — switch between unlocked classes */}
+      {activeClass && (
+        <div style={{ background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 14, padding: '14px 16px', marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+              Class — tap to switch
+            </span>
+            {pendingUnlocks > 0 && (
+              <span style={{ fontSize: 10, fontWeight: 800, color: '#c9a84c', background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.3)', borderRadius: 999, padding: '2px 8px' }}>
+                ✦ New class ready
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {CLASS_SLOT_LEVELS.map((reqLevel, slotIndex) => {
+              // A slot is owned if the player has unlocked at least (slotIndex+1) classes.
+              const ownedClass = unlockedClasses[slotIndex];
+              if (ownedClass) {
+                const info = CLASS_INFO[ownedClass] || {};
+                const isActive = ownedClass === activeClass;
+                const isSwitching = switchingClass === ownedClass;
+                return (
+                  <button
+                    key={slotIndex}
+                    type="button"
+                    onClick={() => handleSwitchClass(ownedClass)}
+                    disabled={isActive || !!switchingClass}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                      padding: '12px 6px 10px', borderRadius: 12, cursor: isActive ? 'default' : 'pointer',
+                      background: isActive ? `${info.color || '#c9a84c'}1f` : 'rgba(255,255,255,0.03)',
+                      border: isActive ? `1.5px solid ${info.color || '#c9a84c'}` : '1px solid rgba(255,255,255,0.08)',
+                      boxShadow: isActive ? `0 0 16px ${info.glow || 'rgba(201,168,76,0.4)'}` : 'none',
+                      color: 'inherit', transition: 'all 0.15s ease', appearance: 'none',
+                    }}
+                  >
+                    <span style={{ fontSize: 24, lineHeight: 1 }}>{info.icon || '✦'}</span>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: isActive ? (info.color || '#c9a84c') : '#e8e0d0' }}>
+                      {info.name || ownedClass}
+                    </span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em',
+                      color: isActive ? '#22c55e' : '#64748b',
+                    }}>
+                      {isActive ? 'Active ✓' : isSwitching ? '…' : 'Switch'}
+                    </span>
+                  </button>
+                );
+              }
+              // Locked / claimable slot
+              const claimable = slotIndex < unlockedClasses.length + pendingUnlocks;
+              return (
+                <div
+                  key={slotIndex}
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                    padding: '12px 6px 10px', borderRadius: 12,
+                    background: claimable ? 'rgba(201,168,76,0.08)' : 'rgba(255,255,255,0.02)',
+                    border: claimable ? '1px dashed rgba(201,168,76,0.4)' : '1px dashed rgba(148,163,184,0.18)',
+                    opacity: claimable ? 1 : 0.7,
+                  }}
+                >
+                  <span style={{ fontSize: 22, lineHeight: 1, filter: claimable ? 'none' : 'grayscale(1)' }}>
+                    {claimable ? '✦' : '🔒'}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: claimable ? '#c9a84c' : '#64748b' }}>
+                    {claimable ? 'Ready!' : 'Locked'}
+                  </span>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#64748b' }}>
+                    Lvl {reqLevel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 3. Stats section */}
       {loading ? (

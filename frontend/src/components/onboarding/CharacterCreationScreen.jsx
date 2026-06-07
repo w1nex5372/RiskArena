@@ -238,13 +238,18 @@ function buildCharacter(classKey, preset, appearance) {
   };
 }
 
-export default function CharacterCreationScreen({ user, onComplete }) {
+export default function CharacterCreationScreen({ user, onComplete, lockedClass = null, onCancel = null }) {
+  // When lockedClass is set (e.g. customizing a newly unlocked class), the class is
+  // fixed and the picker is hidden — only appearance can be changed.
+  const locked = !!(lockedClass && CLASS_PRESETS[lockedClass]);
+  const initialClass = locked ? lockedClass : 'warrior';
+  const initialPreset = CLASS_PRESETS[initialClass][0];
   const [isCompact, setIsCompact] = useState(() => window.innerWidth <= 640);
-  const [classKey, setClassKey] = useState('warrior');
-  const [presetId, setPresetId] = useState(CLASS_PRESETS.warrior[0].id);
-  const [hairAsset, setHairAsset] = useState('hair.bedhead');
-  const [hairVariant, setHairVariant] = useState('red');
-  const [eyeVariant, setEyeVariant] = useState('blue');
+  const [classKey, setClassKey] = useState(initialClass);
+  const [presetId, setPresetId] = useState(initialPreset.id);
+  const [hairAsset, setHairAsset] = useState(locked ? (findLayer(initialPreset, 'hair')?.asset || 'hair.bedhead') : 'hair.bedhead');
+  const [hairVariant, setHairVariant] = useState(locked ? (findLayer(initialPreset, 'hair')?.variant || 'red') : 'red');
+  const [eyeVariant, setEyeVariant] = useState(locked ? (findLayer(initialPreset, 'eyes')?.variant || 'blue') : 'blue');
   const [previewPath, setPreviewPath] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -358,11 +363,12 @@ export default function CharacterCreationScreen({ user, onComplete }) {
             minWidth: 0,
           }}>
             <div style={{ color: '#c9a84c', fontSize: 12, fontWeight: 900, letterSpacing: 3, textTransform: 'uppercase', marginBottom: 8 }}>
-              Character Creation
+              {locked ? 'New Class Unlocked' : 'Character Creation'}
             </div>
             <h1 style={{ margin: 0, fontSize: isCompact ? 25 : 30, lineHeight: 1.08, fontWeight: 900 }}>
-              Choose your fighter
+              {locked ? `Customize your ${classInfo.name}` : 'Choose your fighter'}
             </h1>
+            {!locked && (
             <div style={{
               marginTop: isCompact ? 12 : 18,
               display: 'grid',
@@ -401,6 +407,7 @@ export default function CharacterCreationScreen({ user, onComplete }) {
                 );
               })}
             </div>
+            )}
 
             <div style={{ marginTop: isCompact ? 14 : 18 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#c9a84c', fontSize: 12, fontWeight: 900, letterSpacing: 2, textTransform: 'uppercase' }}>
@@ -589,8 +596,29 @@ export default function CharacterCreationScreen({ user, onComplete }) {
               }}
             >
               <Sparkles size={18} />
-              {saving ? 'Creating...' : 'Enter RiskArena'}
+              {saving ? (locked ? 'Saving...' : 'Creating...') : (locked ? `Save ${classInfo.name}` : 'Enter RiskArena')}
             </button>
+            {locked && onCancel ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={saving}
+                style={{
+                  width: '100%',
+                  marginTop: 10,
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(255,255,255,0.04)',
+                  color: 'rgba(255,255,255,0.6)',
+                  borderRadius: 8,
+                  padding: '11px 16px',
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: saving ? 'default' : 'pointer',
+                }}
+              >
+                Skip for now
+              </button>
+            ) : null}
           </aside>
         </div>
       </div>

@@ -11,6 +11,7 @@ import { Toaster } from './components/ui/sonner';
 import { Crown, Coins, Users, Trophy, Zap, Wallet, Play, Timer, TrendingUp, TrendingDown, Gift } from 'lucide-react';
 import PaymentModal from './components/PaymentModal';
 import LevelUpModal from './components/profile/LevelUpModal';
+import ClassUnlockModal from './components/character/ClassUnlockModal';
 import RouletteWheel from './components/game/RouletteWheel';
 import StaticRouletteResult from './components/game/StaticRouletteResult';
 import CountdownTimer from './components/game/CountdownTimer';
@@ -227,6 +228,10 @@ function App() {
 
   // Level-up modal state
   const [levelUpData, setLevelUpData] = useState(null);
+  // Class-unlock reveal: dismissed for this session (re-shows next load if still pending)
+  const [classUnlockDismissed, setClassUnlockDismissed] = useState(false);
+  // When set, shows the character builder for a just-unlocked class (appearance setup)
+  const [buildClassFor, setBuildClassFor] = useState(null);
   const [topBarVersion, setTopBarVersion] = useState(0);
 
   // Payment modal state
@@ -3285,6 +3290,46 @@ function App() {
             try { localStorage.removeItem('user_progress'); } catch {}
           }}
         />
+      )}
+
+      {/* Class Unlock reveal — shows after the level-up modal when a class slot is earned */}
+      {user?.pending_class_unlocks > 0 && !levelUpData && !classUnlockDismissed && !buildClassFor && (
+        <ClassUnlockModal
+          claimableClasses={user.claimable_classes || []}
+          level={user.level}
+          onClaim={async (className) => {
+            try {
+              // Unlock the class, switch the active class to it, then open the
+              // character builder so the player can customize its appearance.
+              await axios.post(`${API}/me/classes/unlock`, { class_name: className }, authConfig());
+              const res = await axios.post(`${API}/me/class`, { class_name: className }, authConfig());
+              setUserWithLog({ ...(userRef.current || user || {}), ...res.data });
+              setBuildClassFor(className);
+            } catch (e) {
+              toast.error(e.response?.data?.detail || 'Failed to unlock class');
+              throw e;
+            }
+          }}
+          onClose={() => setClassUnlockDismissed(true)}
+        />
+      )}
+
+      {/* New-class character builder — same creator UI, locked to the unlocked class */}
+      {buildClassFor && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 210, overflowY: 'auto' }}>
+          <Suspense fallback={<ScreenLoader />}>
+            <CharacterCreationScreen
+              user={user}
+              lockedClass={buildClassFor}
+              onCancel={() => setBuildClassFor(null)}
+              onComplete={(fields) => {
+                setUserWithLog({ ...(userRef.current || user || {}), ...fields });
+                setBuildClassFor(null);
+                toast.success('Character ready!');
+              }}
+            />
+          </Suspense>
+        </div>
       )}
 
       {/* Payment Modal */}

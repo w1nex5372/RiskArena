@@ -48,6 +48,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS class_name         VARCHAR(20) DEFAUL
 ALTER TABLE users ADD COLUMN IF NOT EXISTS character_build_json JSONB DEFAULT NULL;
 -- Classes the player has unlocked (starting class + level-gated picks at 10/15).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS unlocked_classes   JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- Saved per-class appearance builds (class_name -> character_build_json), so each
+-- unlocked class keeps its own look when switching between them.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS class_builds       JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS current_win_streak INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS max_win_streak     INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS settings           JSONB NOT NULL DEFAULT '{}'::jsonb;

@@ -43,6 +43,16 @@ def xp_to_next_level(xp: int) -> int:
     return max(0, xp_for_level(current + 1) - xp)
 
 
+# Class slots: every player starts with 1 class; a 2nd unlocks at level 10 and a
+# 3rd at level 15. The player chooses WHICH class fills each newly-earned slot.
+CLASS_UNLOCK_LEVELS = (10, 15)
+
+
+def class_slots_for_level(level: int) -> int:
+    """How many class slots a player has earned at the given level (always >= 1)."""
+    return 1 + sum(1 for threshold in CLASS_UNLOCK_LEVELS if level >= threshold)
+
+
 class XpAwardResult(TypedDict):
     old_xp: int
     new_xp: int

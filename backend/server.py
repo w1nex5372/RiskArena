@@ -457,6 +457,16 @@ def _class_unlock_fields(user_doc: Dict[str, Any]) -> Dict[str, Any]:
         "claimable_classes": claimable,
     }
 
+
+def _load_class_builds(value) -> Dict[str, Any]:
+    """Parse the per-class character build map (class_name -> build dict)."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            return {}
+    return value if isinstance(value, dict) else {}
+
 DEFAULT_CHARACTER_BUILDS: Dict[str, Dict[str, Any]] = {
     "warrior": {
         "schemaVersion": "character_build.v1",
@@ -3588,11 +3598,15 @@ async def set_my_class(body: ClassUpdateBody, http_request: Request):
     if class_name not in unlocked:
         unlocked = unlocked + [class_name]
 
-    default_build = _default_character_build(class_name)
     async with get_pool().acquire() as conn:
+        # Restore this class's saved appearance if the player built one before;
+        # otherwise fall back to the class default.
+        cb_raw = await conn.fetchval("SELECT class_builds FROM users WHERE id = $1", user_id)
+        class_builds = _load_class_builds(cb_raw)
+        build = class_builds.get(class_name) or _default_character_build(class_name)
         await conn.execute(
             "UPDATE users SET class_name = $2, character_build_json = $3::jsonb, unlocked_classes = $4::jsonb WHERE id = $1",
-            user_id, class_name, json.dumps(default_build), json.dumps(unlocked),
+            user_id, class_name, json.dumps(build), json.dumps(unlocked),
         )
     user_doc = await dbq.get_user_by_id(user_id)
     if not user_doc:
@@ -3684,7 +3698,7 @@ async def update_my_character_build(body: CharacterBuildUpdateBody, http_request
     user_id = get_authenticated_user_id(http_request)
     await _ensure_can_change_character_setup(user_id)
     async with get_pool().acquire() as conn:
-        before = await conn.fetchrow("SELECT class_name, unlocked_classes, level FROM users WHERE id = $1", user_id)
+        before = await conn.fetchrow("SELECT class_name, unlocked_classes, level, class_builds FROM users WHERE id = $1", user_id)
         current_class = before["class_name"] if before else None
         validated = _validate_character_build(body.character_build, current_class)
         class_name = current_class or validated["className"]
@@ -3693,9 +3707,13 @@ async def update_my_character_build(body: CharacterBuildUpdateBody, http_request
             "class_name": class_name,
             "unlocked_classes": (before["unlocked_classes"] if before else None),
         })
+        # Persist this build as the saved appearance for the active class so it is
+        # restored when switching back to it later.
+        class_builds = _load_class_builds(before["class_builds"] if before else None)
+        class_builds[class_name] = validated
         await conn.execute(
-            "UPDATE users SET class_name = $2, character_build_json = $3::jsonb, unlocked_classes = $4::jsonb WHERE id = $1",
-            user_id, class_name, json.dumps(validated), json.dumps(unlocked),
+            "UPDATE users SET class_name = $2, character_build_json = $3::jsonb, unlocked_classes = $4::jsonb, class_builds = $5::jsonb WHERE id = $1",
+            user_id, class_name, json.dumps(validated), json.dumps(unlocked), json.dumps(class_builds),
         )
     preview_fields = await _character_preview_spritesheet_for_user(user_id, class_name, validated)
     battle_fields = await _runtime_character_sprite_payload_for_user(user_id)
