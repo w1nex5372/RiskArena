@@ -84,7 +84,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [respawnIn,       setRespawnIn]       = useState(0);
 
   // Equipment state — mirrors RealTimeArenaScreen
-  const [equipped,         setEquipped]         = useState({ weapon: null, armor: null, ability: null });
+  const [equipped,         setEquipped]         = useState({ weapon: null, armor: null, ability: null, helmet: null });
   const [equippedSheet,    setEquippedSheet]    = useState('');
   const [abilityReady,     setAbilityReady]     = useState(true);
   const [utilityAbilityReady, setUtilityAbilityReady] = useState(true);
@@ -109,7 +109,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     apiClient.get('/me/equipped')
       .then((res) => {
         const sheet = res.data?.battle_spritesheet_path || '';
-        setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
+        setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null, helmet: null });
         setEquippedSheet(sheet);
         equippedSheetRef.current = sheet;
         // If scene is already running (user loaded fast), refresh the player sprite
@@ -125,7 +125,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         }
       })
       .catch(() => {
-        setEquipped({ weapon: null, armor: null, ability: null });
+        setEquipped({ weapon: null, armor: null, ability: null, helmet: null });
         setEquippedSheet('');
       });
   }, [user?.id]); // eslint-disable-line
@@ -724,7 +724,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     const loadoutSlots = [
       { icon: '🗡️', label: 'WEAPON',  item: equipped.weapon  },
       { icon: '🛡️', label: 'ARMOR',   item: equipped.armor   },
-      { icon: '✨', label: 'ITEM SKILL', item: equipped.ability },
+      { icon: '⛑️', label: 'HELMET',  item: equipped.helmet  },
     ];
     return (
       <div className="space-y-4" style={{ color: '#e8e0d0' }}>
@@ -811,6 +811,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
                 {slot.item?.image_path && slot.label === 'WEAPON' ? (
                   <WeaponIcon imagePath={slot.item.image_path} size={30} borderRadius={6} enchantLevel={slot.item?.enchant_level || 0} />
                 ) : slot.item?.image_path && slot.label === 'ARMOR' ? (
+                  <ArmorIcon imagePath={slot.item.image_path} size={30} borderRadius={6} />
+                ) : slot.item?.image_path && slot.label === 'HELMET' ? (
                   <ArmorIcon imagePath={slot.item.image_path} size={30} borderRadius={6} />
                 ) : slot.item?.image_path ? (
                   <img src={slot.item.image_path} alt={slot.item.name} style={{ width: 30, height: 30, objectFit: 'contain' }} />
