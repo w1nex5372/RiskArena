@@ -33,36 +33,40 @@ export const ABILITY_NAMES = Object.fromEntries(
 // button anchored bottom-right, skill buttons fanned on an arc up-and-left of it,
 // movement joystick bottom-left. Skill positions are computed on the arc at render
 // time (see BattleControlsOverlay) — no per-button hand-tuned offsets.
+//
+// arcGap must be large enough that skill edges don't overlap.
+// With ability=64 and 30 deg spacing: chord = 2*(r+ability/2+arcGap)*sin(15 deg).
+// chord >= ability+8 (8 px gap) → arcGap >= 56 for regular, 44 for compact.
 export const BATTLE_CONTROL_LAYOUTS = {
   regular: {
     joystick: 138,
     joystickKnob: 56,
     joystickEdge: 20,
-    clusterWidth: 268,
-    clusterHeight: 230,
-    clusterRight: 22,
-    clusterBottom: 20,
-    attack: 98,
-    attackFont: 36,
-    ability: 66,       // uniform size for all skill buttons
-    block: 60,
-    blockFont: 24,
-    arcGap: 16,        // gap between the attack edge and the skill edge along the arc
+    clusterWidth: 278,
+    clusterHeight: 236,
+    clusterRight: 16,
+    clusterBottom: 18,
+    attack: 92,
+    attackFont: 34,
+    ability: 64,       // uniform size for all skill buttons
+    block: 56,
+    blockFont: 22,
+    arcGap: 58,        // keeps skill edges ~8 px apart at 30 deg spacing
   },
   compact: {
     joystick: 110,
     joystickKnob: 44,
     joystickEdge: 14,
-    clusterWidth: 214,
-    clusterHeight: 184,
-    clusterRight: 12,
-    clusterBottom: 12,
-    attack: 80,
-    attackFont: 29,
+    clusterWidth: 222,
+    clusterHeight: 192,
+    clusterRight: 10,
+    clusterBottom: 10,
+    attack: 76,
+    attackFont: 28,
     ability: 54,
-    block: 50,
-    blockFont: 19,
-    arcGap: 13,
+    block: 46,
+    blockFont: 18,
+    arcGap: 46,        // keeps skill edges ~8 px apart at 30 deg spacing
   },
 };
 
@@ -544,13 +548,14 @@ export function BattleControlsOverlay({
             },
           ];
 
-          // Arc spans the upper-left quadrant around the attack centre (angles in
-          // degrees, CCW from +x: 180°=left, 90°=up). When Block is shown we start
-          // the fan higher to leave the lower-left corner for it.
+          // Arc spans from ~upper-left to ~left around the attack centre.
+          // Angles in degrees CCW from +x axis: 180=left, 90=up.
+          // Spread: 60 deg (block mode) / 84 deg (no-block), giving ~30 deg per slot.
+          // Wide spread + large arcGap keep skill edges from overlapping.
           const N = skills.length;
-          const aStart = showBlock ? 150 : 178;
-          const aEnd = 102;
-          const angleAt = (i) => (N <= 1 ? 138 : aStart + ((aEnd - aStart) * i) / (N - 1));
+          const aStart = showBlock ? 148 : 172;
+          const aEnd = 88;
+          const angleAt = (i) => (N <= 1 ? 130 : aStart + ((aEnd - aStart) * i) / (N - 1));
 
           return (
             <>
@@ -580,7 +585,7 @@ export function BattleControlsOverlay({
                   onDown={onBlockDown || (() => {})}
                   onUp={onBlockUp || (() => {})}
                   style={{
-                    position:'absolute', right:layout.attack + 6, bottom:2,
+                    position:'absolute', right:layout.attack + 8, bottom:4,
                     width:layout.block, height:layout.block, fontSize:layout.blockFont,
                     pointerEvents:'auto',
                   }}
