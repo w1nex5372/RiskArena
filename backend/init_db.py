@@ -570,7 +570,7 @@ async def init():
             CREATE INDEX IF NOT EXISTS idx_items_shop_browse
             ON items(tier, class_name, slot);
         """)
-        # Helmet support: refresh class/slot/inventory_type checks to include new values
+        # Refresh class/slot/inventory_type checks to include every supported item slot.
         await conn.execute("ALTER TABLE items DROP CONSTRAINT IF EXISTS items_class_name_check;")
         await conn.execute("ALTER TABLE items DROP CONSTRAINT IF EXISTS items_slot_check;")
         await conn.execute("""
@@ -586,13 +586,10 @@ async def init():
                     ALTER TABLE items ADD CONSTRAINT items_class_name_check
                         CHECK (class_name IN ('warrior', 'mage', 'rogue', 'any'));
                 END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'items_slot_check' AND conrelid = 'items'::regclass
-                ) THEN
-                    ALTER TABLE items ADD CONSTRAINT items_slot_check
-                        CHECK (slot IN ('weapon', 'armor', 'ability', 'helmet'));
-                END IF;
+                -- Always recreate so new slots (e.g. ability_2) are picked up
+                -- without a manual migration. DROP already ran above.
+                ALTER TABLE items ADD CONSTRAINT items_slot_check
+                    CHECK (slot IN ('weapon', 'armor', 'ability', 'ability_2', 'helmet'));
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = 'items_tier_check' AND conrelid = 'items'::regclass
