@@ -1246,232 +1246,232 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
 
       {hubTab === 'upgrade' ? (
         <>
-          <section className="rounded-[24px] p-4" style={{ background: 'rgba(13,13,26,0.96)', border: '1px solid rgba(201,168,76,0.18)' }}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-wide" style={{ color: '#c9a84c' }}>Upgrade</p>
-                <h3 className="text-xl font-extrabold mt-1" style={{ color: '#e8e0d0' }}>Enchant Gear</h3>
-                <p className="text-xs font-medium mt-1" style={{ color: '#64748b' }}>
-                  Weapon and armor copies only. Backend decides success, failure, and destruction.
-                </p>
+          {/* ── Enchant result flash ───────────────────────────────────────── */}
+          {enchantResult && (
+            <div style={{
+              borderRadius: 18, padding: '14px 16px', textAlign: 'center',
+              background: enchantResult.destroyed ? 'rgba(239,68,68,0.12)' : enchantResult.success ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.08)',
+              border: `1px solid ${enchantResult.destroyed ? 'rgba(239,68,68,0.4)' : enchantResult.success ? 'rgba(34,197,94,0.4)' : 'rgba(148,163,184,0.2)'}`,
+              boxShadow: enchantResult.success ? '0 0 20px rgba(34,197,94,0.12)' : 'none',
+            }}>
+              <div style={{ fontSize: 28, lineHeight: 1, marginBottom: 6 }}>
+                {enchantResult.destroyed ? '💥' : enchantResult.success ? '✨' : '❌'}
               </div>
-              <MetaChip style={{ color: '#c9a84c', background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.22)' }}>
-                {upgradeItems.length} items
-              </MetaChip>
-            </div>
-          </section>
-
-          <section>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-              {SCROLL_OPTIONS.map((scroll) => {
-                const selected = selectedScroll === scroll.key;
-                const count = Number(scrolls[scroll.key] || 0);
-                return (
-                  <button
-                    key={scroll.key}
-                    type="button"
-                    onClick={() => setSelectedScroll(scroll.key)}
-                    style={{
-                      borderRadius: 12, padding: '10px 12px', textAlign: 'left',
-                      border: selected ? '1px solid rgba(201,168,76,0.5)' : '1px solid rgba(255,255,255,0.08)',
-                      background: selected ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.03)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <div style={{ fontSize: 12, fontWeight: 800, color: selected ? '#c9a84c' : '#94a3b8' }}>
-                      {scroll.shortLabel}
-                    </div>
-                    <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{scroll.note}</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: count > 0 ? '#f8fafc' : '#475569', marginTop: 4 }}>
-                      {count}x owned
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          {enchantResult ? (
-            <section>
-              <div style={{
-                borderRadius: 14, padding: '12px 14px', marginTop: 12,
-                background: enchantResult.destroyed
-                  ? 'rgba(239,68,68,0.1)'
+              <p style={{ margin: 0, fontWeight: 900, fontSize: 14, color: enchantResult.destroyed ? '#f87171' : enchantResult.success ? '#4ade80' : '#94a3b8' }}>
+                {enchantResult.destroyed
+                  ? `${enchantResult.item_name} was destroyed`
                   : enchantResult.success
-                  ? 'rgba(34,197,94,0.1)'
-                  : 'rgba(148,163,184,0.08)',
-                border: `1px solid ${enchantResult.destroyed ? 'rgba(239,68,68,0.3)' : enchantResult.success ? 'rgba(34,197,94,0.3)' : 'rgba(148,163,184,0.2)'}`,
-                textAlign: 'center',
-              }}>
-                <div style={{ fontSize: 22, marginBottom: 4 }}>
-                  {enchantResult.destroyed ? '💥' : enchantResult.success ? '✨' : '❌'}
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: enchantResult.destroyed ? '#f87171' : enchantResult.success ? '#4ade80' : '#94a3b8' }}>
-                  {enchantResult.destroyed
-                    ? `${enchantResult.item_name} was destroyed`
-                    : enchantResult.success
-                    ? `${enchantResult.item_name} → +${enchantResult.new_enchant_level}`
-                    : `Enchant failed — ${enchantResult.item_name} unchanged`}
-                </div>
-              </div>
-            </section>
-          ) : null}
+                  ? `${enchantResult.item_name}  →  +${enchantResult.new_enchant_level}`
+                  : `Enchant failed — ${enchantResult.item_name} unchanged`}
+              </p>
+            </div>
+          )}
 
-          <section className="grid gap-3">
+          {/* ── Scroll picker ─────────────────────────────────────────────── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {SCROLL_OPTIONS.map((scroll) => {
+              const active = selectedScroll === scroll.key;
+              const count  = Number(scrolls[scroll.key] || 0);
+              const isBlessed = scroll.key === 'blessed_scroll';
+              return (
+                <button key={scroll.key} type="button" onClick={() => setSelectedScroll(scroll.key)} style={{
+                  borderRadius: 16, padding: '14px 14px', textAlign: 'left', cursor: 'pointer',
+                  border: active
+                    ? `1.5px solid ${isBlessed ? 'rgba(168,85,247,0.6)' : 'rgba(201,168,76,0.55)'}`
+                    : '1px solid rgba(255,255,255,0.07)',
+                  background: active
+                    ? isBlessed ? 'rgba(168,85,247,0.1)' : 'rgba(201,168,76,0.1)'
+                    : 'rgba(15,23,42,0.7)',
+                  boxShadow: active ? `0 0 18px ${isBlessed ? 'rgba(168,85,247,0.15)' : 'rgba(201,168,76,0.15)'}` : 'none',
+                  transition: 'all 0.15s ease',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: active ? (isBlessed ? '#c084fc' : '#c9a84c') : '#94a3b8' }}>
+                      {isBlessed ? '💜' : '📜'} {scroll.shortLabel}
+                    </span>
+                    <span style={{
+                      fontSize: 12, fontWeight: 900, padding: '2px 8px', borderRadius: 8,
+                      background: count > 0 ? (active ? (isBlessed ? 'rgba(168,85,247,0.2)' : 'rgba(201,168,76,0.2)') : 'rgba(255,255,255,0.06)') : 'rgba(255,255,255,0.03)',
+                      color: count > 0 ? (active ? (isBlessed ? '#c084fc' : '#c9a84c') : '#64748b') : '#334155',
+                    }}>
+                      {count}×
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 11, color: '#475569', lineHeight: 1.4 }}>{scroll.note}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── Item list ─────────────────────────────────────────────────── */}
+          <div>
+            <p style={{ fontSize: 10, fontWeight: 900, letterSpacing: 2, color: '#475569', textTransform: 'uppercase', margin: '0 0 8px' }}>
+              Enchantable gear — {upgradeItems.length} items
+            </p>
             {upgradeItems.length === 0 ? (
-              <div className="rounded-[22px] p-8 text-center" style={{ background: 'rgba(26,26,46,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <Gem className="w-8 h-8 mx-auto mb-3" style={{ color: '#334155' }} />
-                <p className="text-sm font-bold" style={{ color: '#64748b' }}>No enchantable gear</p>
-                <p className="text-xs mt-1" style={{ color: '#475569' }}>Weapon and armor copies appear here.</p>
+              <div style={{ borderRadius: 20, padding: '32px 16px', textAlign: 'center', background: 'rgba(15,23,42,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <Gem style={{ width: 28, height: 28, color: '#1e293b', margin: '0 auto 10px', display: 'block' }} />
+                <p style={{ color: '#475569', fontWeight: 800, fontSize: 13, margin: 0 }}>No enchantable gear</p>
+                <p style={{ color: '#334155', fontSize: 11, margin: '4px 0 0' }}>Weapon and armor copies appear here.</p>
               </div>
             ) : (
-              upgradeItems.map((item) => (
-                <UpgradeItemRow
-                  key={item.inventory_id}
-                  item={item}
-                  selected={item.inventory_id === selectedUpgradeId}
-                  onSelect={setSelectedUpgradeId}
-                />
-              ))
+              <div style={{ display: 'grid', gap: 8 }}>
+                {upgradeItems.map((item) => (
+                  <UpgradeItemRow
+                    key={item.inventory_id}
+                    item={item}
+                    selected={item.inventory_id === selectedUpgradeId}
+                    onSelect={setSelectedUpgradeId}
+                  />
+                ))}
+              </div>
             )}
-          </section>
+          </div>
 
-          {selectedUpgradeItem ? (
-            <section className="rounded-[24px] p-4" style={{ background: 'rgba(13,13,26,0.96)', border: `1px solid ${getTierTheme(selectedUpgradeItem).border}`, boxShadow: `0 0 20px ${getTierTheme(selectedUpgradeItem).glow}` }}>
-              <div className="flex items-start gap-3">
-                <ItemImage item={selectedUpgradeItem} size={64} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p style={{ color: '#e8e0d0', fontSize: 16, fontWeight: 900, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {/* ── Selected item panel ───────────────────────────────────────── */}
+          {selectedUpgradeItem && (() => {
+            const theme = getTierTheme(selectedUpgradeItem);
+            const pct   = selectedMax > 0 ? Math.min(1, selectedLevel / selectedMax) : 0;
+            const chanceNum = selectedChance != null ? Math.round(Number(selectedChance) * 100) : null;
+            const chanceColor = hasGuaranteedSuccess ? '#22c55e' : normalDestroyRisk ? '#f87171' : '#f59e0b';
+            return (
+              <div style={{ borderRadius: 22, padding: 18, background: 'rgba(8,12,24,0.98)', border: `1.5px solid ${theme.border}`, boxShadow: `0 0 28px ${theme.glow}` }}>
+
+                {/* Item header */}
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+                  <ItemImage item={selectedUpgradeItem} size={62} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                      <p style={{ margin: 0, color: '#e8e0d0', fontSize: 15, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {selectedUpgradeItem.name}
                       </p>
-                      <p style={{ color: '#c9a84c', fontSize: 20, fontWeight: 900, margin: '2px 0 0' }}>
-                        +{selectedLevel}
+                      <MetaChip style={{ color: theme.color, background: theme.soft, border: `1px solid ${theme.border}`, flexShrink: 0 }}>
+                        {getTierLabel(selectedUpgradeItem)}
+                      </MetaChip>
+                    </div>
+                    {/* Enchant level + progress bar */}
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, color: '#64748b' }}>Enchant level</span>
+                        <span style={{ fontSize: 13, fontWeight: 900, color: isAtMax ? '#94a3b8' : '#c9a84c' }}>
+                          +{selectedLevel} {selectedMax > 0 ? `/ ${selectedMax}` : ''}
+                          {isAtMax ? ' (MAX)' : ''}
+                        </span>
+                      </div>
+                      <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+                        <div style={{
+                          height: '100%', borderRadius: 999,
+                          width: `${Math.round(pct * 100)}%`,
+                          background: isAtMax ? 'rgba(148,163,184,0.4)' : `linear-gradient(90deg, ${theme.color}, #c9a84c)`,
+                          transition: 'width 0.4s ease',
+                        }} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Success chance + outcome bar */}
+                {!isAtMax && (
+                  <div style={{ borderRadius: 14, padding: '12px 14px', marginBottom: 14, background: 'rgba(255,255,255,0.03)', border: `1px solid ${normalDestroyRisk ? 'rgba(248,113,113,0.25)' : 'rgba(255,255,255,0.07)'}` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1 }}>Success chance</span>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: chanceColor }}>
+                        {chanceNum != null ? `${chanceNum}%` : '—'}
+                      </span>
+                    </div>
+                    {/* Chance bar */}
+                    <div style={{ height: 7, borderRadius: 999, background: 'rgba(255,255,255,0.06)', overflow: 'hidden', marginBottom: 8 }}>
+                      <div style={{
+                        height: '100%', borderRadius: 999, transition: 'width 0.35s ease',
+                        width: `${chanceNum != null ? Math.min(100, chanceNum) : 0}%`,
+                        background: hasGuaranteedSuccess ? '#22c55e' : normalDestroyRisk ? 'linear-gradient(90deg, #ef4444, #f87171)' : '#f59e0b',
+                      }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {normalDestroyRisk
+                        ? <AlertTriangle style={{ width: 13, height: 13, color: '#f87171', flexShrink: 0 }} />
+                        : <Sparkles style={{ width: 13, height: 13, color: '#c9a84c', flexShrink: 0 }} />}
+                      <p style={{ margin: 0, fontSize: 11, color: normalDestroyRisk ? '#f87171' : '#64748b' }}>
+                        {hasGuaranteedSuccess
+                          ? 'This attempt is guaranteed to succeed.'
+                          : normalDestroyRisk
+                          ? 'Normal scroll failure can destroy this copy.'
+                          : 'Blessed scroll — failure keeps the item.'}
                       </p>
                     </div>
-                    <MetaChip style={{ color: getTierTheme(selectedUpgradeItem).color, background: getTierTheme(selectedUpgradeItem).soft, border: `1px solid ${getTierTheme(selectedUpgradeItem).border}` }}>
-                      {getTierLabel(selectedUpgradeItem)}
-                    </MetaChip>
                   </div>
+                )}
 
-                </div>
-              </div>
-
-              <div className="grid gap-2 mt-4">
-                <StatGroup
-                  title={`Current +${selectedPreview?.current_enchant_level ?? selectedLevel}`}
-                  rows={getStatEntries(selectedPreview?.current_stats || selectedUpgradeItem.effective_stats)}
-                  color={getTierTheme(selectedUpgradeItem).color}
-                  emptyText="No current stat contribution"
-                  limit={6}
-                />
-                <StatGroup
-                  title={`Next +${selectedPreview?.next_enchant_level ?? Math.min(selectedLevel + 1, selectedMax || selectedLevel + 1)} enchant`}
-                  rows={getStatEntries(selectedPreview?.next_enchant_stats)}
-                  color="#c9a84c"
-                  emptyText={isAtMax ? 'Already at max enchant' : 'No next enchant bonus'}
-                  limit={6}
-                />
-                <StatGroup
-                  title="After upgrade"
-                  rows={getStatEntries(selectedPreview?.next_effective_stats)}
-                  color="#e8e0d0"
-                  limit={6}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mt-4">
-                <div className="rounded-2xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                  <p style={{ color: '#64748b', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', margin: 0 }}>Outcome</p>
-                  <p style={{ color: hasGuaranteedSuccess ? '#22c55e' : normalDestroyRisk ? '#f87171' : '#f59e0b', fontSize: 13, fontWeight: 900, margin: '4px 0 0' }}>
-                    {hasGuaranteedSuccess ? 'Guaranteed success' : normalDestroyRisk ? 'Destruction risk' : 'Failure keeps copy'}
-                  </p>
-                </div>
-                <div className="rounded-2xl p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-                  <p style={{ color: '#64748b', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', margin: 0 }}>Chance</p>
-                  <p style={{ color: '#e8e0d0', fontSize: 13, fontWeight: 900, margin: '4px 0 0' }}>
-                    {chancePercent(selectedChance)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl p-3 mt-3" style={{ background: normalDestroyRisk ? 'rgba(127,29,29,0.18)' : 'rgba(255,255,255,0.04)', border: normalDestroyRisk ? '1px solid rgba(248,113,113,0.25)' : '1px solid rgba(255,255,255,0.07)' }}>
-                <div className="flex items-start gap-2">
-                  {normalDestroyRisk ? <AlertTriangle className="w-4 h-4 mt-0.5" style={{ color: '#f87171', flexShrink: 0 }} /> : <Sparkles className="w-4 h-4 mt-0.5" style={{ color: '#c9a84c', flexShrink: 0 }} />}
-                  <div>
-                    <p style={{ color: normalDestroyRisk ? '#f87171' : '#c9a84c', fontSize: 12, fontWeight: 900, margin: 0 }}>
-                      {normalDestroyRisk ? 'Destruction risk active' : hasGuaranteedSuccess ? 'Guaranteed success chance' : 'Item is protected by blessed scroll'}
-                    </p>
-                    <p style={{ color: '#94a3b8', fontSize: 11, margin: '4px 0 0' }}>
-                      {normalDestroyRisk
-                        ? 'Normal scroll failure can destroy this exact owned copy.'
-                        : selectedScroll === 'blessed_scroll'
-                          ? 'Blessed scroll failure does not destroy the item.'
-                          : 'This attempt is guaranteed by the current server success chance.'}
-                    </p>
+                {/* Stat preview — only show if there's something */}
+                {(getStatEntries(selectedPreview?.next_enchant_stats)?.length > 0 || getStatEntries(selectedPreview?.current_stats || selectedUpgradeItem.effective_stats)?.length > 0) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+                    <div style={{ borderRadius: 12, padding: '10px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+                      <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 900, color: '#475569', textTransform: 'uppercase', letterSpacing: 1 }}>
+                        Now +{selectedLevel}
+                      </p>
+                      {getStatEntries(selectedPreview?.current_stats || selectedUpgradeItem.effective_stats).slice(0, 3).map((e) => (
+                        <p key={e.key} style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 700, color: theme.color }}>{e.label}</p>
+                      ))}
+                    </div>
+                    {!isAtMax && getStatEntries(selectedPreview?.next_enchant_stats)?.length > 0 && (
+                      <div style={{ borderRadius: 12, padding: '10px 12px', background: 'rgba(201,168,76,0.07)', border: '1px solid rgba(201,168,76,0.18)' }}>
+                        <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 900, color: '#c9a84c', textTransform: 'uppercase', letterSpacing: 1 }}>
+                          Next +{(selectedPreview?.next_enchant_level ?? selectedLevel + 1)}
+                        </p>
+                        {getStatEntries(selectedPreview?.next_enchant_stats).slice(0, 3).map((e) => (
+                          <p key={e.key} style={{ margin: '2px 0 0', fontSize: 12, fontWeight: 700, color: '#c9a84c' }}>{e.label}</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              </div>
+                )}
 
-              <div className="mt-4">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <ScrollImage scroll={SCROLL_OPTIONS.find((scroll) => scroll.key === selectedScroll) || SCROLL_OPTIONS[0]} selected />
-                  <p style={{ color: '#e8e0d0', fontSize: 13, fontWeight: 800, margin: 0 }}>
-                    {SCROLL_OPTIONS.find((scroll) => scroll.key === selectedScroll)?.shortLabel} x{selectedScrollCount}
-                    {selectedScrollShopItem ? ` | ${Number(selectedScrollShopItem.price || 0).toLocaleString()} coins` : ''}
-                  </p>
-                </div>
+                {/* Enchant CTA */}
                 <button
                   type="button"
                   onClick={handleEnchant}
                   disabled={enchanting || !selectedUpgradeItem || selectedScrollCount === 0 || isAtMax}
                   style={{
-                    width: '100%',
-                    padding: '13px',
-                    borderRadius: 14,
-                    border: isAtMax ? '1px solid rgba(148,163,184,0.2)' : '1px solid rgba(201,168,76,0.4)',
-                    background: isAtMax
-                      ? 'rgba(255,255,255,0.03)'
-                      : enchanting
-                      ? 'rgba(201,168,76,0.3)'
-                      : 'linear-gradient(135deg, rgba(139,0,0,0.8), rgba(201,168,76,0.5))',
-                    color: isAtMax ? '#475569' : '#f5e6c0',
-                    fontWeight: 900, fontSize: 14, cursor: enchanting || isAtMax || selectedScrollCount === 0 ? 'not-allowed' : 'pointer',
+                    width: '100%', padding: '14px', borderRadius: 16, fontWeight: 900, fontSize: 15,
+                    cursor: enchanting || isAtMax || selectedScrollCount === 0 ? 'not-allowed' : 'pointer',
+                    border: isAtMax ? '1px solid rgba(148,163,184,0.15)' : selectedScrollCount === 0 ? '1px solid rgba(255,255,255,0.08)' : `1px solid ${normalDestroyRisk ? 'rgba(248,113,113,0.45)' : 'rgba(201,168,76,0.45)'}`,
+                    background: isAtMax ? 'rgba(255,255,255,0.02)' : enchanting ? 'rgba(201,168,76,0.25)' : selectedScrollCount === 0 ? 'rgba(255,255,255,0.04)' : normalDestroyRisk ? 'linear-gradient(135deg,rgba(127,29,29,0.8),rgba(248,113,113,0.35))' : 'linear-gradient(135deg,rgba(139,0,0,0.85),rgba(201,168,76,0.45))',
+                    color: isAtMax || selectedScrollCount === 0 ? '#334155' : '#f5e6c0',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  {isAtMax ? 'Max level reached' : enchanting ? 'Enchanting...' : selectedScrollCount === 0 ? 'No scrolls' : `Enchant  ${selectedChance != null ? `— ${Math.round(Number(selectedChance) * 100)}%` : ''}`}
+                  {isAtMax
+                    ? 'Max level reached'
+                    : enchanting
+                    ? '✨ Enchanting...'
+                    : selectedScrollCount === 0
+                    ? 'No scrolls — buy below'
+                    : chanceNum != null
+                    ? `✨ Enchant  ·  ${chanceNum}% chance`
+                    : '✨ Enchant'}
                 </button>
-                {normalDestroyRisk && (
-                  <p style={{ color: '#f87171', fontSize: 11, fontWeight: 700, margin: '6px 0 0', textAlign: 'center' }}>
-                    ⚠️ Normal scroll above safe range — item may be destroyed
-                  </p>
+
+                {/* Buy scroll shortcut */}
+                {selectedScrollCount <= 0 && selectedScrollShopItem && (
+                  <button
+                    type="button"
+                    onClick={() => handleBuyScroll(selectedScrollShopItem)}
+                    disabled={buyingScroll === selectedScrollShopItem.scroll_type}
+                    style={{
+                      width: '100%', marginTop: 8, borderRadius: 14, padding: '11px 12px',
+                      background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)',
+                      color: '#c9a84c', fontWeight: 900, fontSize: 12,
+                      cursor: buyingScroll === selectedScrollShopItem.scroll_type ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {buyingScroll === selectedScrollShopItem.scroll_type
+                      ? 'Buying...'
+                      : `Buy ${selectedScrollShopItem.name || 'scroll'}  ·  ${Number(selectedScrollShopItem.price || 0).toLocaleString()} coins`}
+                  </button>
                 )}
               </div>
-
-              {selectedScrollCount <= 0 && selectedScrollShopItem ? (
-                <button
-                  type="button"
-                  onClick={() => handleBuyScroll(selectedScrollShopItem)}
-                  disabled={buyingScroll === selectedScrollShopItem.scroll_type}
-                  style={{
-                    width: '100%',
-                    marginTop: 10,
-                    borderRadius: 14,
-                    padding: '10px 12px',
-                    background: 'rgba(201,168,76,0.1)',
-                    border: '1px solid rgba(201,168,76,0.22)',
-                    color: '#c9a84c',
-                    fontWeight: 900,
-                    fontSize: 12,
-                    cursor: buyingScroll === selectedScrollShopItem.scroll_type ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {buyingScroll === selectedScrollShopItem.scroll_type ? 'Buying...' : `Buy ${selectedScrollShopItem.name || 'scroll'} for ${Number(selectedScrollShopItem.price || 0).toLocaleString()} coins`}
-                </button>
-              ) : null}
-            </section>
-          ) : null}
+            );
+          })()}
         </>
       ) : null}
     </div>
