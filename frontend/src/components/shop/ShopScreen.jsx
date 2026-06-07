@@ -348,7 +348,11 @@ export default function ShopScreen({ user, onInventoryChanged }) {
     // Universal ('any', e.g. helmets) always show; otherwise must match the selected class.
     if (itemClass !== 'any' && itemClass !== classFilter) return false;
     const itemSlot = item.slot;
-    if (slotFilter === 'skills') {
+    if (slotFilter === 'weapons') {
+      if (itemSlot !== 'weapon') return false;
+    } else if (slotFilter === 'armor') {
+      if (itemSlot !== 'armor' && itemSlot !== 'helmet') return false;
+    } else if (slotFilter === 'skills') {
       if (itemSlot !== 'ability' && itemSlot !== 'ability_2') return false;
     } else if (slotFilter === 'gear') {
       if (itemSlot !== 'weapon' && itemSlot !== 'armor' && itemSlot !== 'helmet') return false;
@@ -457,22 +461,23 @@ export default function ShopScreen({ user, onInventoryChanged }) {
         )}
 
         {/* Slot filter row */}
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
           {[
-            { key: 'all', label: 'All' },
-            { key: 'gear', label: 'Gear' },
-            { key: 'skills', label: 'Skills' },
+            { key: 'all',     label: 'All' },
+            { key: 'weapons', label: '⚔ Weapons' },
+            { key: 'armor',   label: '🛡 Armor' },
+            { key: 'skills',  label: '✨ Skills' },
           ].map(({ key, label }) => {
             const active = slotFilter === key;
             return (
               <button key={key} type="button" onClick={() => setSlotFilter(key)} style={{
                 flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                borderRadius: 10, padding: '7px 4px',
+                borderRadius: 10, padding: '7px 2px',
                 border: active ? '1px solid rgba(147,197,253,0.45)' : '1px solid rgba(255,255,255,0.06)',
                 background: active ? 'rgba(147,197,253,0.1)' : 'rgba(255,255,255,0.03)',
                 cursor: 'pointer', transition: 'all 0.15s ease',
               }}>
-                <span style={{ fontSize: 11, fontWeight: 900, color: active ? '#93c5fd' : '#475569' }}>{label}</span>
+                <span style={{ fontSize: 10, fontWeight: 900, color: active ? '#93c5fd' : '#475569' }}>{label}</span>
               </button>
             );
           })}
