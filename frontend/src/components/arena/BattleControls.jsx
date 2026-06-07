@@ -5,11 +5,11 @@ import {
   CLASS_ABILITY_ICONS,
   CLASS_COOLDOWNS,
   CLASS_DEFAULT_ABILITY_KEYS,
-  CLASS_UTILITY_ABILITY_KEYS,
-  CLASS_UTILITY_ICONS,
-  UTILITY_COOLDOWNS,
 } from '../../utils/battleSkills';
 
+// Re-export everything from battleSkills for consumers (e.g. BossRaidScreen)
+// NOTE: utility slot is now purchasable — CLASS_UTILITY_ABILITY_KEYS / UTILITY_COOLDOWNS
+// are kept in battleSkills.js for BossRaidScreen but are no longer used here.
 export {
   CLASS_ABILITY_ICONS,
   CLASS_COOLDOWNS,
@@ -26,13 +26,6 @@ export const ABILITY_NAMES = Object.fromEntries(
   Object.entries(CLASS_DEFAULT_ABILITY_KEYS).map(([classKey, abilityKey]) => [
     classKey,
     ABILITY_DATA[abilityKey]?.label || 'Ability',
-  ])
-);
-
-export const UTILITY_ABILITY_NAMES = Object.fromEntries(
-  Object.entries(CLASS_UTILITY_ABILITY_KEYS).map(([classKey, abilityKey]) => [
-    classKey,
-    ABILITY_DATA[abilityKey]?.label || 'Utility',
   ])
 );
 
@@ -390,36 +383,41 @@ export function AbilityButton({
 // positioned inside it — joystick bottom-left, buttons bottom-right.
 //
 // Props:
-//   playerClass       — 'warrior' | 'mage' | 'rogue'
-//   abilityReady      — bool, class ability ready state
-//   utilityAbilityReady — bool, class utility ready state
-//   itemAbilityReady  — bool, item ability ready state
-//   equippedAbility   — object | null  (the ability item from /me/equipped)
-//   canAttack         — bool
-//   showBlock         — bool (default true — Arena uses it, BossRaid skips it)
-//   onJoystick(input) — {left, right, up}
+//   playerClass            — 'warrior' | 'mage' | 'rogue'
+//   abilityReady           — bool, class ability ready state
+//   itemAbilityReady       — bool, item ability (slot 1, unlocks Lv5) ready state
+//   itemAbility2Ready      — bool, item ability (slot 2, unlocks Lv3) ready state
+//   equippedAbility        — object | null  (ability slot from /me/equipped, Lv5+)
+//   equippedAbility2       — object | null  (ability_2 slot from /me/equipped, Lv3+)
+//   userLevel              — number (user's current level, for slot gating)
+//   canAttack              — bool
+//   showBlock              — bool (default true — Arena uses it, BossRaid skips it)
+//   onJoystick(input)      — {left, right, up}
 //   onAttack()
 //   onAbility()
 //   onItemAbility()
-//   onBlockDown()     — optional, only needed when showBlock=true
-//   onBlockUp()       — optional
+//   onItemAbility2()
+//   onBlockDown()          — optional, only needed when showBlock=true
+//   onBlockUp()            — optional
 //
 export function BattleControlsOverlay({
-  playerClass      = 'warrior',
-  abilityReady     = true,
-  utilityAbilityReady = true,
-  itemAbilityReady = true,
-  abilityCooldownUntil = 0,
-  utilityAbilityCooldownUntil = 0,
-  itemAbilityCooldownUntil = 0,
-  equippedAbility  = null,
-  canAttack        = true,
-  showBlock        = true,
+  playerClass           = 'warrior',
+  abilityReady          = true,
+  itemAbilityReady      = true,
+  itemAbility2Ready     = true,
+  abilityCooldownUntil  = 0,
+  itemAbilityCooldownUntil  = 0,
+  itemAbility2CooldownUntil = 0,
+  equippedAbility       = null,
+  equippedAbility2      = null,
+  userLevel             = 1,
+  canAttack             = true,
+  showBlock             = true,
   onJoystick,
   onAttack,
-  onAbility = () => {},
-  onUtilityAbility = () => {},
-  onItemAbility = () => {},
+  onAbility        = () => {},
+  onItemAbility    = () => {},
+  onItemAbility2   = () => {},
   onBlockDown,
   onBlockUp,
 }) {
@@ -428,10 +426,12 @@ export function BattleControlsOverlay({
   // cleanup re-run on every parent render where those callbacks have a new identity
   // (BossRaidScreen passes inline onBlockUp) — which neutralised a held joystick every
   // frame, so movement kept stopping. Refs let the unmount cleanup call the latest fns.
-  const onJoystickRef = React.useRef(onJoystick);
-  const onBlockUpRef  = React.useRef(onBlockUp);
-  onJoystickRef.current = onJoystick;
-  onBlockUpRef.current  = onBlockUp;
+  const onJoystickRef    = React.useRef(onJoystick);
+  const onBlockUpRef     = React.useRef(onBlockUp);
+  const onItemAbility2Ref = React.useRef(onItemAbility2);
+  onJoystickRef.current    = onJoystick;
+  onBlockUpRef.current     = onBlockUp;
+  onItemAbility2Ref.current = onItemAbility2;
   React.useEffect(() => () => {
     onJoystickRef.current?.({ left: false, right: false, up: false });
     onBlockUpRef.current?.();
@@ -474,6 +474,8 @@ export function BattleControlsOverlay({
           const arcR = r + aSize / 2 + layout.arcGap;  // attack centre → skill centre
 
           // Skills shown, in arc order (nearest-to-left first → top last).
+          // Slot 2 (ability_2) unlocks at Lv3; Slot 1 (ability/item) unlocks at Lv5.
+          // Both slots are always shown — level gate controls appearance, not presence.
           const skills = [
             {
               key: 'class',
@@ -493,34 +495,52 @@ export function BattleControlsOverlay({
               ),
             },
             {
-              key: 'utility',
-              node: CLASS_UTILITY_ABILITY_KEYS[playerClass] ? (
-                <AbilityButton
-                  abilityReady={utilityAbilityReady}
-                  playerClass={playerClass}
-                  cooldownUntil={utilityAbilityCooldownUntil}
-                  size={aSize}
-                  equippedAbility={{
-                    name: UTILITY_ABILITY_NAMES[playerClass] || 'Utility',
-                    image_path: CLASS_UTILITY_ICONS[playerClass],
-                    ability_key: CLASS_UTILITY_ABILITY_KEYS[playerClass],
-                  }}
-                  onActivate={onUtilityAbility}
-                />
-              ) : null,
+              key: 'ability_2',
+              node: userLevel >= 3 ? (
+                equippedAbility2 ? (
+                  <AbilityButton
+                    abilityReady={itemAbility2Ready}
+                    playerClass={playerClass}
+                    cooldownUntil={itemAbility2CooldownUntil}
+                    size={aSize}
+                    equippedAbility={equippedAbility2}
+                    onActivate={onItemAbility2}
+                  />
+                ) : (
+                  <div style={{ width: aSize, height: aSize, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', border: '1.5px dashed rgba(255,255,255,0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.7, touchAction: 'none', userSelect: 'none' }}>
+                    <span style={{ fontSize: Math.round(aSize * 0.3), color: 'rgba(255,255,255,0.35)' }}>+</span>
+                  </div>
+                )
+              ) : (
+                <div style={{ width: aSize, height: aSize, borderRadius: '50%', background: 'rgba(0,0,0,0.45)', border: '1.5px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.55, touchAction: 'none', userSelect: 'none' }}>
+                  <span style={{ fontSize: Math.round(aSize * 0.35), lineHeight: 1 }}>🔒</span>
+                  <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontWeight: 900, marginTop: 1 }}>Lv3</span>
+                </div>
+              ),
             },
             {
               key: 'item',
-              node: equippedAbility ? (
-                <AbilityButton
-                  abilityReady={itemAbilityReady}
-                  playerClass={playerClass}
-                  cooldownUntil={itemAbilityCooldownUntil}
-                  size={aSize}
-                  equippedAbility={equippedAbility}
-                  onActivate={onItemAbility}
-                />
-              ) : null,
+              node: userLevel >= 5 ? (
+                equippedAbility ? (
+                  <AbilityButton
+                    abilityReady={itemAbilityReady}
+                    playerClass={playerClass}
+                    cooldownUntil={itemAbilityCooldownUntil}
+                    size={aSize}
+                    equippedAbility={equippedAbility}
+                    onActivate={onItemAbility}
+                  />
+                ) : (
+                  <div style={{ width: aSize, height: aSize, borderRadius: '50%', background: 'rgba(255,255,255,0.04)', border: '1.5px dashed rgba(255,255,255,0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.7, touchAction: 'none', userSelect: 'none' }}>
+                    <span style={{ fontSize: Math.round(aSize * 0.3), color: 'rgba(255,255,255,0.35)' }}>+</span>
+                  </div>
+                )
+              ) : (
+                <div style={{ width: aSize, height: aSize, borderRadius: '50%', background: 'rgba(0,0,0,0.45)', border: '1.5px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.55, touchAction: 'none', userSelect: 'none' }}>
+                  <span style={{ fontSize: Math.round(aSize * 0.35), lineHeight: 1 }}>🔒</span>
+                  <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.45)', fontWeight: 900, marginTop: 1 }}>Lv5</span>
+                </div>
+              ),
             },
           ];
 

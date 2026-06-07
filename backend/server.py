@@ -4187,7 +4187,7 @@ async def get_my_equipped(http_request: Request):
             """,
             user_id,
         )
-        equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None, "helmet": None}
+        equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None, "helmet": None, "ability_2": None}
         equipped_items: List[Dict[str, Any]] = []
         for row in rows:
             slot = row["slot"]
@@ -4397,8 +4397,8 @@ class SellBody(BaseModel):
 
 @api_router.post("/me/unequip")
 async def unequip_item(body: UnequipBody, http_request: Request):
-    if body.slot not in ("weapon", "armor", "ability", "helmet"):
-        raise HTTPException(status_code=400, detail="slot must be weapon, armor, ability, or helmet")
+    if body.slot not in ("weapon", "armor", "ability", "helmet", "ability_2"):
+        raise HTTPException(status_code=400, detail="slot must be weapon, armor, ability, ability_2, or helmet")
     user_id = get_authenticated_user_id(http_request)
     async with get_pool().acquire() as conn:
         user_row = await conn.fetchrow("SELECT class_name FROM users WHERE id = $1", user_id)

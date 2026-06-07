@@ -14,7 +14,7 @@ from arena_domain import ItemModifiers
 VALID_CLASSES = ("warrior", "mage", "rogue")
 ANY_CLASS = "any"
 VALID_ITEM_CLASSES = (*VALID_CLASSES, ANY_CLASS)
-VALID_SLOTS = ("weapon", "armor", "ability", "helmet")
+VALID_SLOTS = ("weapon", "armor", "ability", "helmet", "ability_2")
 SHARED_SLOTS = {"helmet"}
 VALID_TIERS = ("common", "uncommon", "rare", "epic", "legendary")
 ENCHANTABLE_SLOTS = {"weapon", "armor"}
@@ -275,6 +275,19 @@ FULL_ITEM_CATALOG: List[Dict] = [
           "Unlocks an ambush dash that repositions and strikes from the dark.",
           ability_bonus=10, ability_key="rogue_nightfall", ability_cooldown_ms=6800,
           image_path="/items/skills/rogue_nightfall.png"),
+    # --- ability_2 items (second ability slot, uncommon, shop) ---
+    _item("warrior", "ability_2", "uncommon", "Shield Dash Sigil",
+          "Dash forward into your opponent dealing damage and knockback.",
+          ability_bonus=10, ability_key="warrior_shield_dash", ability_cooldown_ms=7500,
+          image_path="/items/skills/warrior_guardbreak.png"),
+    _item("mage", "ability_2", "uncommon", "Frost Nova Tome",
+          "Release an icy burst around you stunning nearby enemies.",
+          ability_bonus=10, ability_key="mage_frost_nova", ability_cooldown_ms=9000,
+          image_path="/items/skills/class_fireball.png"),
+    _item("rogue", "ability_2", "uncommon", "Execute Charm",
+          "Dash to your opponent and deliver a devastating finishing strike.",
+          ability_bonus=10, ability_key="rogue_execute", ability_cooldown_ms=8500,
+          image_path="/items/skills/rogue_shadowstep.png"),
     # --- Warrior armor ---
     _item("warrior", "armor", "common",   "Iron Plate Armor",
           "Heavy iron plating forged for arena duels.",

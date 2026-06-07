@@ -64,7 +64,7 @@ function buildResultPayload(room) {
 // Game world dimensions
 const GAME_W = 800;
 const GAME_H = 420;
-const EMPTY_INPUT = { left: false, right: false, attack: false, ability: false, utilityAbility: false, itemAbility: false, up: false, block: false };
+const EMPTY_INPUT = { left: false, right: false, attack: false, ability: false, itemAbility: false, itemAbility2: false, up: false, block: false };
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -85,16 +85,17 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const [result, setResult] = useState(null);
   const [dotCount, setDotCount] = useState(1);
   const [abilityReady, setAbilityReady] = useState(true);
-  const [utilityAbilityReady, setUtilityAbilityReady] = useState(true);
   const [itemAbilityReady, setItemAbilityReady] = useState(true);
+  const [itemAbility2Ready, setItemAbility2Ready] = useState(true);
   const [abilityCooldownUntil, setAbilityCooldownUntil] = useState(0);
-  const [utilityAbilityCooldownUntil, setUtilityAbilityCooldownUntil] = useState(0);
   const [itemAbilityCooldownUntil, setItemAbilityCooldownUntil] = useState(0);
+  const [itemAbility2CooldownUntil, setItemAbility2CooldownUntil] = useState(0);
   const [playerClass, setPlayerClass] = useState('warrior');
   const [activeAbilityKey, setActiveAbilityKey] = useState('');
   const [isPortrait, setIsPortrait] = useState(() => window.innerHeight > window.innerWidth);
   const [loadoutStats, setLoadoutStats] = useState({});
-  const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null });
+  const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null, ability_2: null });
+  const [equipped2, setEquipped2] = useState(null);
   const [equippedSheetPath, setEquippedSheetPath] = useState('');
   const updatePhase = useCallback((p) => {
     phaseRef.current = p;
@@ -120,12 +121,16 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
     apiClient.get('/me/equipped')
       .then(res => {
         setLoadoutStats(res.data?.loadout_effective_stats || {});
-        setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
+        const equippedData = res.data?.equipped || { weapon: null, armor: null, ability: null, ability_2: null };
+        setEquipped(equippedData);
+        const ability2Item = res.data?.equipped?.ability_2 || null;
+        setEquipped2(ability2Item);
         setEquippedSheetPath(res.data?.battle_spritesheet_path || '');
       })
       .catch(() => {
         setLoadoutStats({});
-        setEquipped({ weapon: null, armor: null, ability: null });
+        setEquipped({ weapon: null, armor: null, ability: null, ability_2: null });
+        setEquipped2(null);
         setEquippedSheetPath('');
       });
   }, [user?.id]); // eslint-disable-line
@@ -229,20 +234,20 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         const myPlayer = room.state.players.get(room.sessionId);
         if (myPlayer) {
           setAbilityReady(myPlayer.abilityCharges > 0);
-          setUtilityAbilityReady((myPlayer.utilityAbilityCharges ?? 1) > 0);
           setItemAbilityReady((myPlayer.itemAbilityCharges ?? 1) > 0);
+          setItemAbility2Ready((myPlayer.itemAbility2Charges ?? 1) > 0);
           setAbilityCooldownUntil(Number(myPlayer.abilityCooldownUntil || 0));
-          setUtilityAbilityCooldownUntil(Number(myPlayer.utilityAbilityCooldownUntil || 0));
           setItemAbilityCooldownUntil(Number(myPlayer.itemAbilityCooldownUntil || 0));
+          setItemAbility2CooldownUntil(Number(myPlayer.itemAbility2CooldownUntil || 0));
           setPlayerClass(myPlayer.characterClass || 'warrior');
           setActiveAbilityKey(String(myPlayer.activeAbilityKey || ''));
           myPlayer.onChange(() => {
             setAbilityReady(myPlayer.abilityCharges > 0);
-            setUtilityAbilityReady((myPlayer.utilityAbilityCharges ?? 1) > 0);
             setItemAbilityReady((myPlayer.itemAbilityCharges ?? 1) > 0);
+            setItemAbility2Ready((myPlayer.itemAbility2Charges ?? 1) > 0);
             setAbilityCooldownUntil(Number(myPlayer.abilityCooldownUntil || 0));
-            setUtilityAbilityCooldownUntil(Number(myPlayer.utilityAbilityCooldownUntil || 0));
             setItemAbilityCooldownUntil(Number(myPlayer.itemAbilityCooldownUntil || 0));
+            setItemAbility2CooldownUntil(Number(myPlayer.itemAbility2CooldownUntil || 0));
             setActiveAbilityKey(String(myPlayer.activeAbilityKey || ''));
           });
         }
@@ -300,20 +305,20 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         room.state.players.onAdd((player, sid) => {
           if (sid === room.sessionId) {
             setAbilityReady(player.abilityCharges > 0);
-            setUtilityAbilityReady((player.utilityAbilityCharges ?? 1) > 0);
             setItemAbilityReady((player.itemAbilityCharges ?? 1) > 0);
+            setItemAbility2Ready((player.itemAbility2Charges ?? 1) > 0);
             setAbilityCooldownUntil(Number(player.abilityCooldownUntil || 0));
-            setUtilityAbilityCooldownUntil(Number(player.utilityAbilityCooldownUntil || 0));
             setItemAbilityCooldownUntil(Number(player.itemAbilityCooldownUntil || 0));
+            setItemAbility2CooldownUntil(Number(player.itemAbility2CooldownUntil || 0));
             setPlayerClass(player.characterClass || 'warrior');
             setActiveAbilityKey(String(player.activeAbilityKey || ''));
             player.onChange(() => {
               setAbilityReady(player.abilityCharges > 0);
-              setUtilityAbilityReady((player.utilityAbilityCharges ?? 1) > 0);
               setItemAbilityReady((player.itemAbilityCharges ?? 1) > 0);
+              setItemAbility2Ready((player.itemAbility2Charges ?? 1) > 0);
               setAbilityCooldownUntil(Number(player.abilityCooldownUntil || 0));
-              setUtilityAbilityCooldownUntil(Number(player.utilityAbilityCooldownUntil || 0));
               setItemAbilityCooldownUntil(Number(player.itemAbilityCooldownUntil || 0));
+              setItemAbility2CooldownUntil(Number(player.itemAbility2CooldownUntil || 0));
               setActiveAbilityKey(String(player.activeAbilityKey || ''));
             });
           }
@@ -455,7 +460,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', true);
       if (e.key === ' ' || e.key === 'z') setKey('attack', true);
       if (e.key === 'x') setKey('ability', true);
-      if (e.key === 'b') setKey('utilityAbility', true);
+      if (e.key === 'b' && equipped2?.ability_key) setKey('itemAbility2', true);
       if (e.key === 'v' && equipped?.ability?.ability_key && activeAbilityKey) setKey('itemAbility', true);
       if (e.key === 'Shift' || e.key === 'c') setKey('block', true);
     };
@@ -466,17 +471,21 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       if (e.key === 'ArrowUp' || e.key === 'w') setKey('up', false);
       if (e.key === ' ' || e.key === 'z') setKey('attack', false);
       if (e.key === 'x') setKey('ability', false);
-      if (e.key === 'b') setKey('utilityAbility', false);
+      if (e.key === 'b') setKey('itemAbility2', false);
       if (e.key === 'v') setKey('itemAbility', false);
       if (e.key === 'Shift' || e.key === 'c') setKey('block', false);
     };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
-  }, [activeAbilityKey, equipped?.ability?.ability_key, setKey]);
+  }, [activeAbilityKey, equipped?.ability?.ability_key, equipped2?.ability_key, setKey]);
 
   const equippedAbility = equipped?.ability || null;
   const hasEquippedAbility = Boolean(equippedAbility?.ability_key && activeAbilityKey);
+
+  const handleItemAbility2 = useCallback(() => {
+    pulseKey('itemAbility2');
+  }, [pulseKey]);
   const resultStatRows = [
     { label: 'Damage', mine: result?.myStats?.damageDealt, opp: result?.opponentStats?.damageDealt },
     { label: 'Blocked', mine: result?.myStats?.damageBlocked, opp: result?.opponentStats?.damageBlocked },
@@ -822,18 +831,20 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
           showBlock={true}
           playerClass={playerClass}
           abilityReady={abilityReady}
-          utilityAbilityReady={utilityAbilityReady}
           itemAbilityReady={itemAbilityReady}
+          itemAbility2Ready={itemAbility2Ready}
           abilityCooldownUntil={abilityCooldownUntil}
-          utilityAbilityCooldownUntil={utilityAbilityCooldownUntil}
           itemAbilityCooldownUntil={itemAbilityCooldownUntil}
+          itemAbility2CooldownUntil={itemAbility2CooldownUntil}
           equippedAbility={hasEquippedAbility ? equippedAbility : null}
+          equippedAbility2={equipped2}
+          userLevel={user?.level || 1}
           canAttack={true}
           onJoystick={setDirectionalInput}
           onAttack={() => pulseKey('attack')}
           onAbility={() => pulseKey('ability')}
-          onUtilityAbility={() => pulseKey('utilityAbility')}
           onItemAbility={() => pulseKey('itemAbility')}
+          onItemAbility2={handleItemAbility2}
           onBlockDown={() => setKey('block', true)}
           onBlockUp={() => setKey('block', false)}
         />

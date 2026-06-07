@@ -1066,14 +1066,16 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           showBlock={true}
           playerClass={playerClass}
           abilityReady={abilityReady}
-          utilityAbilityReady={utilityAbilityReady}
+          itemAbility2Ready={utilityAbilityReady}
+          equippedAbility2={equipped?.ability_2 || null}
           itemAbilityReady={itemAbilityReady}
           equippedAbility={equipped?.ability || null}
+          userLevel={99}
           canAttack={canAttack}
           onJoystick={handleJoystick}
           onAttack={handleAttack}
           onAbility={handleAbility}
-          onUtilityAbility={handleUtilityAbility}
+          onItemAbility2={handleUtilityAbility}
           onItemAbility={handleItemAbility}
           onBlockDown={() => { sceneRef.current?.setBlock(true);  colyseusRoomRef.current?.send('block', { down: true }); }}
           onBlockUp={() =>   { sceneRef.current?.setBlock(false); colyseusRoomRef.current?.send('block', { down: false }); }}
