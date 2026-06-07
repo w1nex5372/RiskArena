@@ -380,6 +380,21 @@ class User(BaseModel):
     energy: Optional[int] = None
     max_energy: Optional[int] = None
     next_energy_at: Optional[str] = None
+    # Class unlock progression
+    unlocked_classes: List[str] = Field(default_factory=list)
+    pending_class_unlocks: int = Field(default=0)
+    claimable_classes: List[str] = Field(default_factory=list)
+
+    @field_validator("unlocked_classes", mode="before")
+    @classmethod
+    def _parse_unlocked_classes(cls, value):
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else []
+            except Exception:
+                return []
+        return value or []
 
     @field_validator("character_build_json", mode="before")
     @classmethod
@@ -399,6 +414,48 @@ class UserCreate(BaseModel):
 
 
 VALID_CHARACTER_CLASSES = {"warrior", "mage", "rogue"}
+# Canonical order used when offering claimable classes in the unlock reveal.
+CLASS_ORDER = ["warrior", "mage", "rogue"]
+
+
+def _normalize_unlocked_classes(user_doc: Dict[str, Any]) -> List[str]:
+    """Return the player's unlocked class list, always including the active class.
+
+    Existing users (column defaulted to []) are backfilled in-memory with their
+    active class so they never appear to have zero unlocked classes.
+    """
+    raw = user_doc.get("unlocked_classes")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            raw = []
+    arr = [str(c).strip().lower() for c in (raw or [])]
+    arr = [c for c in arr if c in VALID_CHARACTER_CLASSES]
+    active = str(user_doc.get("class_name") or "").strip().lower()
+    if active in VALID_CHARACTER_CLASSES and active not in arr:
+        arr = [active] + arr
+    seen: set = set()
+    ordered: List[str] = []
+    for c in arr:
+        if c not in seen:
+            seen.add(c)
+            ordered.append(c)
+    return ordered
+
+
+def _class_unlock_fields(user_doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Derive unlocked/claimable/pending class fields for a user response."""
+    unlocked = _normalize_unlocked_classes(user_doc)
+    level = int(user_doc.get("level") or 1)
+    slots = _progression.class_slots_for_level(level)
+    claimable = [c for c in CLASS_ORDER if c not in unlocked]
+    pending = max(0, min(slots - len(unlocked), len(claimable)))
+    return {
+        "unlocked_classes": unlocked,
+        "pending_class_unlocks": pending,
+        "claimable_classes": claimable,
+    }
 
 DEFAULT_CHARACTER_BUILDS: Dict[str, Dict[str, Any]] = {
     "warrior": {
@@ -634,6 +691,7 @@ def attach_session(response: Response, user_payload: dict) -> dict:
     )
     enriched = dict(user_payload)
     enriched["session_token"] = token
+    enriched.update(_class_unlock_fields(enriched))
     return enriched
 
 
@@ -2887,6 +2945,7 @@ async def get_user(user_id: str, http_request: Request):
     if isinstance(user_doc['created_at'], str):
         user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
 
+    user_doc.update(_class_unlock_fields(user_doc))
     return User(**user_doc)
 
 
@@ -3516,11 +3575,24 @@ async def set_my_class(body: ClassUpdateBody, http_request: Request):
         raise HTTPException(status_code=400, detail="class_name must be warrior, mage, or rogue")
     user_id = get_authenticated_user_id(http_request)
     await _ensure_can_change_character_setup(user_id)
+
+    before = await dbq.get_user_by_id(user_id)
+    if not before:
+        raise HTTPException(status_code=404, detail="User not found")
+    unlocked = _normalize_unlocked_classes(before)
+    has_class = bool(str(before.get("class_name") or "").strip())
+    # Switching is only allowed to a class the player has already unlocked.
+    # (First-time class selection goes through /me/character-build.)
+    if has_class and class_name not in unlocked:
+        raise HTTPException(status_code=403, detail="Class not unlocked yet")
+    if class_name not in unlocked:
+        unlocked = unlocked + [class_name]
+
     default_build = _default_character_build(class_name)
     async with get_pool().acquire() as conn:
         await conn.execute(
-            "UPDATE users SET class_name = $2, character_build_json = $3::jsonb WHERE id = $1",
-            user_id, class_name, json.dumps(default_build),
+            "UPDATE users SET class_name = $2, character_build_json = $3::jsonb, unlocked_classes = $4::jsonb WHERE id = $1",
+            user_id, class_name, json.dumps(default_build), json.dumps(unlocked),
         )
     user_doc = await dbq.get_user_by_id(user_id)
     if not user_doc:
@@ -3533,9 +3605,48 @@ async def set_my_class(body: ClassUpdateBody, http_request: Request):
         "class_name": user_doc.get("class_name"),
         "character_build_json": character_build,
         **preview_fields,
+        **_class_unlock_fields(user_doc),
         "battle_spritesheet_path": battle_fields.get("battle_spritesheet_path", ""),
         "battle_spritesheet_hash": battle_fields.get("battle_spritesheet_hash", ""),
         "message": f"Class updated to {class_name}",
+    }
+
+
+@api_router.post("/me/classes/unlock")
+async def unlock_my_class(body: ClassUpdateBody, http_request: Request):
+    """Claim a newly available class slot (earned at level 10 / 15).
+
+    Unlocks the chosen class but does NOT switch the active class — the player
+    switches via /me/class when they want to play it.
+    """
+    class_name = body.class_name.strip().lower()
+    if class_name not in VALID_CHARACTER_CLASSES:
+        raise HTTPException(status_code=400, detail="class_name must be warrior, mage, or rogue")
+    user_id = get_authenticated_user_id(http_request)
+    user_doc = await dbq.get_user_by_id(user_id)
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    fields = _class_unlock_fields(user_doc)
+    if class_name in fields["unlocked_classes"]:
+        raise HTTPException(status_code=409, detail="Class already unlocked")
+    if fields["pending_class_unlocks"] <= 0:
+        raise HTTPException(status_code=409, detail="No class unlock available yet")
+    if class_name not in fields["claimable_classes"]:
+        raise HTTPException(status_code=400, detail="Class not claimable")
+
+    new_unlocked = fields["unlocked_classes"] + [class_name]
+    async with get_pool().acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET unlocked_classes = $2::jsonb WHERE id = $1",
+            user_id, json.dumps(new_unlocked),
+        )
+    updated = await dbq.get_user_by_id(user_id)
+    return {
+        "id": updated.get("id"),
+        "class_name": updated.get("class_name"),
+        **_class_unlock_fields(updated),
+        "message": f"Unlocked {class_name}",
     }
 
 
@@ -3573,19 +3684,27 @@ async def update_my_character_build(body: CharacterBuildUpdateBody, http_request
     user_id = get_authenticated_user_id(http_request)
     await _ensure_can_change_character_setup(user_id)
     async with get_pool().acquire() as conn:
-        current_class = await conn.fetchval("SELECT class_name FROM users WHERE id = $1", user_id)
+        before = await conn.fetchrow("SELECT class_name, unlocked_classes, level FROM users WHERE id = $1", user_id)
+        current_class = before["class_name"] if before else None
         validated = _validate_character_build(body.character_build, current_class)
         class_name = current_class or validated["className"]
+        # First-time class selection: seed the unlocked list with the chosen class.
+        unlocked = _normalize_unlocked_classes({
+            "class_name": class_name,
+            "unlocked_classes": (before["unlocked_classes"] if before else None),
+        })
         await conn.execute(
-            "UPDATE users SET class_name = $2, character_build_json = $3::jsonb WHERE id = $1",
-            user_id, class_name, json.dumps(validated),
+            "UPDATE users SET class_name = $2, character_build_json = $3::jsonb, unlocked_classes = $4::jsonb WHERE id = $1",
+            user_id, class_name, json.dumps(validated), json.dumps(unlocked),
         )
     preview_fields = await _character_preview_spritesheet_for_user(user_id, class_name, validated)
     battle_fields = await _runtime_character_sprite_payload_for_user(user_id)
+    user_doc = await dbq.get_user_by_id(user_id)
     return {
         "class_name": class_name,
         "character_build_json": validated,
         **preview_fields,
+        **_class_unlock_fields(user_doc or {"class_name": class_name, "unlocked_classes": unlocked}),
         "battle_spritesheet_path": battle_fields.get("battle_spritesheet_path", ""),
         "battle_spritesheet_hash": battle_fields.get("battle_spritesheet_hash", ""),
         "message": "Character build updated",
@@ -3619,6 +3738,7 @@ async def get_user_data(user_id: str, http_request: Request):
             "class_name": user_doc.get('class_name'),
             "character_build_json": character_build,
             **preview_fields,
+            **_class_unlock_fields(user_doc),
             "created_at": user_doc.get('created_at'),
             "last_login": user_doc.get('last_login'),
             "is_verified": user_doc.get('is_verified', False),
@@ -5539,6 +5659,8 @@ async def get_user_loadout_internal(user_id: str, request: Request):
     ability_bonus *= 1 + float(stats.get("bonus_ability_percent", 0) or 0)
     ability_item = equipped_rows.get("ability") or {}
     ability_payload = _battle_ability_payload(class_name, ability_item)
+    ability2_item = equipped_rows.get("ability_2") or {}
+    ability2_payload = _battle_ability_payload(class_name, ability2_item)
     return {
         "user_id": user_id,
         "attack_bonus": int(_clamp_number(round(attack_bonus), 0, 500, 0)),
@@ -5553,6 +5675,11 @@ async def get_user_loadout_internal(user_id: str, request: Request):
         "has_weapon": equipped_rows.get("weapon") is not None,
         "weapon_enchant": int(_clamp_number((equipped_rows.get("weapon") or {}).get("enchant_level", 0), 0, 10, 0)),
         **ability_payload,
+        "active_ability2_key": ability2_payload.get("active_ability_key"),
+        "active_ability2_cooldown_ms": ability2_payload.get("active_ability_cooldown_ms", 0),
+        "active_ability2_name": ability2_payload.get("active_ability_name"),
+        "active_ability2_icon": ability2_payload.get("active_ability_icon"),
+        "active_ability2_stats": ability2_payload.get("active_ability_stats"),
         "character_build_json": character_build,
         "battle_spritesheet_path": battle_sprite["path"],
         "battle_spritesheet_hash": battle_sprite["hash"],

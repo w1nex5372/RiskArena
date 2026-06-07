@@ -75,7 +75,7 @@ export class ArenaRoom extends Room<ArenaState> {
 
     // Client sends its current input state (held keys)
     this.onMessage("input", (client, data: {
-      left: boolean; right: boolean; attack: boolean; ability: boolean; utilityAbility?: boolean; itemAbility?: boolean; up: boolean; block?: boolean
+      left: boolean; right: boolean; attack: boolean; ability: boolean; utilityAbility?: boolean; itemAbility?: boolean; itemAbility2?: boolean; up: boolean; block?: boolean
     }) => {
       const player = this.state.players.get(client.sessionId);
       if (player && this.state.phase === "battle") {
@@ -86,6 +86,7 @@ export class ArenaRoom extends Room<ArenaState> {
           ability: !!data.ability,
           utilityAbility: !!data.utilityAbility,
           itemAbility: !!data.itemAbility,
+          itemAbility2: !!data.itemAbility2,
           up: !!data.up,
           block: !!data.block,
         };
@@ -226,6 +227,10 @@ export class ArenaRoom extends Room<ArenaState> {
       player.activeAbilityCooldownMs = abilityAllowed
         ? Math.max(requestedAbilityCooldown || defaultAbilityCooldown, defaultAbilityCooldown)
         : 0;
+      // ability_2 slot
+      const activeAbility2Key = String(d.active_ability2_key || "");
+      const ability2Allowed = this.isItemAbilityAllowedForClass(player.characterClass, activeAbility2Key);
+      player.activeAbility2Key = ability2Allowed ? activeAbility2Key : "";
       player.characterBuildJson = JSON.stringify(d.character_build_json || {});
       // Apply HP bonus
       player.maxHp += player.hpBonus;
@@ -293,6 +298,9 @@ export class ArenaRoom extends Room<ArenaState> {
       if (player.itemAbilityCharges === 0 && now >= player.itemAbilityCooldownUntil) {
         player.itemAbilityCharges = 1;
       }
+      if (player.itemAbility2Charges === 0 && now >= player.itemAbility2CooldownUntil) {
+        player.itemAbility2Charges = 1;
+      }
       if (player.backstabWindowUntil > 0 && now >= player.backstabWindowUntil) {
         player.backstabWindowUntil = 0;
         player.backstabTargetSid = "";
@@ -304,6 +312,7 @@ export class ArenaRoom extends Room<ArenaState> {
       const abilityPressed = input.ability && !player.previousInputState.ability;
       const utilityAbilityPressed = input.utilityAbility && !player.previousInputState.utilityAbility;
       const itemAbilityPressed = input.itemAbility && !player.previousInputState.itemAbility;
+      const itemAbility2Pressed = input.itemAbility2 && !player.previousInputState.itemAbility2;
 
       if (player.isStunned) {
         player.isBlocking = false;
@@ -475,6 +484,14 @@ export class ArenaRoom extends Room<ArenaState> {
             player.attackUntil = 0;
           }
         }
+
+        if (!actionLocked && player.state !== "attacking" && !player.isBlocking && itemAbility2Pressed && player.itemAbility2Charges > 0 && player.activeAbility2Key && this.isItemAbilityAllowedForClass(player.characterClass, player.activeAbility2Key)) {
+          if (!this.executeAbility(sessionId, player, player.activeAbility2Key, now, "item2")) {
+            player.itemAbility2Charges = 1;
+            player.state = "idle";
+            player.attackUntil = 0;
+          }
+        }
       }
 
       // Gravity — always applies regardless of stun
@@ -494,6 +511,7 @@ export class ArenaRoom extends Room<ArenaState> {
         ability: input.ability,
         utilityAbility: input.utilityAbility,
         itemAbility: input.itemAbility,
+        itemAbility2: input.itemAbility2,
       };
     });
 
@@ -505,7 +523,7 @@ export class ArenaRoom extends Room<ArenaState> {
     player: Player,
     abilityKey: string,
     now: number,
-    slot: "class" | "utility" | "item",
+    slot: "class" | "utility" | "item" | "item2",
   ): boolean {
     const meta = abilityMeta(abilityKey);
     const abilityType = String(meta?.type || "");
@@ -523,6 +541,9 @@ export class ArenaRoom extends Room<ArenaState> {
     } else if (slot === "utility") {
       player.utilityAbilityCharges = 0;
       player.utilityAbilityCooldownUntil = now + cooldownMs;
+    } else if (slot === "item2") {
+      player.itemAbility2Charges = 0;
+      player.itemAbility2CooldownUntil = now + this.itemAbilityCooldownMs(player, cooldownMs);
     } else {
       player.itemAbilityCharges = 0;
       player.itemAbilityCooldownUntil = now + this.itemAbilityCooldownMs(player, cooldownMs);
@@ -532,7 +553,7 @@ export class ArenaRoom extends Room<ArenaState> {
     player.skillUses += 1;
     if (slot === "class") player.classSkillUses += 1;
     if (slot === "utility") player.classSkillUses += 1;
-    if (slot === "item") player.itemSkillUses += 1;
+    if (slot === "item" || slot === "item2") player.itemSkillUses += 1;
     this.broadcast("weapon_swing", { sessionId, cls });
     this.broadcast("ability_cast", {
       sessionId,

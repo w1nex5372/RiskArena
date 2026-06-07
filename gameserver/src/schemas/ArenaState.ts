@@ -24,6 +24,7 @@ export class Player extends Schema {
   @type("number")  abilityCharges: number = 1;  // 0 = cooldown, 1 = ready
   @type("number")  utilityAbilityCharges: number = 1;  // separate cooldown for class utility skill
   @type("number")  itemAbilityCharges: number = 1;  // separate cooldown for equipped ability item
+  @type("number")  itemAbility2Charges: number = 1; // separate cooldown for ability_2 slot item
   @type("number") attackBonus:    number = 0;  // from weapon
   @type("number") abilityBonus:   number = 0;  // from ability scroll
   @type("number") defendReduction: number = 0; // 0.0–1.0 damage multiplier from armor
@@ -59,25 +60,29 @@ export class Player extends Schema {
   abilityCooldownUntil: number = 0;
   utilityAbilityCooldownUntil: number = 0;
   itemAbilityCooldownUntil: number = 0;
+  itemAbility2CooldownUntil: number = 0;
+  activeAbility2Key: string = "";
   guardBrokenUntil: number = 0;
   guardRegenPausedUntil: number = 0;
   backstabWindowUntil: number = 0;
   backstabTargetSid: string = "";
-  inputState: { left: boolean; right: boolean; attack: boolean; ability: boolean; utilityAbility: boolean; itemAbility: boolean; up: boolean; block: boolean } = {
+  inputState: { left: boolean; right: boolean; attack: boolean; ability: boolean; utilityAbility: boolean; itemAbility: boolean; itemAbility2: boolean; up: boolean; block: boolean } = {
     left: false,
     right: false,
     attack: false,
     ability: false,
     utilityAbility: false,
     itemAbility: false,
+    itemAbility2: false,
     up: false,
     block: false,
   };
-  previousInputState: { attack: boolean; ability: boolean; utilityAbility: boolean; itemAbility: boolean } = {
+  previousInputState: { attack: boolean; ability: boolean; utilityAbility: boolean; itemAbility: boolean; itemAbility2: boolean } = {
     attack: false,
     ability: false,
     utilityAbility: false,
     itemAbility: false,
+    itemAbility2: false,
   };
 }
 

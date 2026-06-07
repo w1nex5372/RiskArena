@@ -46,6 +46,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS xp                 INTEGER NOT NULL D
 ALTER TABLE users ADD COLUMN IF NOT EXISTS level              INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS class_name         VARCHAR(20) DEFAULT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS character_build_json JSONB DEFAULT NULL;
+-- Classes the player has unlocked (starting class + level-gated picks at 10/15).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS unlocked_classes   JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS current_win_streak INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS max_win_streak     INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS settings           JSONB NOT NULL DEFAULT '{}'::jsonb;
@@ -614,13 +616,10 @@ async def init():
                             )
                         );
                 END IF;
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'inventory_item_type_check' AND conrelid = 'inventory'::regclass
-                ) THEN
-                    ALTER TABLE inventory ADD CONSTRAINT inventory_item_type_check
-                        CHECK (item_type IN ('weapon', 'armor', 'ability', 'consumable', 'helmet'));
-                END IF;
+                -- Always recreate so new item types (e.g. ability_2) are picked up.
+                ALTER TABLE inventory DROP CONSTRAINT IF EXISTS inventory_item_type_check;
+                ALTER TABLE inventory ADD CONSTRAINT inventory_item_type_check
+                    CHECK (item_type IN ('weapon', 'armor', 'ability', 'ability_2', 'consumable', 'helmet'));
             END;
             $$;
         """)
