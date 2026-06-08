@@ -770,6 +770,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
     if (!item || enchanting) return;
 
     setEnchanting(true);
+    setEnchantResult(null); // clear previous result so old banner never shows during/after new attempt
     try {
       const response = await apiClient.post('/me/enchant', {
         inventory_id: item.inventory_id,
@@ -1249,11 +1250,13 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
           {/* ── Enchant result flash ───────────────────────────────────────── */}
           {enchantResult && (
             <div style={{
-              borderRadius: 18, padding: '14px 16px', textAlign: 'center',
+              borderRadius: 18, padding: '14px 16px', textAlign: 'center', position: 'relative',
               background: enchantResult.destroyed ? 'rgba(239,68,68,0.12)' : enchantResult.success ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.08)',
               border: `1px solid ${enchantResult.destroyed ? 'rgba(239,68,68,0.4)' : enchantResult.success ? 'rgba(34,197,94,0.4)' : 'rgba(148,163,184,0.2)'}`,
               boxShadow: enchantResult.success ? '0 0 20px rgba(34,197,94,0.12)' : 'none',
             }}>
+              {/* dismiss button */}
+              <button onClick={() => setEnchantResult(null)} style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none', color: '#475569', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
               <div style={{ fontSize: 28, lineHeight: 1, marginBottom: 6 }}>
                 {enchantResult.destroyed ? '💥' : enchantResult.success ? '✨' : '❌'}
               </div>
@@ -1396,7 +1399,9 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
                           ? 'This attempt is guaranteed to succeed.'
                           : normalDestroyRisk
                           ? 'Normal scroll failure can destroy this copy.'
-                          : 'Blessed scroll — failure keeps the item.'}
+                          : selectedScroll === 'blessed_scroll'
+                          ? 'Blessed scroll — failure keeps the item.'
+                          : 'Failure keeps the item (below destruction threshold).'}
                       </p>
                     </div>
                   </div>
