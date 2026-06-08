@@ -2299,6 +2299,11 @@ export default class BattleScene extends Phaser.Scene {
       }
       return;
     }
+    if (abilityKey === 'warrior_dash') {
+      // Pure mobility dash — same VFX as shield_dash but hit=false (no impact burst)
+      showShieldDash(this, { fromX: d.fromX ?? d.x ?? 0, fromY: d.fromY ?? d.y ?? 0, toX: d.toX ?? d.x ?? 0, toY: d.toY ?? d.y ?? 0, hit: false });
+      return;
+    }
     if (abilityKey === 'warrior_shield_dash') {
       showShieldDash(this, { fromX: d.fromX ?? d.x ?? 0, fromY: d.fromY ?? d.y ?? 0, toX: d.toX ?? d.x ?? 0, toY: d.toY ?? d.y ?? 0, hit: d.hit !== false });
       return;

@@ -70,6 +70,14 @@
       "blocked_knockback_mult": 0.3,
       "cooldown_ms": 7500
     },
+    "warrior_dash": {
+      "class": "warrior",
+      "role": "mobility",
+      "type": "phase_step",
+      "label": "War Dash",
+      "offset": 100,
+      "cooldown_ms": 5000
+    },
     "mage_default": {
       "class": "mage",
       "role": "ranged_burst",

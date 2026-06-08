@@ -26,16 +26,18 @@ export const UTILITY_COOLDOWNS = Object.fromEntries(
   ])
 );
 
+// Slot 1 = mobility (dash/teleport/blink)
 export const CLASS_ABILITY_ICONS = {
-  warrior: '/items/skills/warrior_guardbreak.png',
-  mage: '/items/skills/class_fireball.png',
-  rogue: '/items/skills/class_blink.png',
+  warrior: '/items/skills/warrior_guardbreak.png', // war-dash (no dedicated icon yet)
+  mage:    '/items/skills/mage_ember_bolt.png',    // phase-step (no dedicated icon yet)
+  rogue:   '/items/skills/class_blink.png',        // blink ✅
 };
 
+// Slot 2 = damage
 export const CLASS_UTILITY_ICONS = {
-  warrior: '/items/skills/warrior_guardbreak.png',
-  mage: '/items/skills/class_fireball.png',
-  rogue: '/items/skills/rogue_shadowstep.png',
+  warrior: '/items/skills/warrior_guardbreak.png', // guardbreak
+  mage:    '/items/skills/class_fireball.png',     // fireball
+  rogue:   '/items/skills/rogue_shadowstep.png',   // execute
 };
 
 function skillFromKey(slotId, source, abilityKey, imagePath) {

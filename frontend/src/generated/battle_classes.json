@@ -11,8 +11,8 @@
       "glow": "rgba(139,0,0,0.5)",
       "base_hp": 165,
       "move_speed": 7.6,
-      "default_ability_key": "warrior_guardbreak",
-      "utility_ability_key": "warrior_shield_dash",
+      "default_ability_key": "warrior_dash",
+      "utility_ability_key": "warrior_guardbreak",
       "basic_attack": {
         "kind": "melee",
         "range": 86,
@@ -56,8 +56,8 @@
       "glow": "rgba(74,144,217,0.5)",
       "base_hp": 95,
       "move_speed": 7,
-      "default_ability_key": "mage_default",
-      "utility_ability_key": "mage_frost_nova",
+      "default_ability_key": "mage_phase_step",
+      "utility_ability_key": "mage_default",
       "basic_attack": {
         "kind": "projectile",
         "range": 150,
