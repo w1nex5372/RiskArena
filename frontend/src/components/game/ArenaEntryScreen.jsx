@@ -7,6 +7,7 @@ import { getItemImageSrc, getItemStatRows, getPassiveText, getStatEntries, getTi
 import CharacterPortrait from '../arena/CharacterPortrait';
 import BattleSkillLoadout from '../arena/BattleSkillLoadout';
 import ClassStatRow from '../character/ClassStatRow';
+import ClassSwitcher from '../character/ClassSwitcher';
 import WeaponIcon from '../WeaponIcon';
 
 function SlotImage({ item, FallbackIcon, size = 44 }) {
@@ -56,7 +57,7 @@ const LOADOUT_SLOTS = [
   { key: 'helmet', label: 'HELMET', Icon: HardHat },
 ];
 
-function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInventory, onEnergySpent }) {
+function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onSwitchClass, onNavigateInventory, onEnergySpent }) {
   const { user } = useUser();
   const [history, setHistory] = useState(null);
   const [enteringRealTime, setEnteringRealTime] = useState(false);
@@ -170,6 +171,11 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onNavigateInv
 
   return (
     <div style={{ background: '#1a1a2e', minHeight: '100%', paddingBottom: 100, color: '#e8e0d0' }}>
+
+      {/* ── Class switcher ──────────────────────────────────────── */}
+      {onSwitchClass && (
+        <ClassSwitcher user={user} onSwitch={onSwitchClass} style={{ margin: '10px 12px 0' }} />
+      )}
 
       {/* ── Hero ────────────────────────────────────────────────── */}
       <div style={{

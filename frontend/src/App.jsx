@@ -2047,6 +2047,18 @@ function App() {
     battle_spritesheet_path: '',
     battle_spritesheet_hash: '',
   } : prev), []);
+  // Persisting class switch (gated to unlocked classes; restores that class's saved look)
+  const switchActiveClass = useCallback(async (cls) => {
+    try {
+      const res = await axios.post(`${API}/me/class`, { class_name: cls }, authConfig());
+      setUserWithLog({ ...(userRef.current || {}), ...res.data });
+      toast.success(`Now playing as ${res.data?.class_name || cls}`);
+      return res.data;
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to switch class');
+      throw e;
+    }
+  }, []);
   const arenaEnergySpent = useCallback((energyData) => setUser((prev) => prev ? { ...prev, ...energyData } : prev), []);
 
   // Error screen for non-Telegram access
@@ -2741,6 +2753,7 @@ function App() {
                 rooms={rooms}
                 onEnterRealTime={arenaEnterRealTime}
                 onClassChange={arenaClassChange}
+                onSwitchClass={switchActiveClass}
                 onNavigateInventory={arenaNavInventory}
                 onEnergySpent={arenaEnergySpent}
               />

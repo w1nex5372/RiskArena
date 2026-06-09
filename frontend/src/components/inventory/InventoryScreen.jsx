@@ -8,6 +8,7 @@ import apiClient from '../../api/client';
 import { CLASS_INFO, CLASS_MODIFIERS } from '../../utils/characters';
 import CharacterPortrait from '../arena/CharacterPortrait';
 import BattleSkillLoadout from '../arena/BattleSkillLoadout';
+import ClassSwitcher from '../character/ClassSwitcher';
 import {
   CLASS_THEME,
   TIER_ORDER,
@@ -765,6 +766,18 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
     }
   };
 
+  const handleSwitchClass = async (cls) => {
+    try {
+      const res = await apiClient.post('/me/class', { class_name: cls });
+      onUserUpdate?.(res.data);
+      toast.success(`Now playing as ${res.data?.class_name || cls}`);
+      await refreshItems();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to switch class');
+      throw error;
+    }
+  };
+
   const handleEnchant = async () => {
     const item = upgradeItems.find((candidate) => candidate.inventory_id === selectedUpgradeId);
     if (!item || enchanting) return;
@@ -990,6 +1003,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
 
       {hubTab === 'loadout' ? (
         <>
+          <ClassSwitcher user={user} onSwitch={handleSwitchClass} style={{ marginBottom: 12 }} />
           <ClassHeroCard
             user={user}
             loadoutEffectiveStats={loadoutEffectiveStats}
