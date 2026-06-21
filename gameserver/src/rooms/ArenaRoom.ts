@@ -231,6 +231,11 @@ export class ArenaRoom extends Room<ArenaState> {
       const activeAbility2Key = String(d.active_ability2_key || "");
       const ability2Allowed = this.isItemAbilityAllowedForClass(player.characterClass, activeAbility2Key);
       player.activeAbility2Key = ability2Allowed ? activeAbility2Key : "";
+      const defaultAbility2Cooldown = this.itemAbilityDefaultCooldownMs(activeAbility2Key);
+      const requestedAbility2Cooldown = this.clampNumber(d.active_ability2_cooldown_ms, 0, 30000, 0);
+      player.activeAbility2CooldownMs = ability2Allowed
+        ? Math.max(requestedAbility2Cooldown || defaultAbility2Cooldown, defaultAbility2Cooldown)
+        : 0;
       player.characterBuildJson = JSON.stringify(d.character_build_json || {});
       // Apply HP bonus
       player.maxHp += player.hpBonus;
@@ -543,7 +548,7 @@ export class ArenaRoom extends Room<ArenaState> {
       player.utilityAbilityCooldownUntil = now + cooldownMs;
     } else if (slot === "item2") {
       player.itemAbility2Charges = 0;
-      player.itemAbility2CooldownUntil = now + this.itemAbilityCooldownMs(player, cooldownMs);
+      player.itemAbility2CooldownUntil = now + this.itemAbility2CooldownMs(player, cooldownMs);
     } else {
       player.itemAbilityCharges = 0;
       player.itemAbilityCooldownUntil = now + this.itemAbilityCooldownMs(player, cooldownMs);
@@ -778,11 +783,13 @@ export class ArenaRoom extends Room<ArenaState> {
       return true;
     }
 
-    if (abilityType === "dash_strike" || abilityType === "ambush") {
+    if (abilityType === "dash_strike" || abilityType === "ambush" || abilityType === "execute") {
       const offset = abilityNumber(meta, "offset", abilityType === "ambush" ? 118 : 58);
       const range = abilityNumber(meta, "range", offset + 90);
       const damage = abilityNumber(meta, "damage", abilityType === "ambush" ? 18 : 14);
       const effectiveDamage = abilityDamage(damage);
+      const executeThreshold = this.clampNumber(abilityNumber(meta, "execute_threshold", 0), 0, 1, 0);
+      const executeDamageMultiplier = Math.max(1, abilityNumber(meta, "execute_damage_multiplier", 1));
       let used = false;
       let hit = false;
       this.state.players.forEach((opp, oppSid) => {
@@ -796,8 +803,18 @@ export class ArenaRoom extends Room<ArenaState> {
         player.x = newX;
         player.facingRight = player.x < opp.x;
         hit = dist <= range && Math.abs(player.y - opp.y) <= 52;
+        const executed = Boolean(
+          hit &&
+          abilityType === "execute" &&
+          executeThreshold > 0 &&
+          opp.maxHp > 0 &&
+          (opp.hp / opp.maxHp) <= executeThreshold
+        );
+        const appliedDamage = executed
+          ? Math.max(1, Math.round(effectiveDamage * executeDamageMultiplier))
+          : effectiveDamage;
         if (hit) {
-          this.dealDamage(sessionId, opp, oppSid, effectiveDamage, now, {
+          this.dealDamage(sessionId, opp, oppSid, appliedDamage, now, {
             source: slot === "class" ? "classAbility" : "itemAbility",
           });
           if (abilityType === "ambush") {
@@ -809,7 +826,8 @@ export class ArenaRoom extends Room<ArenaState> {
           sessionId, cls, abilityKey, slot,
           fromX: oldX, fromY: player.y, toX: player.x, toY: player.y,
           hit, mode: abilityType, targetSid: oppSid, targetX: opp.x, targetY: opp.y,
-          damage, effectiveDamage, range, offset, cooldownMs,
+          damage, effectiveDamage: appliedDamage, range, offset, cooldownMs,
+          executed, executeThreshold, executeDamageMultiplier,
           backstabReady: abilityType === "ambush" && hit,
           backstabWindowMs: abilityType === "ambush" && hit ? this.rogueBackstabWindowMs(player) : 0,
         });
@@ -824,6 +842,7 @@ export class ArenaRoom extends Room<ArenaState> {
           sessionId, cls, abilityKey, slot,
           fromX: oldX, fromY: player.y, toX: newX, toY: player.y,
           hit: false, mode: abilityType, damage, effectiveDamage, range, offset, cooldownMs,
+          executed: false, executeThreshold, executeDamageMultiplier,
         });
         player.misses += 1;
       }
@@ -1121,6 +1140,10 @@ export class ArenaRoom extends Room<ArenaState> {
 
   private itemAbilityCooldownMs(player: Player, defaultCooldownMs: number) {
     return Math.max(player.activeAbilityCooldownMs || defaultCooldownMs, defaultCooldownMs);
+  }
+
+  private itemAbility2CooldownMs(player: Player, defaultCooldownMs: number) {
+    return Math.max(player.activeAbility2CooldownMs || defaultCooldownMs, defaultCooldownMs);
   }
 
   private playerCombatStats(player?: Player) {

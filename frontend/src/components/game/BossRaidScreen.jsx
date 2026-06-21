@@ -7,11 +7,12 @@ import Phaser from 'phaser';
 import BossRaidScene from '../arena/scenes/BossRaidScene';
 import WeaponIcon from '../WeaponIcon';
 import ArmorIcon from '../ArmorIcon';
-import { BattleControlsOverlay, CLASS_COOLDOWNS, CLASS_DEFAULT_ABILITY_KEYS, CLASS_UTILITY_ABILITY_KEYS, UTILITY_COOLDOWNS } from '../arena/BattleControls';
+import { BattleControlsOverlay, CLASS_COOLDOWNS, CLASS_DEFAULT_ABILITY_KEYS } from '../arena/BattleControls';
 import BattleSkillLoadout from '../arena/BattleSkillLoadout';
 import { getStoredSessionToken } from '../../utils/storage';
 import { resolveGameServerUrl } from '../../utils/gameServerUrl';
 import { toast } from 'sonner';
+import './BossRaidScreen.css';
 
 const GAME_SERVER_URL = resolveGameServerUrl();
 
@@ -24,6 +25,23 @@ const fmt = (secs) => {
   const s = secs % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
+
+function getRaidViewport() {
+  const tg = window.Telegram?.WebApp;
+  const visualViewport = window.visualViewport;
+  const heightCandidates = [
+    visualViewport?.height,
+    tg?.viewportHeight,
+    tg?.viewportStableHeight,
+    document.documentElement.clientHeight,
+    window.innerHeight,
+  ].map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  const visibleHeight = heightCandidates.length ? Math.min(...heightCandidates) : 0;
+  return {
+    width: Math.round(visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || 0),
+    height: Math.round(visibleHeight),
+  };
+}
 
 const phaseFromHp = (hp, maxHp) => {
   if (!maxHp) return 1;
@@ -79,21 +97,55 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const [raidEnded,       setRaidEnded]       = useState(false);
   const [damageFeed,      setDamageFeed]      = useState([]);
   const [myRank,          setMyRank]          = useState(null);
+  const [viewport,        setViewport]        = useState(getRaidViewport);
+  const [forceLandscape,  setForceLandscape]  = useState(false);
   // Death overlay — local player nokautuotas (serveris yra autoritetas; countdown kosmetinis)
   const [myDowned,        setMyDowned]        = useState(false);
   const [respawnIn,       setRespawnIn]       = useState(0);
 
   // Equipment state — mirrors RealTimeArenaScreen
-  const [equipped,         setEquipped]         = useState({ weapon: null, armor: null, ability: null, helmet: null });
+  const [equipped,         setEquipped]         = useState({ weapon: null, armor: null, ability: null, ability_2: null, helmet: null });
   const [equippedSheet,    setEquippedSheet]    = useState('');
   const [abilityReady,     setAbilityReady]     = useState(true);
-  const [utilityAbilityReady, setUtilityAbilityReady] = useState(true);
+  const [itemAbility2Ready, setItemAbility2Ready] = useState(true);
   const [itemAbilityReady, setItemAbilityReady] = useState(true);
   const playerClass = (user?.class_name || 'warrior').toLowerCase();
+  const shouldForceLandscape = forceLandscape && viewport.height > viewport.width;
+  const isPortrait = viewport.height > viewport.width && !forceLandscape;
+  const isCompactViewport = viewport.height <= 600 || viewport.width <= 900;
+
+  const requestRaidDisplayMode = useCallback(async () => {
+    const tg = window.Telegram?.WebApp;
+    try { tg?.expand?.(); } catch {}
+    try { tg?.requestFullscreen?.(); } catch {}
+    try { tg?.lockOrientation?.(); } catch {}
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      }
+    } catch {}
+    try {
+      await window.screen?.orientation?.lock?.('landscape');
+    } catch {}
+
+    window.setTimeout(() => {
+      const nextViewport = getRaidViewport();
+      setViewport(nextViewport);
+      if (nextViewport.height > nextViewport.width) {
+        setForceLandscape(true);
+      }
+    }, 180);
+  }, []);
+
+  useEffect(() => {
+    if (!shouldForceLandscape) return undefined;
+    const frame = requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    return () => cancelAnimationFrame(frame);
+  }, [shouldForceLandscape]);
 
   const attackLockTimer    = useRef(null);
   const abilityCdTimer     = useRef(null);
-  const utilityAbilityCdTimer = useRef(null);
+  const itemAbility2CdTimer = useRef(null);
   const itemAbilityCdTimer = useRef(null);
   const raidInterval       = useRef(null);
   const respawnTimerRef    = useRef(null); // death overlay countdown interval
@@ -104,12 +156,44 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const colyseusRoomRef    = useRef(null);
   const equippedSheetRef   = useRef(''); // always holds latest value — avoids stale closure in Phaser 'ready'
 
+  useEffect(() => {
+    const update = () => {
+      const nextViewport = getRaidViewport();
+      setViewport(nextViewport);
+      if (nextViewport.width >= nextViewport.height) {
+        setForceLandscape(false);
+      }
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    window.visualViewport?.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+      window.visualViewport?.removeEventListener('resize', update);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (view !== 'battle') return;
+    requestRaidDisplayMode();
+    return () => {
+      try { window.Telegram?.WebApp?.unlockOrientation?.(); } catch {}
+      try { window.screen?.orientation?.unlock?.(); } catch {}
+      setForceLandscape(false);
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch?.(() => {});
+      }
+    };
+  }, [view, requestRaidDisplayMode]);
+
   // ── Fetch equipment on mount ───────────────────────────────────────────────
   useEffect(() => {
     apiClient.get('/me/equipped')
       .then((res) => {
         const sheet = res.data?.battle_spritesheet_path || '';
-        setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null, helmet: null });
+        setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null, ability_2: null, helmet: null });
         setEquippedSheet(sheet);
         equippedSheetRef.current = sheet;
         // If scene is already running (user loaded fast), refresh the player sprite
@@ -125,7 +209,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         }
       })
       .catch(() => {
-        setEquipped({ weapon: null, armor: null, ability: null, helmet: null });
+        setEquipped({ weapon: null, armor: null, ability: null, ability_2: null, helmet: null });
         setEquippedSheet('');
       });
   }, [user?.id]); // eslint-disable-line
@@ -451,7 +535,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       socket.off('boss_defeated', onBossDefeated);
       clearTimeout(attackLockTimer.current);
       clearTimeout(abilityCdTimer.current);
-      clearTimeout(utilityAbilityCdTimer.current);
+      clearTimeout(itemAbility2CdTimer.current);
       clearTimeout(itemAbilityCdTimer.current);
       clearInterval(raidInterval.current);
     };
@@ -533,21 +617,22 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
     abilityCdTimer.current = setTimeout(() => setAbilityReady(true), cd);
   }, [abilityReady, raidEnded, raidRoomReady, playerClass]);
 
-  const handleUtilityAbility = useCallback(() => {
-    if (!utilityAbilityReady || raidEnded || !raidRoomReady) return;
-    const abilityKey = CLASS_UTILITY_ABILITY_KEYS[playerClass] || '';
+  const handleItemAbility2 = useCallback(() => {
+    if (!itemAbility2Ready || raidEnded || !raidRoomReady) return;
+    const abilityKey = equipped?.ability_2?.ability_key || equipped?.ability_2?.key || '';
     if (!abilityKey) return;
     sceneRef.current?.triggerAbility(playerClass, abilityKey);
     colyseusRoomRef.current?.send('ability', { abilityKey });
-    setUtilityAbilityReady(false);
-    clearTimeout(utilityAbilityCdTimer.current);
-    const cd = UTILITY_COOLDOWNS[playerClass] ?? 10000;
-    utilityAbilityCdTimer.current = setTimeout(() => setUtilityAbilityReady(true), cd);
-  }, [utilityAbilityReady, raidEnded, raidRoomReady, playerClass]);
+    setItemAbility2Ready(false);
+    clearTimeout(itemAbility2CdTimer.current);
+    const cd = Number(equipped?.ability_2?.ability_cooldown_ms || equipped?.ability_2?.cooldown_ms || 6000);
+    itemAbility2CdTimer.current = setTimeout(() => setItemAbility2Ready(true), cd);
+  }, [itemAbility2Ready, raidEnded, raidRoomReady, equipped?.ability_2, playerClass]);
 
   const handleItemAbility = useCallback(() => {
     if (!itemAbilityReady || raidEnded || !raidRoomReady) return;
-    const abilityKey = equipped?.ability?.ability_key || equipped?.ability?.key || `${playerClass}_default`;
+    const abilityKey = equipped?.ability?.ability_key || equipped?.ability?.key || '';
+    if (!abilityKey) return;
     sceneRef.current?.triggerAbility(playerClass, abilityKey);
     // Serveris pritaiko žalą bosui (server-authoritative — žala/cooldown iš shared metadata)
     colyseusRoomRef.current?.send('ability', { abilityKey });
@@ -832,7 +917,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           <p style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.1em', color: '#64748b', textTransform: 'uppercase', margin: '10px 0 6px' }}>
             Battle Skills
           </p>
-          <BattleSkillLoadout className={playerClass} equippedAbility={equipped?.ability || null} compact />
+          <BattleSkillLoadout className={playerClass} equippedAbility={equipped?.ability || null} equippedAbility2={equipped?.ability_2 || null} compact />
         </section>
 
         {/* Loot table */}
@@ -922,8 +1007,11 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
   const canAttack = raidRoomReady && !attackLocked && !raidEnded;
 
   return (
-    <div style={{
+    <div
+      className={`boss-raid-battle ${isCompactViewport ? 'boss-raid-battle--compact' : ''} ${isPortrait ? 'boss-raid-battle--portrait' : ''} ${shouldForceLandscape ? 'boss-raid-battle--forced-landscape' : ''}`}
+      style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      height: viewport.height ? `${viewport.height}px` : '100dvh',
       zIndex: 1000, display: 'flex', flexDirection: 'column',
       background: '#04020e', color: '#e8e0d0',
       userSelect: 'none', WebkitUserSelect: 'none',
@@ -939,13 +1027,14 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       `}</style>
 
       {/* ── Top HUD bar ──────────────────────────────────────────────────── */}
-      <div style={{
+      <div className="boss-raid-battle__hud" style={{
         flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
         padding: '8px 12px 6px',
         background: 'rgba(0,0,0,0.55)', borderBottom: '1px solid rgba(255,255,255,0.06)',
       }}>
         {/* Back */}
         <button
+          className="boss-raid-battle__back"
           onClick={() => setView('lobby')}
           style={{
             background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
@@ -955,8 +1044,8 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         >← Lobby</button>
 
         {/* Boss name + phase */}
-        <div style={{ flexShrink: 0 }}>
-          <span style={{ fontSize: 13, fontWeight: 900, color: '#e8e0d0' }}>{bossState.name}</span>
+        <div className="boss-raid-battle__boss" style={{ flexShrink: 0 }}>
+          <span className="boss-raid-battle__boss-name" style={{ fontSize: 13, fontWeight: 900, color: '#e8e0d0' }}>{bossState.name}</span>
           <span style={{
             marginLeft: 6, fontSize: 10, fontWeight: 800, padding: '1px 6px',
             borderRadius: 10, background: `${phaseColor}25`, color: phaseColor,
@@ -973,7 +1062,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         </div>
 
         {/* HP bar */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="boss-raid-battle__hp" style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
             <span style={{ fontSize: 10, color: '#64748b' }}>
               {(bossState.current_hp||0).toLocaleString()} / {(bossState.max_hp||0).toLocaleString()}
@@ -986,7 +1075,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         </div>
 
         {/* Timer + raiders */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0, gap: 2 }}>
+        <div className="boss-raid-battle__meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0, gap: 2 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#64748b' }}>
             <Clock3 style={{ width: 12, height: 12 }} />{raidTimer != null ? fmt(raidTimer) : '--:--'}
           </div>
@@ -997,11 +1086,11 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
       </div>
 
       {/* ── Phaser canvas + overlaid controls ────────────────────────────── */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      <div className="boss-raid-battle__stage" style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <div ref={containerRef} className="boss-raid-battle__canvas" style={{ width: '100%', height: '100%' }} />
 
         {/* Damage feed */}
-        <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none' }}>
+        <div className="boss-raid-battle__feed" style={{ position: 'absolute', top: 8, right: 10, display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none' }}>
           {damageFeed.map((item) => (
             <div key={item.id} style={{
               background: 'rgba(0,0,0,0.75)', border: '1px solid rgba(251,191,36,0.4)',
@@ -1014,7 +1103,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
 
         {/* My damage chip — top-left so it doesn't overlap joystick */}
         {myDamage > 0 && (
-          <div style={{
+          <div className="boss-raid-battle__damage-chip" style={{
             position: 'absolute', top: 8, left: 10,
             background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(201,168,76,0.3)',
             borderRadius: 10, padding: '4px 10px', pointerEvents: 'none',
@@ -1050,7 +1139,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
         )}
 
         {!raidRoomReady && (
-          <div style={{
+          <div className="boss-raid-battle__connection" style={{
             position: 'absolute', left: '50%', bottom: 118, zIndex: 45,
             transform: 'translateX(-50%)',
             padding: '7px 12px', borderRadius: 6,
@@ -1064,11 +1153,27 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           </div>
         )}
 
+        {isPortrait && (
+          <div className="boss-raid-battle__rotate">
+            <div className="boss-raid-battle__rotate-icon" aria-hidden="true">↻</div>
+            <div className="boss-raid-battle__rotate-title">Rotate for raid</div>
+            <div className="boss-raid-battle__rotate-copy">
+              Boss Raid battle controls are tuned for landscape.
+            </div>
+            <button type="button" onClick={requestRaidDisplayMode}>
+              Open landscape fullscreen
+            </button>
+            <button type="button" className="boss-raid-battle__rotate-secondary" onClick={() => setView('lobby')}>
+              Back to Raid Lobby
+            </button>
+          </div>
+        )}
+
         <BattleControlsOverlay
           showBlock={true}
           playerClass={playerClass}
           abilityReady={abilityReady}
-          itemAbility2Ready={utilityAbilityReady}
+          itemAbility2Ready={itemAbility2Ready}
           equippedAbility2={equipped?.ability_2 || null}
           itemAbilityReady={itemAbilityReady}
           equippedAbility={equipped?.ability || null}
@@ -1077,7 +1182,7 @@ export default function BossRaidScreen({ user, socket, onLevelUp }) {
           onJoystick={handleJoystick}
           onAttack={handleAttack}
           onAbility={handleAbility}
-          onItemAbility2={handleUtilityAbility}
+          onItemAbility2={handleItemAbility2}
           onItemAbility={handleItemAbility}
           onBlockDown={() => { sceneRef.current?.setBlock(true);  colyseusRoomRef.current?.send('block', { down: true }); }}
           onBlockUp={() =>   { sceneRef.current?.setBlock(false); colyseusRoomRef.current?.send('block', { down: false }); }}

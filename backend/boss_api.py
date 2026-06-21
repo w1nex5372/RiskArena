@@ -11,8 +11,10 @@ from pydantic import BaseModel, Field
 import boss_repo
 import boss_domain as _boss_domain
 from auth import get_authenticated_user_id, require_admin_request
+from database import get_pool
 
 _INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
+RAID_UNLOCK_LEVEL = 5
 
 
 def _require_internal(request: Request) -> None:
@@ -44,6 +46,14 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail="Boss raid operation failed")
 
 
+async def _require_raid_unlocked(user_id: str) -> None:
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        level = await conn.fetchval("SELECT level FROM users WHERE id = $1", str(user_id))
+    if int(level or 1) < RAID_UNLOCK_LEVEL:
+        raise HTTPException(status_code=423, detail=f"Boss Raid unlocks at level {RAID_UNLOCK_LEVEL}")
+
+
 @router.get("/current")
 async def get_current_boss(http_request: Request):
     """
@@ -52,6 +62,7 @@ async def get_current_boss(http_request: Request):
     next boss (strict 1h grid).
     """
     user_id = get_authenticated_user_id(http_request)
+    await _require_raid_unlocked(user_id)
     try:
         state = await boss_repo.get_active_raid_state(user_id)
         if not state:

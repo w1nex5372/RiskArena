@@ -2,7 +2,7 @@
 # Pure unit test — no DB or running server needed
 
 import pytest
-from itemization import aggregate_item_modifiers, modifiers_to_dict
+from itemization import aggregate_item_modifiers, battle_ability_stats, modifiers_to_dict
 
 def test_empty_loadout_returns_zeros():
     stats = modifiers_to_dict(aggregate_item_modifiers([]))
@@ -31,3 +31,10 @@ def test_full_loadout_combines_all():
     assert stats["attack_bonus"] == 4
     assert stats["ability_bonus"] == 6
     assert stats["hp_bonus"] == 15
+
+
+def test_execute_stats_include_finisher_rules():
+    stats = battle_ability_stats("rogue_execute")
+    assert stats["type"] == "execute"
+    assert stats["execute_threshold"] == 0.35
+    assert stats["execute_damage_multiplier"] == 1.75

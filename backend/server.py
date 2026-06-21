@@ -448,8 +448,15 @@ def _class_unlock_fields(user_doc: Dict[str, Any]) -> Dict[str, Any]:
     """Derive unlocked/claimable/pending class fields for a user response."""
     unlocked = _normalize_unlocked_classes(user_doc)
     level = int(user_doc.get("level") or 1)
-    slots = _progression.class_slots_for_level(level)
+    has_active_class = bool(str(user_doc.get("class_name") or "").strip())
     claimable = [c for c in CLASS_ORDER if c not in unlocked]
+    if not has_active_class:
+        return {
+            "unlocked_classes": unlocked,
+            "pending_class_unlocks": 0,
+            "claimable_classes": claimable,
+        }
+    slots = _progression.class_slots_for_level(level)
     pending = max(0, min(slots - len(unlocked), len(claimable)))
     return {
         "unlocked_classes": unlocked,
@@ -722,6 +729,7 @@ class RoomPlayer(BaseModel):
     weapon: Optional[Dict[str, Any]] = None
     armor: Optional[Dict[str, Any]] = None
     ability: Optional[Dict[str, Any]] = None
+    ability_2: Optional[Dict[str, Any]] = None
     joined_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class GameResult(BaseModel):
@@ -781,7 +789,7 @@ async def _fetch_equipped_snapshot(user_id: str) -> Dict[str, Any]:
             user_id,
         )
 
-    equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None, "helmet": None}
+    equipped: Dict[str, Any] = {"weapon": None, "armor": None, "ability": None, "ability_2": None, "helmet": None}
     for row in rows:
         slot = row["slot"]
         if slot in equipped:
@@ -3147,6 +3155,7 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             weapon=equipped.get('weapon'),
             armor=equipped.get('armor'),
             ability=equipped.get('ability'),
+            ability_2=equipped.get('ability_2'),
         )
     else:
         player = RoomPlayer(
@@ -3166,6 +3175,7 @@ async def join_room(request: JoinRoomRequest, background_tasks: BackgroundTasks,
             weapon=equipped.get('weapon'),
             armor=equipped.get('armor'),
             ability=equipped.get('ability'),
+            ability_2=equipped.get('ability_2'),
         )
     target_room.players.append(player)
     target_room.prize_pool += request.bet_amount

@@ -62,6 +62,7 @@ export class Player extends Schema {
   itemAbilityCooldownUntil: number = 0;
   itemAbility2CooldownUntil: number = 0;
   activeAbility2Key: string = "";
+  activeAbility2CooldownMs: number = 0;
   guardBrokenUntil: number = 0;
   guardRegenPausedUntil: number = 0;
   backstabWindowUntil: number = 0;

@@ -186,7 +186,12 @@ function CharacterCard({ player, label, isYou, ready }) {
             ))}
           </div>
           <div style={{ marginTop: 8 }}>
-            <BattleSkillLoadout className={className} equippedAbility={player?.ability || null} compact />
+            <BattleSkillLoadout
+              className={className}
+              equippedAbility={player?.ability || null}
+              equippedAbility2={player?.ability_2 || null}
+              compact
+            />
           </div>
         </div>
       </div>

@@ -413,7 +413,7 @@ export function showShieldDash(scene, { fromX, fromY, toX, toY, hit = true } = {
 }
 
 // ── Rogue: Execute ────────────────────────────────────────────────────────────
-export function showExecute(scene, { fromX, fromY, toX, toY, hit = true } = {}) {
+export function showExecute(scene, { fromX, fromY, toX, toY, hit = true, executed = false } = {}) {
   if (!scene || !scene.add) return;
   const isMobile = scene._isMobile?.();
   const particles = isMobile ? 8 : 18;
@@ -457,8 +457,8 @@ export function showExecute(scene, { fromX, fromY, toX, toY, hit = true } = {}) 
       scene.tweens.add({ targets: s, scaleX: 0.1, alpha: 0, duration: 280, delay: 30, ease: 'Power2', onComplete: () => { if (s.active) s.destroy(); } });
     });
 
-    scene._showCombatText?.(toX, toY - 72, 'EXECUTE!', '#ef4444');
-    scene.cameras?.main?.shake(110, 0.011);
+    scene._showCombatText?.(toX, toY - 72, executed ? 'FINISHER!' : 'EXECUTE!', executed ? '#facc15' : '#ef4444', executed ? '22px' : '16px');
+    scene.cameras?.main?.shake(executed ? 160 : 110, executed ? 0.018 : 0.011);
   }
 }
 

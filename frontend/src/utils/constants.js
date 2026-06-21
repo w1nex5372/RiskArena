@@ -34,7 +34,7 @@ if (storedVersion !== APP_VERSION) {
   const allKeys = Object.keys(localStorage);
   
   allKeys.forEach(key => {
-    if (!keysToKeep.includes(key)) {
+    if (!keysToKeep.includes(key) && !key.startsWith('riskarena:')) {
       localStorage.removeItem(key);
     }
   });

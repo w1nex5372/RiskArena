@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import battleAbilities from '../../generated/battle_abilities.json';
 import { resolveAbilityDamage } from '../../utils/itemPresentation';
 import {
+  abilityIconForKey,
   CLASS_ABILITY_ICONS,
   CLASS_COOLDOWNS,
   CLASS_DEFAULT_ABILITY_KEYS,
@@ -42,8 +43,8 @@ export const BATTLE_CONTROL_LAYOUTS = {
     joystick: 138,
     joystickKnob: 56,
     joystickEdge: 20,
-    clusterWidth: 278,
-    clusterHeight: 236,
+    clusterWidth: 300,
+    clusterHeight: 268,
     clusterRight: 16,
     clusterBottom: 18,
     attack: 92,
@@ -51,14 +52,14 @@ export const BATTLE_CONTROL_LAYOUTS = {
     ability: 64,       // uniform size for all skill buttons
     block: 56,
     blockFont: 22,
-    arcGap: 58,        // keeps skill edges ~8 px apart at 30 deg spacing
+    arcGap: 82,
   },
   compact: {
     joystick: 110,
     joystickKnob: 44,
     joystickEdge: 14,
-    clusterWidth: 222,
-    clusterHeight: 192,
+    clusterWidth: 252,
+    clusterHeight: 230,
     clusterRight: 10,
     clusterBottom: 10,
     attack: 76,
@@ -66,14 +67,41 @@ export const BATTLE_CONTROL_LAYOUTS = {
     ability: 54,
     block: 46,
     blockFont: 18,
-    arcGap: 46,        // keeps skill edges ~8 px apart at 30 deg spacing
+    arcGap: 70,
+  },
+  short: {
+    joystick: 92,
+    joystickKnob: 38,
+    joystickEdge: 8,
+    clusterWidth: 222,
+    clusterHeight: 202,
+    clusterRight: 6,
+    clusterBottom: 6,
+    attack: 64,
+    attackFont: 24,
+    ability: 48,
+    block: 44,
+    blockFont: 16,
+    arcGap: 58,
   },
 };
 
+function getVisibleViewport() {
+  const visualViewport = window.visualViewport;
+  return {
+    width: Math.round(visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || 0),
+    height: Math.round(visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || 0),
+  };
+}
+
 function getBattleControlLayout() {
   if (typeof window === 'undefined') return BATTLE_CONTROL_LAYOUTS.regular;
-  const minViewport = Math.min(window.innerWidth || 0, window.innerHeight || 0);
-  const compact = Boolean(window.Telegram?.WebApp) || minViewport <= 520;
+  const viewport = getVisibleViewport();
+  const minViewport = Math.min(viewport.width, viewport.height);
+  if (viewport.height <= 430 || minViewport <= 390) {
+    return BATTLE_CONTROL_LAYOUTS.short;
+  }
+  const compact = Boolean(window.Telegram?.WebApp) || viewport.height <= 600 || minViewport <= 600;
   return compact ? BATTLE_CONTROL_LAYOUTS.compact : BATTLE_CONTROL_LAYOUTS.regular;
 }
 
@@ -83,12 +111,18 @@ function useBattleControlLayout() {
     const update = () => setLayout(getBattleControlLayout());
     window.addEventListener('resize', update);
     window.addEventListener('orientationchange', update);
+    window.visualViewport?.addEventListener('resize', update);
     return () => {
       window.removeEventListener('resize', update);
       window.removeEventListener('orientationchange', update);
+      window.visualViewport?.removeEventListener('resize', update);
     };
   }, []);
   return layout;
+}
+
+function safeEdge(edge, fallback) {
+  return `max(${fallback}px, env(safe-area-inset-${edge}, 0px), var(--tg-safe-area-inset-${edge}, 0px), var(--tg-content-safe-area-inset-${edge}, 0px))`;
 }
 
 function abilityTooltip(name, cooldownMs, stats, abilityBonus = 0) {
@@ -103,6 +137,9 @@ function abilityTooltip(name, cooldownMs, stats, abilityBonus = 0) {
   if (stats?.offset) parts.push(`${Math.round(Number(stats.offset))} reposition`);
   if (stats?.guard_restore) parts.push(`${Math.round(Number(stats.guard_restore))} guard`);
   if (stats?.backstab_window_ms) parts.push(`${String(Number(stats.backstab_window_ms) / 1000).replace(/\.0$/, '')}s ambush`);
+  if (stats?.execute_threshold && Number(stats?.execute_damage_multiplier || 0) > 1) {
+    parts.push(`${Math.round(Number(stats.execute_damage_multiplier) * 100)}% damage below ${Math.round(Number(stats.execute_threshold) * 100)}% HP`);
+  }
   return parts.join(' | ');
 }
 
@@ -234,6 +271,7 @@ export function AbilityButton({
   onActivate,
   cooldownUntil = 0,
   size = 64,
+  badge = '',
   style = {},
 }) {
   const [progress, setProgress] = React.useState(0);
@@ -243,8 +281,8 @@ export function AbilityButton({
   const wasCoolingDownRef = React.useRef(false);
 
   const abilityName = equippedAbility?.name || ABILITY_NAMES[playerClass] || 'Ability';
-  const imagePath   = equippedAbility?.image_path || '';
   const abilityKey  = equippedAbility?.ability_key || CLASS_DEFAULT_ABILITY_KEYS[playerClass] || '';
+  const imagePath   = abilityIconForKey(abilityKey, equippedAbility?.image_path || '');
   const abilityStats = equippedAbility?.battle_stats || equippedAbility?.active_ability_stats || ABILITY_DATA[abilityKey] || null;
   const abilityBonus = Number(equippedAbility?.ability_bonus || equippedAbility?.effective_stats?.ability_bonus || 0);
   const hasAbility  = Boolean(abilityKey || equippedAbility?.name);
@@ -376,6 +414,29 @@ export function AbilityButton({
             }}
           />
         )}
+        {badge && hasAbility && (
+          <span style={{
+            position: 'absolute',
+            right: 2,
+            bottom: 2,
+            minWidth: Math.max(15, Math.round(size * 0.24)),
+            height: Math.max(15, Math.round(size * 0.24)),
+            borderRadius: 999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '0 4px',
+            background: 'rgba(2,6,23,0.86)',
+            border: '1px solid rgba(255,255,255,0.22)',
+            color: '#e2e8f0',
+            fontSize: Math.max(8, Math.round(size * 0.16)),
+            fontWeight: 900,
+            lineHeight: 1,
+            zIndex: 3,
+            boxShadow: '0 2px 7px rgba(0,0,0,0.45)',
+          }}>
+            {badge}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -453,8 +514,8 @@ export function BattleControlsOverlay({
       {/* Joystick — bottom left */}
       <div style={{
         position:'absolute',
-        left:`max(${layout.joystickEdge}px, env(safe-area-inset-left))`,
-        bottom:`max(${layout.joystickEdge}px, env(safe-area-inset-bottom))`,
+        left:safeEdge('left', layout.joystickEdge),
+        bottom:safeEdge('bottom', layout.joystickEdge),
         pointerEvents:'auto',
       }}>
         <JoystickControl
@@ -467,8 +528,8 @@ export function BattleControlsOverlay({
       {/* Right cluster — MOBA layout: big attack bottom-right, skills fanned on an arc */}
       <div style={{
         position:'absolute',
-        right:`max(${layout.clusterRight}px, env(safe-area-inset-right))`,
-        bottom:`max(${layout.clusterBottom}px, env(safe-area-inset-bottom))`,
+        right:safeEdge('right', layout.clusterRight),
+        bottom:safeEdge('bottom', layout.clusterBottom),
         width:layout.clusterWidth, height:layout.clusterHeight,
         pointerEvents:'none',
       }}>
@@ -489,6 +550,7 @@ export function BattleControlsOverlay({
                   playerClass={playerClass}
                   cooldownUntil={abilityCooldownUntil}
                   size={aSize}
+                  badge="C"
                   equippedAbility={{
                     name: ABILITY_NAMES[playerClass] || 'Ability',
                     image_path: CLASS_ABILITY_ICONS[playerClass],
@@ -507,6 +569,7 @@ export function BattleControlsOverlay({
                     playerClass={playerClass}
                     cooldownUntil={itemAbility2CooldownUntil}
                     size={aSize}
+                    badge="2"
                     equippedAbility={equippedAbility2}
                     onActivate={onItemAbility2}
                   />
@@ -531,6 +594,7 @@ export function BattleControlsOverlay({
                     playerClass={playerClass}
                     cooldownUntil={itemAbilityCooldownUntil}
                     size={aSize}
+                    badge="1"
                     equippedAbility={equippedAbility}
                     onActivate={onItemAbility}
                   />
@@ -553,8 +617,8 @@ export function BattleControlsOverlay({
           // Spread: 60 deg (block mode) / 84 deg (no-block), giving ~30 deg per slot.
           // Wide spread + large arcGap keep skill edges from overlapping.
           const N = skills.length;
-          const aStart = showBlock ? 148 : 172;
-          const aEnd = 88;
+          const aStart = showBlock ? 170 : 172;
+          const aEnd = 86;
           const angleAt = (i) => (N <= 1 ? 130 : aStart + ((aEnd - aStart) * i) / (N - 1));
 
           return (

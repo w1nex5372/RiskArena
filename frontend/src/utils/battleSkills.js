@@ -40,6 +40,32 @@ export const CLASS_UTILITY_ICONS = {
   rogue:   '/items/skills/rogue_shadowstep.png',   // execute
 };
 
+export const ABILITY_ICON_BY_KEY = {
+  warrior_default: '/items/skills/class_bash.png',
+  warrior_bash: '/items/skills/warrior_bash.png',
+  warrior_guardbreak: '/items/skills/warrior_guardbreak.png',
+  warrior_titan_bash: '/items/skills/warrior_titan_bash.png',
+  warrior_fortify: '/items/skills/warrior_guardbreak.png',
+  warrior_shield_dash: '/items/skills/warrior_bash.png',
+  warrior_dash: '/items/skills/class_bash.png',
+  mage_default: '/items/skills/class_fireball.png',
+  mage_fireball: '/items/skills/mage_fireball.png',
+  mage_ember_bolt: '/items/skills/mage_ember_bolt.png',
+  mage_inferno_blast: '/items/skills/mage_inferno_blast.png',
+  mage_phase_step: '/items/skills/mage_ember_bolt.png',
+  mage_frost_nova: '/items/skills/class_fireball.png',
+  rogue_default: '/items/skills/class_blink.png',
+  rogue_blink: '/items/skills/rogue_blink.png',
+  rogue_shadowstep: '/items/skills/rogue_shadowstep.png',
+  rogue_nightfall: '/items/skills/rogue_nightfall.png',
+  rogue_smoke_veil: '/items/skills/rogue_shadowstep.png',
+  rogue_execute: '/items/skills/rogue_nightfall.png',
+};
+
+export function abilityIconForKey(abilityKey, fallback = '') {
+  return ABILITY_ICON_BY_KEY[String(abilityKey || '')] || fallback || '';
+}
+
 function skillFromKey(slotId, source, abilityKey, imagePath) {
   const meta = ABILITY_DATA[abilityKey] || {};
   return {
@@ -47,38 +73,43 @@ function skillFromKey(slotId, source, abilityKey, imagePath) {
     source,
     ability_key: abilityKey,
     name: meta.label || abilityKey || 'Empty',
-    image_path: imagePath || '',
+    image_path: abilityIconForKey(abilityKey, imagePath),
     cooldown_ms: Number(meta.cooldown_ms || 0),
     battle_stats: meta,
   };
 }
 
-export function getClassBattleSkills(className, equippedAbility = null) {
+function equippedSkill(slotId, equippedAbility, className) {
+  const equippedClass = String(equippedAbility?.class_name || '').toLowerCase();
+  const validEquippedAbility = equippedAbility && (
+    !equippedClass || equippedClass === 'any' || equippedClass === className
+  )
+    ? equippedAbility
+    : null;
+  if (!validEquippedAbility) return null;
+  return {
+    ...validEquippedAbility,
+    slot_id: slotId,
+    source: 'item',
+    name: validEquippedAbility.name || ABILITY_DATA[validEquippedAbility.ability_key]?.label || 'Item Skill',
+    image_path: abilityIconForKey(validEquippedAbility.ability_key, validEquippedAbility.image_path),
+    cooldown_ms: Number(
+      validEquippedAbility.ability_cooldown_ms ||
+      validEquippedAbility.cooldown_ms ||
+      ABILITY_DATA[validEquippedAbility.ability_key]?.cooldown_ms ||
+      0
+    ),
+    battle_stats: validEquippedAbility.battle_stats || ABILITY_DATA[validEquippedAbility.ability_key] || {},
+  };
+}
+
+export function getClassBattleSkills(className, equippedAbility = null, equippedAbility2 = null) {
   const cls = String(className || '').toLowerCase();
   if (!cls || !CLASS_DATA[cls]) return [null, null, null];
   const defaultKey = CLASS_DEFAULT_ABILITY_KEYS[cls] || `${cls}_default`;
-  const utilityKey = CLASS_UTILITY_ABILITY_KEYS[cls] || '';
-  const equippedClass = String(equippedAbility?.class_name || '').toLowerCase();
-  const validEquippedAbility = equippedAbility && (!equippedClass || equippedClass === 'any' || equippedClass === cls)
-    ? equippedAbility
-    : null;
   return [
     skillFromKey('class', 'class', defaultKey, CLASS_ABILITY_ICONS[cls]),
-    utilityKey ? skillFromKey('utility', 'class', utilityKey, CLASS_UTILITY_ICONS[cls]) : null,
-    validEquippedAbility
-      ? {
-          ...validEquippedAbility,
-          slot_id: 'item',
-          source: 'item',
-          name: validEquippedAbility.name || ABILITY_DATA[validEquippedAbility.ability_key]?.label || 'Item Skill',
-          cooldown_ms: Number(
-            validEquippedAbility.ability_cooldown_ms ||
-            validEquippedAbility.cooldown_ms ||
-            ABILITY_DATA[validEquippedAbility.ability_key]?.cooldown_ms ||
-            0
-          ),
-          battle_stats: validEquippedAbility.battle_stats || ABILITY_DATA[validEquippedAbility.ability_key] || {},
-        }
-      : null,
+    equippedSkill('ability_2', equippedAbility2, cls),
+    equippedSkill('item', equippedAbility, cls),
   ];
 }

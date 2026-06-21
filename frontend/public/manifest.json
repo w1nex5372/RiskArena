@@ -20,7 +20,7 @@
   "display": "standalone",
   "theme_color": "#fbbf24",
   "background_color": "#0f172a",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "scope": "/",
   "categories": ["games", "entertainment"],
   "lang": "en-US",

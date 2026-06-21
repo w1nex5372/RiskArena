@@ -1,0 +1,198 @@
+.boss-raid-battle {
+  box-sizing: border-box;
+  padding-top: max(env(safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px));
+  padding-right: max(env(safe-area-inset-right, 0px), var(--tg-content-safe-area-inset-right, 0px));
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px));
+  padding-left: max(env(safe-area-inset-left, 0px), var(--tg-content-safe-area-inset-left, 0px));
+  isolation: isolate;
+}
+
+.boss-raid-battle__hud {
+  position: absolute;
+  z-index: 32;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 44px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(3, 3, 10, 0.94), rgba(3, 3, 10, 0.62), transparent) !important;
+  border-bottom: 0 !important;
+}
+
+.boss-raid-battle__hud > * {
+  pointer-events: auto;
+}
+
+.boss-raid-battle__boss {
+  min-width: 0;
+}
+
+.boss-raid-battle__boss-name {
+  display: inline-block;
+  max-width: min(28vw, 180px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.boss-raid-battle__stage {
+  min-height: 0;
+}
+
+.boss-raid-battle__canvas canvas {
+  display: block;
+}
+
+.boss-raid-battle--forced-landscape {
+  width: 100dvh !important;
+  height: 100dvw !important;
+  max-width: none !important;
+  max-height: none !important;
+  transform: rotate(90deg) translateY(-100%);
+  transform-origin: top left;
+}
+
+.boss-raid-battle--forced-landscape .boss-raid-battle__stage,
+.boss-raid-battle--forced-landscape .boss-raid-battle__canvas {
+  width: 100dvh !important;
+  height: 100dvw !important;
+}
+
+.boss-raid-battle__feed,
+.boss-raid-battle__damage-chip {
+  top: 52px !important;
+  z-index: 24;
+}
+
+.boss-raid-battle__connection {
+  z-index: 46;
+}
+
+.boss-raid-battle__rotate {
+  position: absolute;
+  z-index: 110;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px;
+  text-align: center;
+  background: linear-gradient(180deg, #0d0d1a, #080812);
+  pointer-events: auto;
+}
+
+.boss-raid-battle__rotate-icon {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(201, 168, 76, 0.38);
+  border-radius: 16px;
+  color: #c9a84c;
+  font-size: 46px;
+  line-height: 1;
+  box-shadow: 0 0 34px rgba(201, 168, 76, 0.16);
+}
+
+.boss-raid-battle__rotate-title {
+  color: #f8fafc;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.boss-raid-battle__rotate-copy {
+  max-width: 300px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.boss-raid-battle__rotate button {
+  width: min(300px, calc(100% - 24px));
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(201, 168, 76, 0.4);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #c9a84c, #8b6914);
+  color: #080812;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.boss-raid-battle__rotate .boss-raid-battle__rotate-secondary {
+  margin-top: 0;
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+}
+
+.boss-raid-battle--portrait .boss-raid-battle__hud,
+.boss-raid-battle--portrait .boss-raid-battle__feed,
+.boss-raid-battle--portrait .boss-raid-battle__damage-chip,
+.boss-raid-battle--portrait .boss-raid-battle__connection {
+  display: none !important;
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  .boss-raid-battle__hud {
+    min-height: 34px;
+    gap: 6px !important;
+    padding: 4px 8px !important;
+  }
+
+  .boss-raid-battle__back {
+    padding: 3px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .boss-raid-battle__boss-name {
+    max-width: 96px;
+    font-size: 12px !important;
+  }
+
+  .boss-raid-battle__hp {
+    max-width: 46vw;
+  }
+
+  .boss-raid-battle__meta {
+    gap: 0 !important;
+  }
+
+  .boss-raid-battle__feed,
+  .boss-raid-battle__damage-chip {
+    top: 38px !important;
+  }
+
+  .boss-raid-battle__damage-chip {
+    padding: 3px 8px !important;
+  }
+
+  .boss-raid-battle__connection {
+    bottom: 96px !important;
+    padding: 6px 10px !important;
+    font-size: 10px !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 430px) {
+  .boss-raid-battle__hud {
+    min-height: 30px;
+    padding: 2px 8px !important;
+  }
+
+  .boss-raid-battle__boss-name {
+    max-width: 78px;
+  }
+
+  .boss-raid-battle__feed {
+    display: none !important;
+  }
+
+  .boss-raid-battle__damage-chip {
+    top: 32px !important;
+  }
+}

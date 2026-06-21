@@ -1,13 +1,15 @@
 import { memo } from 'react';
 import { Backpack, Crown, Medal, Swords, Users, Zap } from 'lucide-react';
 import { useUser } from '../../context/UserContext';
+import { isRaidUnlocked, RAID_UNLOCK_LEVEL } from '../../utils/progression';
 
-function NavBtn({ tab, activeTab, onClick, icon: Icon, label }) {
+function NavBtn({ tab, activeTab, onClick, icon: Icon, label, disabled = false, badge = null }) {
   const effectiveActiveTab = activeTab === 'dailyChest' ? 'rooms' : activeTab;
   const isActive = effectiveActiveTab === tab;
   return (
     <button
       onClick={onClick}
+      aria-disabled={disabled}
       style={{
         flex: 1,
         display: 'flex',
@@ -23,9 +25,9 @@ function NavBtn({ tab, activeTab, onClick, icon: Icon, label }) {
         transition: 'all 0.15s ease',
       }}
     >
-      <Icon style={{ width: 24, height: 24, color: isActive ? '#c9a84c' : '#475569' }} />
+      <Icon style={{ width: 24, height: 24, color: disabled ? '#334155' : isActive ? '#c9a84c' : '#475569' }} />
       <span style={{ fontSize: 11, fontWeight: 500, lineHeight: 1, color: isActive ? '#c9a84c' : '#475569' }}>
-        {label}
+        {label}{badge ? ` ${badge}` : ''}
       </span>
     </button>
   );
@@ -33,6 +35,7 @@ function NavBtn({ tab, activeTab, onClick, icon: Icon, label }) {
 
 function BottomNav({ activeTab, setActiveTab }) {
   const { user } = useUser();
+  const raidUnlocked = isRaidUnlocked(user);
   return (
     <nav
       className="mobile-bottom-nav"
@@ -55,7 +58,7 @@ function BottomNav({ activeTab, setActiveTab }) {
     >
       <NavBtn tab="rooms"      activeTab={activeTab} onClick={() => setActiveTab('rooms')}      icon={Users}      label="Home"    />
       <NavBtn tab="arena"      activeTab={activeTab} onClick={() => setActiveTab('arena')}      icon={Swords}     label="Arena"   />
-      <NavBtn tab="boss"       activeTab={activeTab} onClick={() => setActiveTab('boss')}       icon={Zap}        label="Raid"    />
+      <NavBtn tab="boss"       activeTab={activeTab} onClick={() => setActiveTab('boss')}       icon={Zap}        label="Raid" badge={raidUnlocked ? null : `Lv${RAID_UNLOCK_LEVEL}`} disabled={!raidUnlocked} />
       <NavBtn tab="leaderboard" activeTab={activeTab} onClick={() => setActiveTab('leaderboard')} icon={Medal}  label="Ranks"   />
       <NavBtn tab="inventory"  activeTab={activeTab} onClick={() => setActiveTab('inventory')}  icon={Backpack}   label="Items"   />
       {(user?.is_admin === true || user?.is_owner === true) && (

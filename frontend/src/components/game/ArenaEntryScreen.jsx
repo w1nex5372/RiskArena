@@ -62,7 +62,7 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onSwitchClass
   const [history, setHistory] = useState(null);
   const [enteringRealTime, setEnteringRealTime] = useState(false);
   const [energyError, setEnergyError] = useState('');
-  const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null, helmet: null });
+  const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null, ability_2: null, helmet: null });
   const [loadoutEffectiveStats, setLoadoutEffectiveStats] = useState({});
   const [timeToNext, setTimeToNext] = useState('');
   const [localSheetPath, setLocalSheetPath] = useState(null);
@@ -107,7 +107,7 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onSwitchClass
         .get('/me/equipped')
         .then((res) => {
           if (!cancelled) {
-            setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null });
+            setEquipped(res.data?.equipped || { weapon: null, armor: null, ability: null, ability_2: null });
             setLoadoutEffectiveStats(res.data?.loadout_effective_stats || {});
             if (res.data?.battle_spritesheet_path) {
               setLocalSheetPath(res.data.battle_spritesheet_path);
@@ -116,7 +116,7 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onSwitchClass
         })
         .catch(() => {
           if (!cancelled) {
-            setEquipped({ weapon: null, armor: null, ability: null });
+            setEquipped({ weapon: null, armor: null, ability: null, ability_2: null });
             setLoadoutEffectiveStats({});
           }
         });
@@ -388,7 +388,9 @@ function ArenaEntryScreen({ rooms, onEnterRealTime, onClassChange, onSwitchClass
         <BattleSkillLoadout
           className={selectedClass}
           equippedAbility={equipped?.ability || null}
+          equippedAbility2={equipped?.ability_2 || null}
           onItemClick={onNavigateInventory}
+          onItem2Click={onNavigateInventory}
           compact
         />
       </div>

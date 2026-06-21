@@ -4,7 +4,7 @@ import { getClassBattleSkills } from '../../utils/battleSkills';
 
 const SLOT_LABELS = {
   class: 'Class Skill',
-  utility: 'Utility',
+  ability_2: 'Item Skill 2',
   item: 'Item Skill',
 };
 
@@ -31,23 +31,26 @@ function SkillIcon({ skill }) {
 export default function BattleSkillLoadout({
   className = 'warrior',
   equippedAbility = null,
+  equippedAbility2 = null,
   onItemClick,
+  onItem2Click,
   compact = false,
 }) {
-  const skills = getClassBattleSkills(className, equippedAbility);
+  const skills = getClassBattleSkills(className, equippedAbility, equippedAbility2);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: compact ? 5 : 8 }}>
       {skills.map((skill, index) => {
-        const slotId = skill?.slot_id || (index === 0 ? 'class' : index === 1 ? 'utility' : 'item');
-        const isItem = slotId === 'item';
+        const slotId = skill?.slot_id || (index === 0 ? 'class' : index === 1 ? 'ability_2' : 'item');
+        const isItem = slotId === 'item' || slotId === 'ability_2';
+        const itemClick = slotId === 'ability_2' ? onItem2Click : onItemClick;
         const isEmpty = !skill;
         return (
           <button
             key={slotId}
             type="button"
-            disabled={!isItem || !onItemClick}
-            onClick={isItem && onItemClick ? onItemClick : undefined}
+            disabled={!isItem || !itemClick}
+            onClick={isItem && itemClick ? itemClick : undefined}
             style={{
               minWidth: 0,
               minHeight: compact ? 76 : 96,
@@ -56,7 +59,7 @@ export default function BattleSkillLoadout({
               border: isEmpty ? '1px dashed rgba(148,163,184,0.18)' : '1px solid rgba(201,168,76,0.22)',
               background: isEmpty ? 'rgba(255,255,255,0.02)' : 'linear-gradient(180deg, rgba(25,26,47,0.98), rgba(9,13,27,0.98))',
               color: 'inherit',
-              cursor: isItem && onItemClick ? 'pointer' : 'default',
+              cursor: isItem && itemClick ? 'pointer' : 'default',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',

@@ -3,7 +3,7 @@ import { Room, Client } from "colyseus";
 import axios from "axios";
 import { BossRaidState, RaidPlayer } from "../schemas/BossRaidState";
 // Shared combat rules — single source of truth (also used by ArenaRoom)
-import { classMaxHp, resolveDamage } from "../shared/combat";
+import { classMaxHp, resolveAbilityDamage, resolveDamage } from "../shared/combat";
 // Shared class metadata (battle_classes.json) — per-class HP/greitis/žala/block
 import { classDefaultAbilityKey, classGuard, classMoveSpeed, classBasicAttack, classUtilityAbilityKey } from "../shared/classes";
 // Shared ability metadata helpers — single source of truth (also used by ArenaRoom)
@@ -72,6 +72,7 @@ const MOVE_MIN_INTERVAL_MS = 50; // server-side throttle "move" žinutėms (≤2
 // ── Raid liveness (Phase 6) ───────────────────────────────────────────────────
 // Kas tiek tikriname ar mūsų raid'as vis dar aktyvus FastAPI pusėje. Bosas gali
 // "expire" pagal laiką (FastAPI spawner), o Colyseus room apie tai nežinotų.
+const RAID_UNLOCK_LEVEL = 5;
 const RAID_LIVENESS_POLL_MS = 15000;
 
 // ── Phase thresholds (mirrors boss_domain.py compute_phase) ──────────────────
@@ -160,6 +161,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
             headers: { Authorization: `Bearer ${options.sessionToken}` },
             timeout: 3000,
           });
+          if (Number(res.data?.level || 1) < RAID_UNLOCK_LEVEL) {
+            throw new Error(`Boss Raid unlocks at level ${RAID_UNLOCK_LEVEL}`);
+          }
           return res.data;
         } catch {}
       }
@@ -167,6 +171,7 @@ export class BossRaidRoom extends Room<BossRaidState> {
         id:         `dev-${Math.random().toString(36).slice(2, 7)}`,
         first_name: options.devUsername || "Raider",
         class_name: "warrior",
+        level: RAID_UNLOCK_LEVEL,
         character_spritesheet_path: "",
       };
     }
@@ -178,6 +183,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
     });
+    if (Number(res.data?.level || 1) < RAID_UNLOCK_LEVEL) {
+      throw new Error(`Boss Raid unlocks at level ${RAID_UNLOCK_LEVEL}`);
+    }
     return res.data;
   }
 
@@ -237,7 +245,9 @@ export class BossRaidRoom extends Room<BossRaidState> {
     );
     const d = res.data || {};
     player.defendReduction = Number(d.defend_reduction ?? player.defendReduction ?? 0) || 0;
+    player.abilityBonus = Math.max(0, Math.min(500, Math.round(Number(d.ability_bonus ?? 0) || 0)));
     player.activeAbilityKey = String(d.active_ability_key || "");
+    player.activeAbility2Key = String(d.active_ability2_key || "");
     player.spritesheetPath = String(d.battle_spritesheet_path || player.spritesheetPath || "");
   }
 
@@ -384,12 +394,12 @@ export class BossRaidRoom extends Room<BossRaidState> {
       }
       return;
     }
-    const damage = abilityNumber(meta, "damage", 0);
+    const baseDamage = abilityNumber(meta, "damage", 0);
     const range  = abilityNumber(meta, "range", 9999);
 
     // Ne-žalos ability (blink) ARBA per toli (melee bash reikia prieiti; projectile range 800)
     // → naudojimas užskaitytas (cooldown), bet bosui žalos nedaro.
-    if (damage <= 0) return;
+    if (baseDamage <= 0) return;
     if (!this.inBossRange(player, range)) {
       client.send("attack_whiff", {
         reason: "out_of_range",
@@ -398,6 +408,23 @@ export class BossRaidRoom extends Room<BossRaidState> {
       });
       return;
     }
+
+    const executeThreshold = Math.max(0, Math.min(1, abilityNumber(meta, "execute_threshold", 0)));
+    const executeDamageMultiplier = Math.max(1, abilityNumber(meta, "execute_damage_multiplier", 1));
+    const executed = Boolean(
+      abilityType === "execute" &&
+      executeThreshold > 0 &&
+      this.state.maxHp > 0 &&
+      (this.state.currentHp / this.state.maxHp) <= executeThreshold
+    );
+    const effectiveDamage = resolveAbilityDamage(
+      baseDamage,
+      player.abilityBonus,
+      abilityNumber(meta, "ability_power_scale", 1),
+    );
+    const damage = executed
+      ? Math.max(1, Math.round(effectiveDamage * executeDamageMultiplier))
+      : effectiveDamage;
 
     // Taikome HP — tiksliai kaip handleAttack
     const newHp    = Math.max(0, this.state.currentHp - damage);
@@ -429,7 +456,8 @@ export class BossRaidRoom extends Room<BossRaidState> {
     return key === classDefaultAbilityKey(player.characterClass)
       || key === `${player.characterClass}_default`
       || key === classUtilityAbilityKey(player.characterClass)
-      || key === player.activeAbilityKey;
+      || key === player.activeAbilityKey
+      || key === player.activeAbility2Key;
   }
 
   // Ar žaidėjas pakankamai arti boso konkrečios atakos/ability range'ui

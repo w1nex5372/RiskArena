@@ -137,6 +137,11 @@ export default class BattleScene extends Phaser.Scene {
     this.dynamicSheetLoads = new Set();
     this._roomDisposers  = [];
     this._pendingImpactUntilBySid = new Map();
+    this._warmupInput = { left: false, right: false, up: false };
+    this._warmupX = null;
+    this._warmupFacingRight = true;
+    this._warmupBlock = false;
+    this._warmupJumping = false;
   }
 
   // ── 1. Preload ─────────────────────────────────────────────────────────
@@ -970,6 +975,129 @@ export default class BattleScene extends Phaser.Scene {
     }
   }
 
+  _getMyWarmupSprite() {
+    if (!this.mySessionId) return null;
+    const s = this.sprites.get(this.mySessionId);
+    const player = this.room?.state?.players?.get(this.mySessionId);
+    if (!s || !player || this.room?.state?.phase !== 'waiting') return null;
+    return { s, player };
+  }
+
+  _syncWarmupSprite(moving = false) {
+    const data = this._getMyWarmupSprite();
+    if (!data) return;
+    const { s, player } = data;
+    const x = this._warmupX ?? s.body?.x ?? W / 2;
+    const visualY = (player.y || FLOOR_Y) + FOOT_OFFSET;
+    s.body?.setPosition(x, visualY);
+    if (s.useLPC) s.body.setFlipX(!this._warmupFacingRight);
+    if (s.aura?.active) s.aura.setPosition(x, visualY - SPRITE_HEIGHT / 2);
+    if (s.shadow?.active) s.shadow.setPosition(x, FLOOR_Y + FOOT_OFFSET + 2);
+    this._syncHeldWeapon(s, { ...player, facingRight: this._warmupFacingRight }, x, visualY);
+    if (s.enchantTrail?.active) {
+      const xMul = this._warmupFacingRight ? 1 : -1;
+      s.enchantTrail.setPosition(x + xMul * 16, visualY + (s.cls === 'rogue' ? -45 : -52));
+    }
+    const topY = visualY - (s.useLPC ? SPRITE_HEIGHT : 72);
+    const hpY = topY - 10;
+    s.nameLabel?.setPosition(x, topY - 22);
+    s.classLabel?.setPosition(x, topY - 11);
+    s.hpBg?.setPosition(x, hpY);
+    s.hpChip?.setPosition(x - 28, hpY);
+    s.hpBar?.setPosition(x - 28, hpY);
+    s.guardBg?.setPosition(x, hpY + 8);
+    s.guardBar?.setPosition(x - 28, hpY + 8);
+    s.meTag?.setPosition(x, topY - 36);
+    const anim = moving ? 'walk' : 'idle';
+    const animKey = `${s.animPrefix || s.cls}_${anim}`;
+    if (!this._warmupJumping && this.anims.exists(animKey) && s.body?.anims?.currentAnim?.key !== animKey) {
+      s.body.play(animKey, true);
+    }
+  }
+
+  setWarmupInput(input = {}) {
+    if (this.room?.state?.phase !== 'waiting') return;
+    this._warmupInput = {
+      left: Boolean(input.left),
+      right: Boolean(input.right),
+      up: Boolean(input.up),
+    };
+    if (this._warmupInput.up) this.playWarmupJump();
+  }
+
+  playWarmupAttack() {
+    const data = this._getMyWarmupSprite();
+    if (!data) return;
+    const { s, player } = data;
+    this._playAttackBodyMotion(s, { ...player, state: 'idle', facingRight: this._warmupFacingRight });
+    this._showCombatText?.(s.body.x + (this._warmupFacingRight ? 54 : -54), s.body.y - 74, 'WARMUP', '#c9a84c', '12px');
+  }
+
+  playWarmupAbility(playerClass = 'warrior', abilityKey = '') {
+    const data = this._getMyWarmupSprite();
+    if (!data) return;
+    const { s } = data;
+    const x = s.body.x;
+    const y = s.body.y - 22;
+    const dir = this._warmupFacingRight ? 1 : -1;
+    this.showAbilityCastIndicator({
+      sessionId: this.mySessionId,
+      cls: playerClass || s.cls,
+      abilityKey,
+      facingRight: this._warmupFacingRight,
+      fromX: x,
+      fromY: y,
+      toX: Math.max(40, Math.min(W - 40, x + dir * 130)),
+      toY: y,
+      hit: false,
+    });
+  }
+
+  playWarmupJump() {
+    const data = this._getMyWarmupSprite();
+    if (!data || this._warmupJumping) return;
+    const { s, player } = data;
+    const baseY = (player.y || FLOOR_Y) + FOOT_OFFSET;
+    this._warmupJumping = true;
+    const jumpKey = `${s.animPrefix || s.cls}_jump`;
+    if (this.anims.exists(jumpKey)) s.body.play(jumpKey, true);
+    this.tweens.add({
+      targets: s.body,
+      y: baseY - 92,
+      duration: 360,
+      ease: 'Sine.easeOut',
+      yoyo: true,
+      onUpdate: () => {
+        if (s.weapon?.active) this._syncHeldWeapon(s, { ...player, facingRight: this._warmupFacingRight }, s.body.x, s.body.y);
+        if (s.aura?.active) s.aura.setY(s.body.y - SPRITE_HEIGHT / 2);
+      },
+      onComplete: () => {
+        this._warmupJumping = false;
+        this._syncWarmupSprite(Boolean(this._warmupInput.left || this._warmupInput.right));
+      },
+    });
+  }
+
+  setWarmupBlock(down) {
+    this._warmupBlock = Boolean(down);
+    const data = this._getMyWarmupSprite();
+    if (!data) return;
+    const { s, player } = data;
+    const topY = s.body.y - (s.useLPC ? SPRITE_HEIGHT : 72);
+    this._syncBlockGuard(s, { ...player, state: this._warmupBlock ? 'blocking' : 'idle', isBlocking: this._warmupBlock, facingRight: this._warmupFacingRight }, s.body.x, s.body.y, topY);
+  }
+
+  clearWarmup() {
+    this._warmupInput = { left: false, right: false, up: false };
+    this._warmupX = null;
+    this._warmupFacingRight = true;
+    this._warmupBlock = false;
+    this._warmupJumping = false;
+    const s = this.sprites.get(this.mySessionId);
+    if (s?.body?.active) this.tweens.killTweensOf(s.body);
+    if (s?.blockFx?.active) s.blockFx.setVisible(false);
+  }
+
   _showBasicProjectile(s, player, swing = {}) {
     if (!s.body?.active) return;
     const facingRight = this._getVisualFacingRight(player);
@@ -1706,10 +1834,14 @@ export default class BattleScene extends Phaser.Scene {
     const phase = state.phase;
 
     if (phase !== this.lastPhase) {
+      const previousPhase = this.lastPhase;
       this.lastPhase = phase;
 
       // Show HUD only during active combat phases
       this.setHudVisible(phase === 'battle' || phase === 'countdown');
+      if (previousPhase === 'waiting' && phase !== 'waiting') {
+        this.clearWarmup();
+      }
 
       if (phase === 'countdown') {
         this._showVsScreen(state);
@@ -2309,7 +2441,7 @@ export default class BattleScene extends Phaser.Scene {
       return;
     }
     if (abilityKey === 'rogue_execute') {
-      showExecute(this, { fromX: d.fromX ?? d.x ?? 0, fromY: d.fromY ?? d.y ?? 0, toX: d.toX ?? d.x ?? 0, toY: d.toY ?? d.y ?? 0, hit: d.hit !== false });
+      showExecute(this, { fromX: d.fromX ?? d.x ?? 0, fromY: d.fromY ?? d.y ?? 0, toX: d.toX ?? d.x ?? 0, toY: d.toY ?? d.y ?? 0, hit: d.hit !== false, executed: Boolean(d.executed) });
       return;
     }
     if (abilityKey === 'mage_frost_nova') {
@@ -2389,6 +2521,24 @@ export default class BattleScene extends Phaser.Scene {
       this._syncHeldWeapon(s, p, p.x, vy);
       if (s.aura?.active) s.aura.setY(vy - SPRITE_HEIGHT / 2);
     });
+
+    if (this.room?.state?.phase === 'waiting') {
+      const movingLeft = Boolean(this._warmupInput.left);
+      const movingRight = Boolean(this._warmupInput.right);
+      const moving = movingLeft || movingRight;
+      if (moving) {
+        const data = this._getMyWarmupSprite();
+        if (data) {
+          const currentX = this._warmupX ?? data.s.body.x ?? W / 2;
+          const dir = movingLeft ? -1 : 1;
+          this._warmupFacingRight = dir > 0;
+          this._warmupX = Math.max(80, Math.min(W - 80, currentX + dir * 2.8));
+          this._syncWarmupSprite(true);
+        }
+      } else if (this._warmupX != null) {
+        this._syncWarmupSprite(false);
+      }
+    }
 
     if (this.weaponDebug?.enabled) this._tickWeaponDebug(time);
   }

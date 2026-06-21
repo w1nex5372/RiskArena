@@ -3,6 +3,7 @@ Smoke tests for the Colyseus-facing internal boss raid endpoints.
 These are pure-unit tests — no DB, no running server required.
 """
 import os
+import asyncio
 import pytest
 from pydantic import ValidationError
 
@@ -82,3 +83,41 @@ def test_require_internal_raises_500_when_not_configured(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         boss_api._require_internal(_make_request("any"))
     assert exc.value.status_code == 500
+
+
+class _FakeAcquire:
+    def __init__(self, level):
+        self.level = level
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def fetchval(self, *_args, **_kwargs):
+        return self.level
+
+
+class _FakePool:
+    def __init__(self, level):
+        self.level = level
+
+    def acquire(self):
+        return _FakeAcquire(self.level)
+
+
+def test_require_raid_unlocked_blocks_low_level(monkeypatch):
+    import boss_api
+    monkeypatch.setattr(boss_api, "get_pool", lambda: _FakePool(4))
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(boss_api._require_raid_unlocked("user-1"))
+    assert exc.value.status_code == 423
+
+
+def test_require_raid_unlocked_allows_level_five(monkeypatch):
+    import boss_api
+    monkeypatch.setattr(boss_api, "get_pool", lambda: _FakePool(5))
+
+    asyncio.run(boss_api._require_raid_unlocked("user-1"))

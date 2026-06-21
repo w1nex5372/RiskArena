@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, ClipboardList, Clock3, Gift, RefreshCw, Skull, Swords, Trophy, Zap } from 'lucide-react';
+import { ChevronRight, ClipboardList, Clock3, Gift, Lock, RefreshCw, Skull, Swords, Trophy, Zap } from 'lucide-react';
 import apiClient from '../../api/client';
 import { getClassInfo, normalizeCharacterClass } from '../../utils/characters';
 import ClassStatRow from '../character/ClassStatRow';
+import { RAID_UNLOCK_LEVEL, getUserLevel, isRaidUnlocked } from '../../utils/progression';
 
 const GAME_MODES = [
   {
@@ -76,6 +77,8 @@ export default function HomeScreen({
   const rank = user?.rank || null;
   const streak = user?.streak || 0;
   const arenaOnline = (rooms || []).reduce((sum, r) => sum + (r.players_count || 0), 0);
+  const userLevel = getUserLevel(user);
+  const raidUnlocked = isRaidUnlocked(user);
 
   // Resolve the player's class for the identity card. classKey is null when no
   // class has been chosen yet, so we can show a "pick your fighter" prompt instead.
@@ -511,18 +514,24 @@ export default function HomeScreen({
       <div style={{ margin: '24px 16px 0' }}>
         <SectionLabel>Game Modes</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {GAME_MODES.map(({ id, label, sub, Icon, live, bg, glow, iconColor, arrowBg, betRange, badge }) => (
+          {GAME_MODES.map(({ id, label, sub, Icon, live, bg, glow, iconColor, arrowBg, betRange, badge }) => {
+            const locked = id === 'boss' && !raidUnlocked;
+            const effectiveSub = locked
+              ? `Unlocks at Level ${RAID_UNLOCK_LEVEL}. Win Arena battles and equip gear first.`
+              : sub;
+            return (
             <button
               key={id}
               onClick={() => setActiveTab?.(id)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 14,
                 background: bg, borderRadius: 16, padding: 20,
-                border: '1px solid rgba(255,255,255,0.12)',
+                border: locked ? '1px solid rgba(148,163,184,0.16)' : '1px solid rgba(255,255,255,0.12)',
                 boxShadow: id === 'arena'
                   ? '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)'
                   : '0 8px 32px rgba(0,0,0,0.4)',
                 cursor: 'pointer', textAlign: 'left', width: '100%',
+                opacity: locked ? 0.72 : 1,
               }}
             >
               {/* Icon */}
@@ -531,7 +540,7 @@ export default function HomeScreen({
                 background: 'rgba(255,255,255,0.12)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}>
-                <Icon style={{ width: 28, height: 28, color: iconColor }} />
+                {locked ? <Lock style={{ width: 26, height: 26, color: '#64748b' }} /> : <Icon style={{ width: 28, height: 28, color: iconColor }} />}
               </div>
 
               {/* Text */}
@@ -540,15 +549,20 @@ export default function HomeScreen({
                   <span style={{ color: 'white', fontWeight: 800, fontSize: 20, letterSpacing: '0.04em' }}>
                     {label}
                   </span>
-                  {badge && (
+                  {(locked || badge) && (
                     <span style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.6)', fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 99, letterSpacing: '0.08em' }}>
-                      {badge}
+                      {locked ? `LV ${RAID_UNLOCK_LEVEL}` : badge}
                     </span>
                   )}
                 </div>
                 <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: 500, margin: 0 }}>
-                  {sub}
+                  {effectiveSub}
                 </p>
+                {locked && (
+                  <div style={{ marginTop: 6, height: 5, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,0.08)' }}>
+                    <div style={{ width: `${Math.min(100, Math.round((userLevel / RAID_UNLOCK_LEVEL) * 100))}%`, height: '100%', background: '#c9a84c' }} />
+                  </div>
+                )}
                 {betRange && (
                   <span style={{
                     display: 'inline-block',
@@ -596,7 +610,7 @@ export default function HomeScreen({
                   flexShrink: 0,
                   whiteSpace: 'nowrap',
                 }}>
-                  {id === 'arena' ? 'JOIN →' : 'RAID →'}
+                  {id === 'arena' ? 'JOIN ->' : locked ? `LV ${RAID_UNLOCK_LEVEL}` : 'RAID ->'}
                 </div>
               ) : (
                 <div style={{
@@ -609,7 +623,7 @@ export default function HomeScreen({
                 </div>
               )}
             </button>
-          ))}
+          );})}
         </div>
       </div>
 

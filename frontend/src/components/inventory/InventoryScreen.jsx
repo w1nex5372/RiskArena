@@ -55,8 +55,13 @@ const LOADOUT_SLOTS = [
   { key: 'weapon', label: 'Weapon', Icon: Sword },
   { key: 'helmet', label: 'Helmet', Icon: HardHat },
   { key: 'armor', label: 'Armor', Icon: Shield },
+  { key: 'ability_2', label: 'Item Skill 2', Icon: Sparkles },
   { key: 'ability', label: 'Item Skill', Icon: Sparkles },
 ];
+
+function firstWeaponGuideKey(user) {
+  return `riskarena:first-weapon-guide:v1:${user?.id || user?.telegram_id || 'guest'}`;
+}
 
 const SCROLL_OPTIONS = [
   {
@@ -584,7 +589,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
   const [displayBalance, setDisplayBalance] = useState(user?.token_balance || 0);
   const [inventory, setInventory] = useState(null);
   const [equippedInventoryIds, setEquippedInventoryIds] = useState(new Set());
-  const [equippedBySlot, setEquippedBySlot] = useState({ weapon: null, armor: null, ability: null, helmet: null });
+  const [equippedBySlot, setEquippedBySlot] = useState({ weapon: null, armor: null, ability: null, ability_2: null, helmet: null });
   const [loadoutEffectiveStats, setLoadoutEffectiveStats] = useState({});
   const [upgradeItems, setUpgradeItems] = useState([]);
   const [scrolls, setScrolls] = useState({ normal_scroll: 0, blessed_scroll: 0 });
@@ -598,6 +603,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
   const [equipping, setEquipping] = useState(null);
   const [unequipping, setUnequipping] = useState(null);
   const [selling, setSelling] = useState(null);
+  const [weaponGuideDismissed, setWeaponGuideDismissed] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [selectedItem, setSelectedItem] = useState(null);
   const [filterSlot, setFilterSlot] = useState('all');
@@ -625,6 +631,7 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
       weapon: equipped.weapon || null,
       armor: equipped.armor || null,
       ability: equipped.ability || null,
+      ability_2: equipped.ability_2 || null,
       helmet: equipped.helmet || null,
     });
     setLoadoutEffectiveStats(data?.loadout_effective_stats || {});
@@ -717,12 +724,24 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
     refreshItems().catch(() => {});
   }, [refreshItems, user?.class_name]);
 
+  useEffect(() => {
+    try {
+      setWeaponGuideDismissed(localStorage.getItem(firstWeaponGuideKey(user)) === 'done');
+    } catch {
+      setWeaponGuideDismissed(false);
+    }
+  }, [user?.id, user?.telegram_id]);
+
   const handleEquip = async (item) => {
     if (equipping) return;
     setEquipping(item.inventory_id);
     try {
       await apiClient.post('/me/equip', { inventory_id: item.inventory_id });
       toast.success(`${item.name} equipped`);
+      if (getSlotKey(item) === 'weapon') {
+        try { localStorage.setItem(firstWeaponGuideKey(user), 'done'); } catch {}
+        setWeaponGuideDismissed(true);
+      }
       await refreshItems();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to equip item');
@@ -885,7 +904,9 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
 
   const displayedItems = filterSlot === 'all'
     ? allItemsSorted
-    : allItemsSorted.filter((item) => getSlotKey(item) === filterSlot);
+    : allItemsSorted.filter((item) => filterSlot === 'ability'
+      ? ['ability', 'ability_2'].includes(getSlotKey(item))
+      : getSlotKey(item) === filterSlot);
 
   const selectedUpgradeItem = useMemo(
     () => upgradeItems.find((item) => item.inventory_id === selectedUpgradeId) || null,
@@ -907,6 +928,16 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
   const isAtMax = selectedUpgradeItem && selectedMax && selectedLevel >= selectedMax;
   const normalDestroyRisk = selectedUpgradeItem && selectedScroll === 'normal_scroll' && Boolean(selectedPreview?.can_destroy ?? Number(selectedChance) < 1);
   const ActiveIcon = TAB_ICON[activeTab];
+  const starterWeaponCandidate = useMemo(() => {
+    if (equippedBySlot.weapon || !Array.isArray(inventory)) return null;
+    const userClass = getClassKey({ class_name: user?.class_name }) || String(user?.class_name || '').toLowerCase();
+    return inventory.find((item) => {
+      if (getSlotKey(item) !== 'weapon') return false;
+      const itemClass = getClassKey(item);
+      return !itemClass || itemClass === 'any' || !userClass || itemClass === userClass;
+    }) || null;
+  }, [equippedBySlot.weapon, inventory, user?.class_name]);
+  const showWeaponGuide = hubTab === 'loadout' && starterWeaponCandidate && !weaponGuideDismissed;
 
   if (loadError) {
     return (
@@ -1003,6 +1034,58 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
 
       {hubTab === 'loadout' ? (
         <>
+          {showWeaponGuide && (
+            <section
+              style={{
+                borderRadius: 16,
+                padding: 12,
+                background: 'linear-gradient(135deg, rgba(201,168,76,0.16), rgba(15,23,42,0.92))',
+                border: '1px solid rgba(201,168,76,0.32)',
+                display: 'flex',
+                gap: 10,
+                alignItems: 'center',
+              }}
+            >
+              <div
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 12,
+                  display: 'grid',
+                  placeItems: 'center',
+                  background: 'rgba(8,12,24,0.72)',
+                  border: '1px solid rgba(201,168,76,0.24)',
+                  flexShrink: 0,
+                }}
+              >
+                <Sword size={21} style={{ color: '#c9a84c' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, color: '#f8fafc', fontSize: 13, fontWeight: 900 }}>Equip your first weapon</p>
+                <p style={{ margin: '3px 0 0', color: '#94a3b8', fontSize: 11, lineHeight: 1.35 }}>
+                  Open the weapon card, press Equip, then enter Arena ready for warm-up.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedItem(starterWeaponCandidate)}
+                style={{
+                  minHeight: 38,
+                  padding: '0 12px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(201,168,76,0.42)',
+                  background: 'linear-gradient(135deg, #c9a84c, #8b6914)',
+                  color: '#080812',
+                  fontSize: 12,
+                  fontWeight: 950,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                Open
+              </button>
+            </section>
+          )}
           <ClassSwitcher user={user} onSwitch={handleSwitchClass} style={{ marginBottom: 12 }} />
           <ClassHeroCard
             user={user}
@@ -1019,8 +1102,13 @@ export default function InventoryScreen({ user, onClassChange, onUserUpdate }) {
             <BattleSkillLoadout
               className={user?.class_name}
               equippedAbility={equippedBySlot.ability}
+              equippedAbility2={equippedBySlot.ability_2}
               onItemClick={() => {
                 if (equippedBySlot.ability) setSelectedItem(equippedBySlot.ability);
+                else jumpToInventorySlot('Ability');
+              }}
+              onItem2Click={() => {
+                if (equippedBySlot.ability_2) setSelectedItem(equippedBySlot.ability_2);
                 else jumpToInventorySlot('Ability');
               }}
             />

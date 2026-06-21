@@ -8,9 +8,10 @@ import apiClient from '../../api/client';
 import { getStoredSessionToken } from '../../utils/storage';
 import WeaponIcon from '../WeaponIcon';
 import ArmorIcon from '../ArmorIcon';
-import { BattleControlsOverlay, ABILITY_NAMES } from './BattleControls';
+import { BattleControlsOverlay, ABILITY_NAMES, CLASS_DEFAULT_ABILITY_KEYS } from './BattleControls';
 import BattleSkillLoadout from './BattleSkillLoadout';
 import { resolveGameServerUrl } from '../../utils/gameServerUrl';
+import './RealTimeArenaScreen.css';
 
 const GAME_SERVER_URL = resolveGameServerUrl();
 
@@ -66,6 +67,24 @@ const GAME_W = 800;
 const GAME_H = 420;
 const EMPTY_INPUT = { left: false, right: false, attack: false, ability: false, itemAbility: false, itemAbility2: false, up: false, block: false };
 
+function getArenaViewport() {
+  const tg = window.Telegram?.WebApp;
+  const visualViewport = window.visualViewport;
+  const heightCandidates = [
+    visualViewport?.height,
+    tg?.viewportHeight,
+    tg?.viewportStableHeight,
+    document.documentElement.clientHeight,
+    window.innerHeight,
+  ].map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  const visibleHeight = heightCandidates.length ? Math.min(...heightCandidates) : 0;
+  return {
+    width: Math.round(visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || 0),
+    // Some Telegram clients report a stable height that extends below visible chrome.
+    height: Math.round(visibleHeight),
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function RealTimeArenaScreen({ user, onLeave }) {
@@ -92,7 +111,8 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const [itemAbility2CooldownUntil, setItemAbility2CooldownUntil] = useState(0);
   const [playerClass, setPlayerClass] = useState('warrior');
   const [activeAbilityKey, setActiveAbilityKey] = useState('');
-  const [isPortrait, setIsPortrait] = useState(() => window.innerHeight > window.innerWidth);
+  const [viewport, setViewport] = useState(getArenaViewport);
+  const [forceLandscape, setForceLandscape] = useState(false);
   const [loadoutStats, setLoadoutStats] = useState({});
   const [equipped, setEquipped] = useState({ weapon: null, armor: null, ability: null, ability_2: null });
   const [equipped2, setEquipped2] = useState(null);
@@ -101,6 +121,45 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
     phaseRef.current = p;
     setPhase(p);
   }, []);
+  const shouldForceLandscape = forceLandscape && viewport.height > viewport.width;
+  const isPortrait = viewport.height > viewport.width && !forceLandscape;
+  const isCompactViewport = viewport.height <= 600 || viewport.width <= 900;
+  const isTelegram = Boolean(window.Telegram?.WebApp?.initData);
+
+  const requestArenaDisplayMode = useCallback(async () => {
+    const tg = window.Telegram?.WebApp;
+    try { tg?.expand?.(); } catch {}
+    try { tg?.requestFullscreen?.(); } catch {}
+    try { tg?.lockOrientation?.(); } catch {}
+
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      }
+    } catch {
+      // Fullscreen requires user interaction in some browsers and Telegram clients.
+    }
+
+    try {
+      await window.screen?.orientation?.lock?.('landscape');
+    } catch {
+      // Orientation lock is not supported by every Telegram WebView.
+    }
+
+    window.setTimeout(() => {
+      const nextViewport = getArenaViewport();
+      setViewport(nextViewport);
+      if (nextViewport.height > nextViewport.width) {
+        setForceLandscape(true);
+      }
+    }, 180);
+  }, []);
+
+  useEffect(() => {
+    if (!shouldForceLandscape) return undefined;
+    const frame = requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    return () => cancelAnimationFrame(frame);
+  }, [shouldForceLandscape]);
 
   const resetInput = useCallback((flush = false) => {
     actionTimersRef.current.forEach(clearTimeout);
@@ -150,21 +209,53 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
     if (tg) {
       safeTelegramCall(() => tg.expand?.());
+      safeTelegramCall(() => tg.requestFullscreen?.());
       safeTelegramCall(() => tg.enableClosingConfirmation?.());
     }
+    requestArenaDisplayMode();
 
-    const onResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    const onResize = () => {
+      const nextViewport = getArenaViewport();
+      setViewport(nextViewport);
+      if (nextViewport.width >= nextViewport.height) {
+        setForceLandscape(false);
+      }
+    };
+    const onFullscreenChanged = () => {
+      onResize();
+      window.screen?.orientation?.lock?.('landscape').catch?.(() => {});
+    };
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
+    window.visualViewport?.addEventListener('resize', onResize);
+    safeTelegramCall(() => tg?.onEvent?.('viewportChanged', onResize));
+    safeTelegramCall(() => tg?.onEvent?.('fullscreenChanged', onFullscreenChanged));
 
     return () => {
       if (tg) {
         safeTelegramCall(() => tg.disableClosingConfirmation?.());
+        safeTelegramCall(() => tg.unlockOrientation?.());
+        safeTelegramCall(() => tg.exitFullscreen?.());
+      }
+      try { window.screen?.orientation?.unlock?.(); } catch {}
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch?.(() => {});
       }
       window.removeEventListener('resize', onResize);
       window.removeEventListener('orientationchange', onResize);
+      window.visualViewport?.removeEventListener('resize', onResize);
+      safeTelegramCall(() => tg?.offEvent?.('viewportChanged', onResize));
+      safeTelegramCall(() => tg?.offEvent?.('fullscreenChanged', onFullscreenChanged));
     };
-  }, []); // eslint-disable-line
+  }, [requestArenaDisplayMode]);
+
+  useEffect(() => {
+    if (isPortrait) return undefined;
+    try { window.Telegram?.WebApp?.lockOrientation?.(); } catch {}
+    return () => {
+      try { window.Telegram?.WebApp?.unlockOrientation?.(); } catch {}
+    };
+  }, [isPortrait]);
 
   // ── 1. Init Phaser once container is mounted ──────────────────────────────
   useEffect(() => {
@@ -486,6 +577,27 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
   const handleItemAbility2 = useCallback(() => {
     pulseKey('itemAbility2');
   }, [pulseKey]);
+
+  const setWarmupInput = useCallback((next) => {
+    sceneRef.current?.setWarmupInput?.(next);
+  }, []);
+
+  const warmupAttack = useCallback(() => {
+    sceneRef.current?.playWarmupAttack?.();
+  }, []);
+
+  const warmupAbility = useCallback((abilityKey = '') => {
+    sceneRef.current?.playWarmupAbility?.(playerClass, abilityKey || CLASS_DEFAULT_ABILITY_KEYS[playerClass] || '');
+  }, [playerClass]);
+
+  const warmupItemAbility = useCallback((item) => {
+    const abilityKey = item?.ability_key || item?.key || '';
+    sceneRef.current?.playWarmupAbility?.(playerClass, abilityKey);
+  }, [playerClass]);
+
+  const setWarmupBlock = useCallback((down) => {
+    sceneRef.current?.setWarmupBlock?.(down);
+  }, []);
   const resultStatRows = [
     { label: 'Damage', mine: result?.myStats?.damageDealt, opp: result?.opponentStats?.damageDealt },
     { label: 'Blocked', mine: result?.myStats?.damageBlocked, opp: result?.opponentStats?.damageBlocked },
@@ -497,20 +609,11 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div style={isPortrait ? {
+    <div className={`realtime-arena realtime-arena--${phase} ${isCompactViewport ? 'realtime-arena--compact' : ''} ${isTelegram ? 'realtime-arena--telegram' : ''} ${shouldForceLandscape ? 'realtime-arena--forced-landscape' : ''}`} style={{
       position: 'fixed', zIndex: 9999,
-      top: 0, left: 0,
-      width: '100vh', height: '100vw',
-      transformOrigin: '0 0',
-      transform: 'translateY(100vh) rotate(90deg)',
-      overflow: 'hidden',
-      display: 'flex', flexDirection: 'column',
-      background: '#0d0d1a',
-      userSelect: 'none', WebkitUserSelect: 'none',
-    } : {
-      position: 'fixed', zIndex: 9999,
-      top: 0, left: 0,
-      width: '100%', height: '100%',
+      inset: 0,
+      width: '100%',
+      height: viewport.height ? `${viewport.height}px` : '100dvh',
       overflow: 'hidden',
       display: 'flex', flexDirection: 'column',
       background: '#0d0d1a',
@@ -518,12 +621,13 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
     }}>
 
       {/* Status bar */}
-      <div style={{
+      <div className="realtime-arena__status" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '8px 16px',
         background: 'rgba(0,0,0,0.4)', borderBottom: '1px solid rgba(201,168,76,0.15)',
       }}>
         <button
+          className="realtime-arena__leave"
           onClick={onLeave}
           style={{
             background: 'none', border: '1px solid rgba(255,255,255,0.15)',
@@ -551,8 +655,25 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       {/* Phaser canvas container */}
       <div
         ref={containerRef}
+        className="realtime-arena__canvas"
         style={{ width: '100%', flex: 1, minHeight: 0, position: 'relative' }}
       />
+
+      {isPortrait && (
+        <div className="realtime-arena__rotate">
+          <div className="realtime-arena__rotate-icon" aria-hidden="true">↻</div>
+          <div className="realtime-arena__rotate-title">Rotate for battle</div>
+          <div className="realtime-arena__rotate-copy">
+            Real-time Arena is designed for landscape controls.
+          </div>
+          <button type="button" onClick={requestArenaDisplayMode}>
+            Open landscape fullscreen
+          </button>
+          <button type="button" className="realtime-arena__rotate-leave" onClick={onLeave}>
+            Leave Arena
+          </button>
+        </div>
+      )}
 
       {/* ── Absolute overlays (float over canvas, don't affect layout) ──── */}
 
@@ -565,6 +686,12 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
           <div style={{ fontSize: 32, marginBottom: 12 }}>🔄</div>
           <div style={{ color: '#f59e0b', fontWeight: 700, fontSize: 14, marginBottom: 8 }}>Reconnecting...</div>
           <div style={{ color: '#64748b', fontSize: 12 }}>Connection lost — attempting to rejoin</div>
+        </div>
+      )}
+
+      {phase === 'waiting' && !isPortrait && (
+        <div className="realtime-arena__warmup-chip">
+          Warm up while waiting
         </div>
       )}
 
@@ -589,7 +716,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       )}
 
       {phase === 'finished' && (
-        <div style={{
+        <div className="realtime-arena__result" style={{
           position: 'absolute', inset: 0, zIndex: 20,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(13,13,26,0.93)',
@@ -703,8 +830,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
         const speed = Number(classStats.move_speed || 0);
         const abilName   = ABILITY_NAMES[cls];
         return (
-          <div style={{
-            flexShrink: 0,
+          <div className="realtime-arena__waiting" style={{
             background: 'linear-gradient(180deg, #0d0d1a 0%, #1a1a2e 100%)',
             borderTop: '1px solid rgba(201,168,76,0.2)',
             padding: '10px 14px 12px',
@@ -712,7 +838,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
           }}>
 
             {/* Hero card — char preview + class info */}
-            <div style={{
+            <div className="realtime-arena__fighter-card" style={{
               display: 'flex', alignItems: 'center', gap: 10,
               background: 'linear-gradient(135deg, #0d0d1a 0%, #1a0a0a 55%, #2d0000 100%)',
               border: '1px solid rgba(201,168,76,0.25)',
@@ -724,28 +850,28 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
 
               <CharacterPortrait
                 cls={cls}
-                size={72}
+                size={isCompactViewport ? 62 : 72}
                 weapon={equipped?.weapon || null}
-                badgeSize={24}
+                badgeSize={isCompactViewport ? 20 : 24}
                 sheetPath={equippedSheetPath || user?.character_spritesheet_path || null}
                 armor={equipped?.armor || null}
               />
 
-              <div style={{ flex: 1, zIndex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.14em', color: '#c9a84c', textTransform: 'uppercase', marginBottom: 3 }}>Your Fighter</div>
+              <div className="realtime-arena__fighter-copy" style={{ flex: 1, zIndex: 1, minWidth: 0 }}>
+                <div className="realtime-arena__fighter-label" style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.14em', color: '#c9a84c', textTransform: 'uppercase', marginBottom: 3 }}>Your Fighter</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                   <span style={{ fontSize: 15 }}>{info.icon}</span>
                   <span style={{ color: 'white', fontSize: 17, fontWeight: 900 }}>{info.name}</span>
                 </div>
                 <div style={{ color: info.color, fontSize: 10, fontWeight: 700, marginBottom: 5 }}>{info.title}</div>
-                <span style={{
+                <span className="realtime-arena__fighter-bonus" style={{
                   color: '#c9a84c', background: 'rgba(201,168,76,0.1)',
                   border: '1px solid rgba(201,168,76,0.18)', borderRadius: 999,
                   padding: '2px 8px', fontSize: 9, fontWeight: 800,
                 }}>{info.bonus}</span>
               </div>
 
-              <div style={{ flexShrink: 0, zIndex: 1, textAlign: 'center' }}>
+              <div className="realtime-arena__waiting-badge" style={{ flexShrink: 0, zIndex: 1, textAlign: 'center' }}>
                 <div style={{
                   background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.28)',
                   borderRadius: 12, padding: '6px 10px',
@@ -757,7 +883,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
             </div>
 
             {/* Stats row */}
-            <div style={{
+            <div className="realtime-arena__stats" style={{
               display: 'flex', gap: 6, flexWrap: 'wrap',
             }}>
               {[
@@ -779,7 +905,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
             </div>
 
             {/* Loadout */}
-            <div style={{
+            <div className="realtime-arena__loadout" style={{
               background: 'rgba(26,26,46,0.8)', border: '1px solid rgba(201,168,76,0.12)',
               borderRadius: 14, padding: '8px 10px',
             }}>
@@ -808,14 +934,21 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
                   </div>
                 ))}
               </div>
-              <p style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.1em', color: '#64748b', textTransform: 'uppercase', margin: '8px 0 5px' }}>
-                Battle Skills
-              </p>
-              <BattleSkillLoadout className={cls} equippedAbility={equipped?.ability || null} compact />
+              <div className="realtime-arena__skills">
+                <p style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.1em', color: '#64748b', textTransform: 'uppercase', margin: '8px 0 5px' }}>
+                  Battle Skills
+                </p>
+                <BattleSkillLoadout
+                  className={cls}
+                  equippedAbility={equipped?.ability || null}
+                  equippedAbility2={equipped?.ability_2 || null}
+                  compact
+                />
+              </div>
             </div>
 
             {/* Leave */}
-            <button onClick={onLeave} style={{
+            <button className="realtime-arena__queue-leave" onClick={onLeave} style={{
               background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.22)',
               color: '#ef4444', padding: '9px', borderRadius: 10,
               fontWeight: 700, fontSize: 12, cursor: 'pointer', letterSpacing: '0.04em',
@@ -826,7 +959,7 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
       })()}
 
       {/* ── Battle touch controls ──────────────────────────────────────────── */}
-      {phase === 'battle' && (
+      {(phase === 'battle' || phase === 'waiting') && (
         <BattleControlsOverlay
           showBlock={true}
           playerClass={playerClass}
@@ -840,13 +973,13 @@ export default function RealTimeArenaScreen({ user, onLeave }) {
           equippedAbility2={equipped2}
           userLevel={user?.level || 1}
           canAttack={true}
-          onJoystick={setDirectionalInput}
-          onAttack={() => pulseKey('attack')}
-          onAbility={() => pulseKey('ability')}
-          onItemAbility={() => pulseKey('itemAbility')}
-          onItemAbility2={handleItemAbility2}
-          onBlockDown={() => setKey('block', true)}
-          onBlockUp={() => setKey('block', false)}
+          onJoystick={phase === 'battle' ? setDirectionalInput : setWarmupInput}
+          onAttack={phase === 'battle' ? () => pulseKey('attack') : warmupAttack}
+          onAbility={phase === 'battle' ? () => pulseKey('ability') : () => warmupAbility()}
+          onItemAbility={phase === 'battle' ? () => pulseKey('itemAbility') : () => warmupItemAbility(equippedAbility)}
+          onItemAbility2={phase === 'battle' ? handleItemAbility2 : () => warmupItemAbility(equipped2)}
+          onBlockDown={phase === 'battle' ? () => setKey('block', true) : () => setWarmupBlock(true)}
+          onBlockUp={phase === 'battle' ? () => setKey('block', false) : () => setWarmupBlock(false)}
         />
       )}
 

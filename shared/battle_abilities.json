@@ -197,12 +197,14 @@
     "rogue_execute": {
       "class": "rogue",
       "role": "execute",
-      "type": "dash_strike",
+      "type": "execute",
       "label": "Execute",
       "damage": 22,
       "ability_power_scale": 0.55,
       "range": 220,
       "offset": 80,
+      "execute_threshold": 0.35,
+      "execute_damage_multiplier": 1.75,
       "cooldown_ms": 8500
     }
   }

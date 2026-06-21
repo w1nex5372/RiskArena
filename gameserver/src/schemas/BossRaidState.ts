@@ -23,6 +23,7 @@ export class RaidPlayer extends Schema {
   @type("number")  hp: number = 100;           // dabartinė žaidėjo HP
   @type("number")  maxHp: number = 100;        // maksimali HP (pagal klasę)
   @type("boolean") blocking: boolean = false;  // ar laiko block (gina nuo boso atakos)
+  @type("number")  abilityBonus: number = 0;   // skill damage bonus from equipped ability items
   @type("number")  defendReduction: number = 0; // pasyvi armor redukcija (0..1)
   @type("number")  reviveSeconds: number = 0;  // kiek sek liko iki revive (nokautavus; death overlay)
 
@@ -45,6 +46,7 @@ export class RaidPlayer extends Schema {
   // { abilityKey: paskutinio panaudojimo Date.now() } — server-side anti-cheat.
   abilityCooldowns: Record<string, number> = {};
   activeAbilityKey: string = "";
+  activeAbility2Key: string = "";
   // Kada transient būsena (attacking/hit) turi grįžti į idle (Date.now() ms). 0 = nėra deadline.
   stateUntil: number = 0;
   // Paskutinio "move" žinutės laikas (server-side throttle, anti-spam)

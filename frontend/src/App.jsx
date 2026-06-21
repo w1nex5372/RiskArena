@@ -12,6 +12,7 @@ import { Crown, Coins, Users, Trophy, Zap, Wallet, Play, Timer, TrendingUp, Tren
 import PaymentModal from './components/PaymentModal';
 import LevelUpModal from './components/profile/LevelUpModal';
 import ClassUnlockModal from './components/character/ClassUnlockModal';
+import NewUserGuide from './components/onboarding/NewUserGuide';
 import RouletteWheel from './components/game/RouletteWheel';
 import StaticRouletteResult from './components/game/StaticRouletteResult';
 import CountdownTimer from './components/game/CountdownTimer';
@@ -55,6 +56,7 @@ import useLobbyParticipantsPolling from './hooks/useLobbyParticipantsPolling';
 import useGameStatePolling from './hooks/useGameStatePolling';
 import { createSocketClient } from './socket/socketClient';
 import { API, BACKEND_URL, PRIZE_LINKS, ROOM_CONFIGS, normalizeRoomType } from './utils/constants';
+import { RAID_UNLOCK_LEVEL, getUserLevel, isRaidUnlocked } from './utils/progression';
 import { clearStoredUser, getStoredSessionToken, getStoredUser, saveStoredUser } from './utils/storage';
 import './App.css';
 
@@ -89,6 +91,59 @@ function ScreenLoader() {
         className="animate-spin rounded-full"
         style={{ width: 36, height: 36, border: '3px solid rgba(220,38,38,0.25)', borderTopColor: '#dc2626' }}
       />
+    </div>
+  );
+}
+
+function LockedRaidPanel({ user, onArena, onItems }) {
+  const level = getUserLevel(user);
+  const progress = Math.min(100, Math.round((level / RAID_UNLOCK_LEVEL) * 100));
+  return (
+    <div style={{ color: '#e8e0d0', paddingBottom: 96 }}>
+      <section
+        style={{
+          margin: '16px 12px',
+          borderRadius: 22,
+          padding: 18,
+          background: 'linear-gradient(180deg, rgba(15,23,42,0.96), rgba(8,12,24,0.98))',
+          border: '1px solid rgba(201,168,76,0.28)',
+          boxShadow: '0 18px 50px rgba(0,0,0,0.34)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 16, display: 'grid', placeItems: 'center', background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.24)' }}>
+            <Zap size={26} style={{ color: '#c9a84c' }} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ margin: 0, color: '#c9a84c', fontSize: 10, fontWeight: 900, letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+              Boss Raid locked
+            </p>
+            <h2 style={{ margin: '4px 0 0', color: '#f8fafc', fontSize: 22, fontWeight: 950, lineHeight: 1.05 }}>
+              Reach Level {RAID_UNLOCK_LEVEL}
+            </h2>
+          </div>
+        </div>
+        <p style={{ margin: '14px 0 0', color: '#94a3b8', fontSize: 13, lineHeight: 1.45 }}>
+          Boss Raid opens after you learn movement, blocking, and loadout basics in Arena.
+        </p>
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, color: '#64748b', fontSize: 11, fontWeight: 850 }}>
+            <span>Current Level {level}</span>
+            <span>Level {RAID_UNLOCK_LEVEL}</span>
+          </div>
+          <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: 'rgba(255,255,255,0.08)' }}>
+            <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, #8b6914, #c9a84c)' }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button type="button" onClick={onArena} style={{ flex: 1, minHeight: 44, borderRadius: 12, border: '1px solid rgba(201,168,76,0.42)', background: 'linear-gradient(135deg, #8b0000, #c0392b)', color: '#fff', fontWeight: 950 }}>
+            Train in Arena
+          </button>
+          <button type="button" onClick={onItems} style={{ minHeight: 44, padding: '0 14px', borderRadius: 12, border: '1px solid rgba(148,163,184,0.18)', background: 'rgba(255,255,255,0.04)', color: '#cbd5e1', fontWeight: 850 }}>
+            Items
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -2026,6 +2081,14 @@ function App() {
   const openTokensTab = useCallback(() => setActiveTab('tokens'), []);
   const openSettingsTab = useCallback(() => setActiveTab('settings'), []);
   const arenaNavInventory = useCallback(() => setActiveTab('inventory'), []);
+  const navigateMainTab = useCallback((tab) => {
+    if (tab === 'boss' && !isRaidUnlocked(user)) {
+      setActiveTab('boss');
+      toast.info(`Boss Raid unlocks at Level ${RAID_UNLOCK_LEVEL}`);
+      return;
+    }
+    setActiveTab(tab);
+  }, [user]);
   const arenaEnterRealTime = useCallback(() => {
     setActiveTab('arena');
     setActiveArenaMatchId(null);
@@ -2280,7 +2343,7 @@ function App() {
               </button>
 
               <button
-                onClick={() => setActiveTab('boss')}
+                onClick={() => navigateMainTab('boss')}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                   activeTab === 'boss'
                     ? 'bg-blue-600 text-white font-semibold'
@@ -2729,7 +2792,7 @@ function App() {
                 betAmounts={betAmounts}
                 setBetAmounts={setBetAmounts}
                 setSelectedRoom={setSelectedRoom}
-                setActiveTab={setActiveTab}
+                setActiveTab={navigateMainTab}
                 promptJoinRoom={promptJoinRoom}
                 joinRoom={joinRoom}
                 setAnonModal={setAnonModal}
@@ -2779,7 +2842,15 @@ function App() {
             )}
 
             {activeTab === 'boss' && !inLobby && !showWinnerScreen && !gameInProgress && (
-              <BossRaidScreen user={user} socket={socket} onLevelUp={(data) => setLevelUpData(data)} />
+              isRaidUnlocked(user) ? (
+                <BossRaidScreen user={user} socket={socket} onLevelUp={(data) => setLevelUpData(data)} />
+              ) : (
+                <LockedRaidPanel
+                  user={user}
+                  onArena={() => setActiveTab('arena')}
+                  onItems={() => setActiveTab('inventory')}
+                />
+              )
             )}
 
             {activeTab === 'tournament' && !inLobby && !showWinnerScreen && !gameInProgress && (
@@ -3122,7 +3193,7 @@ function App() {
       {isMobile && !inRealTimeArena && (
         <BottomNav
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={navigateMainTab}
         />
       )}
 
@@ -3294,6 +3365,13 @@ function App() {
         </div>
       )}
 
+      {user?.class_name && !inRealTimeArena && !inLobby && !activeArenaMatchId && !gameInProgress && !showWinnerScreen && (
+        <NewUserGuide
+          user={user}
+          onNavigate={(tab) => navigateMainTab(tab)}
+        />
+      )}
+
       {/* Level Up Modal */}
       {levelUpData && (
         <LevelUpModal
@@ -3306,7 +3384,7 @@ function App() {
       )}
 
       {/* Class Unlock reveal — shows after the level-up modal when a class slot is earned */}
-      {user?.pending_class_unlocks > 0 && !levelUpData && !classUnlockDismissed && !buildClassFor && (
+      {user?.class_name && Number(user?.level || 1) >= 10 && user?.pending_class_unlocks > 0 && !levelUpData && !classUnlockDismissed && !buildClassFor && (
         <ClassUnlockModal
           claimableClasses={user.claimable_classes || []}
           level={user.level}

@@ -56,6 +56,11 @@
           const value = localStorage.getItem(key);
           if (value != null) keep.set(key, value);
         });
+        Object.keys(localStorage).forEach((key) => {
+          if (!key.startsWith('riskarena:')) return;
+          const value = localStorage.getItem(key);
+          if (value != null) keep.set(key, value);
+        });
 
         localStorage.clear();
         sessionStorage.clear();

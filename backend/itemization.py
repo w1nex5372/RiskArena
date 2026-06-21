@@ -168,6 +168,8 @@ def battle_ability_stats(ability_key: Optional[str]) -> Optional[Dict[str, Any]]
         "offset",
         "cooldown_ms",
         "ignore_block",
+        "execute_threshold",
+        "execute_damage_multiplier",
     )
     return {key: meta[key] for key in keys if key in meta}
 
