@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Agent Workflow
+
+Before task work, read `AGENTS.md` and the relevant files in `engineering/`.
+Use those docs as the project-local Engineering OS for focused audits, implementation,
+review, playtesting, token discipline, and log/task updates. Do not duplicate the
+full workflow here.
+
 ## Commands
 
 ### Backend
